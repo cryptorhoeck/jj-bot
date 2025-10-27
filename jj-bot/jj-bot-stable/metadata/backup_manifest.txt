@@ -1,0 +1,23 @@
+Core Directories:
+- glue/          (Trading API)
+- dashboard/     (React Dashboard)
+- dev-portal/    (Developer Portal)
+- hands/         (Trading strategies)
+- logs/          (System logs)
+- backups/       (Previous backups)
+- data/          (Data files)
+
+Configuration Files:
+- config.json
+- requirements.txt
+- jj (CLI script)
+- *.py (Python scripts)
+- *.sh (Shell scripts)
+
+Database:
+- jj_trades.db
+- *.db
+
+Project Files:
+- project_analysis.txt
+- project_structure.txt

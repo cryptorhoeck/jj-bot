@@ -1,0 +1,422 @@
+from fastapi import FastAPI, Request, Form, HTTPException, UploadFile, File
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
+import subprocess
+import requests
+import os
+import json
+import shutil
+from pathlib import Path
+from datetime import datetime
+import psutil
+import asyncio
+from typing import Optional
+import mimetypes
+
+app = FastAPI(title="JJ-Bot Developer Portal", description="Development tools for JJ-Bot")
+
+# Setup templates and static files
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Configuration
+TRADING_API_URL = "http://127.0.0.1:8000"
+PROJECT_ROOT = Path.home() / "jj-bot"
+BACKUP_SCRIPT = PROJECT_ROOT / "backup_manager.sh"
+ARCHIVE_DIR = Path("archive")
+ARCHIVE_DIR.mkdir(exist_ok=True)
+
+# Helper functions
+def check_trading_api():
+    """Check if trading API is running"""
+    try:
+        response = requests.get(f"{TRADING_API_URL}/health", timeout=3)
+        return {"status": "running", "healthy": response.status_code == 200}
+    except:
+        return {"status": "stopped", "healthy": False}
+
+def run_command(command, cwd=None):
+    """Safely execute system commands"""
+    try:
+        result = subprocess.run(
+            command, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            cwd=cwd or PROJECT_ROOT,
+            timeout=30
+        )
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout,
+            "error": result.stderr,
+            "returncode": result.returncode
+        }
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Command timed out", "returncode": -1}
+    except Exception as e:
+        return {"success": False, "error": str(e), "returncode": -1}
+
+def get_system_stats():
+    """Get system resource usage"""
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=1),
+        "memory": psutil.virtual_memory()._asdict(),
+        "disk": psutil.disk_usage('/')._asdict(),
+        "timestamp": datetime.now().isoformat()
+    }
+
+def get_file_info(file_path):
+    """Get detailed file information"""
+    try:
+        stat = file_path.stat()
+        return {
+            "name": file_path.name,
+            "path": str(file_path.relative_to(PROJECT_ROOT)),
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "is_dir": file_path.is_dir(),
+            "extension": file_path.suffix.lower(),
+            "mime_type": mimetypes.guess_type(str(file_path))[0] or "text/plain"
+        }
+    except Exception:
+        return None
+
+# Routes
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """Main dashboard"""
+    api_status = check_trading_api()
+    system_stats = get_system_stats()
+    
+    # Get recent backups
+    recent_backups = []
+    if BACKUP_SCRIPT.exists():
+        cmd_result = run_command(f"{BACKUP_SCRIPT} list")
+        if cmd_result["success"]:
+            recent_backups = cmd_result["output"].split('\n')[-10:]
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "api_status": api_status,
+        "system_stats": system_stats,
+        "recent_backups": recent_backups,
+        "page": "dashboard"
+    })
+
+@app.get("/backups", response_class=HTMLResponse)
+async def backups_page(request: Request):
+    """Full backup management page"""
+    return templates.TemplateResponse("backups.html", {
+        "request": request,
+        "page": "backups"
+    })
+
+@app.get("/files", response_class=HTMLResponse) 
+async def files_page(request: Request, path: str = ""):
+    """File browser page"""
+    return templates.TemplateResponse("files.html", {
+        "request": request,
+        "current_path": path,
+        "page": "files"
+    })
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    """Real-time log viewer page"""
+    return templates.TemplateResponse("logs.html", {
+        "request": request,
+        "page": "logs"
+    })
+
+@app.get("/tools", response_class=HTMLResponse)
+async def tools_page(request: Request):
+    """Development tools page"""
+    return templates.TemplateResponse("tools.html", {
+        "request": request,
+        "page": "tools"
+    })
+
+@app.get("/archive", response_class=HTMLResponse)
+async def archive_page(request: Request):
+    """Archive storage page"""
+    return templates.TemplateResponse("archive.html", {
+        "request": request,
+        "page": "archive"
+    })
+
+# API endpoints
+@app.get("/api/status")
+async def get_status():
+    """Get system and trading API status"""
+    return {
+        "trading_api": check_trading_api(),
+        "system": get_system_stats(),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.post("/api/backup/create")
+async def create_backup(reason: str = Form(...)):
+    """Create a new backup"""
+    if not BACKUP_SCRIPT.exists():
+        raise HTTPException(status_code=404, detail="Backup script not found")
+    
+    result = run_command(f"{BACKUP_SCRIPT} snapshot '{reason}'")
+    return {
+        "success": result["success"],
+        "message": result["output"] if result["success"] else result["error"]
+    }
+
+@app.get("/api/backups/list")
+async def list_backups():
+    """List all backups with detailed information"""
+    if not BACKUP_SCRIPT.exists():
+        raise HTTPException(status_code=404, detail="Backup script not found")
+    
+    backups = []
+    snapshots_dir = PROJECT_ROOT / "backups" / "snapshots"
+    
+    if snapshots_dir.exists():
+        for snapshot in snapshots_dir.iterdir():
+            if snapshot.is_dir():
+                info_file = snapshot / "SNAPSHOT_INFO.txt"
+                info = {"name": snapshot.name, "path": str(snapshot)}
+                
+                if info_file.exists():
+                    try:
+                        with open(info_file) as f:
+                            content = f.read()
+                            lines = content.split('\n')
+                            for line in lines:
+                                if line.startswith('Created:'):
+                                    info['created'] = line.split('Created:', 1)[1].strip()
+                                elif line.startswith('Reason:'):
+                                    info['reason'] = line.split('Reason:', 1)[1].strip()
+                    except:
+                        pass
+                
+                stat = snapshot.stat()
+                info['size'] = sum(f.stat().st_size for f in snapshot.rglob('*') if f.is_file())
+                info['modified'] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+                backups.append(info)
+    
+    return {"backups": sorted(backups, key=lambda x: x.get('modified', ''), reverse=True)}
+
+@app.post("/api/backup/restore")
+async def restore_backup(snapshot_name: str = Form(...)):
+    """Restore from backup"""
+    if not BACKUP_SCRIPT.exists():
+        raise HTTPException(status_code=404, detail="Backup script not found")
+    
+    result = run_command(f"{BACKUP_SCRIPT} restore_snapshot '{snapshot_name}'")
+    return {
+        "success": result["success"],
+        "message": result["output"] if result["success"] else result["error"]
+    }
+
+@app.post("/api/service/restart")
+async def restart_trading_api():
+    """Restart the trading API"""
+    jj_script = PROJECT_ROOT / "jj"
+    if not jj_script.exists():
+        raise HTTPException(status_code=404, detail="JJ script not found")
+    
+    stop_result = run_command("./jj stop")
+    start_result = run_command("./jj reset")
+    
+    return {
+        "success": start_result["success"],
+        "stop_output": stop_result["output"],
+        "start_output": start_result["output"]
+    }
+
+@app.get("/api/files/browse")
+async def browse_files(path: str = ""):
+    """Browse project files"""
+    try:
+        target_path = PROJECT_ROOT / path if path else PROJECT_ROOT
+        
+        if not target_path.exists() or not target_path.is_dir():
+            raise HTTPException(status_code=404, detail="Directory not found")
+        
+        # Get parent directory info
+        parent = None
+        if path and path != ".":
+            parent_path = str(Path(path).parent) if Path(path).parent != Path(".") else ""
+            parent = {"name": "..", "path": parent_path, "type": "parent"}
+        
+        files = []
+        directories = []
+        
+        for item in sorted(target_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if item.name.startswith('.'):
+                continue
+            
+            file_info = get_file_info(item)
+            if file_info:
+                if item.is_dir():
+                    file_info["type"] = "directory"
+                    directories.append(file_info)
+                else:
+                    file_info["type"] = "file"
+                    files.append(file_info)
+        
+        return {
+            "current_path": path,
+            "parent": parent,
+            "directories": directories,
+            "files": files
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/files/read")
+async def read_file(path: str):
+    """Read file content"""
+    try:
+        file_path = PROJECT_ROOT / path
+        
+        if not file_path.exists() or file_path.is_dir():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Check file size (limit to 1MB for web display)
+        if file_path.stat().st_size > 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large for web display")
+        
+        # Try to read as text
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return {
+                "content": content,
+                "type": "text",
+                "encoding": "utf-8"
+            }
+        except UnicodeDecodeError:
+            return {
+                "content": "[Binary file - cannot display]",
+                "type": "binary",
+                "encoding": "binary"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/files/save")
+async def save_file(path: str = Form(...), content: str = Form(...)):
+    """Save file content"""
+    try:
+        file_path = PROJECT_ROOT / path
+        
+        # Create backup before saving
+        if file_path.exists():
+            backup_result = run_command(f"{BACKUP_SCRIPT} backup '{file_path}' 'web_editor_save'")
+            if not backup_result["success"]:
+                raise HTTPException(status_code=500, detail="Failed to create backup")
+        
+        # Save file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return {"success": True, "message": "File saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/logs/stream")
+async def stream_logs():
+    """Stream real-time logs"""
+    async def log_generator():
+        try:
+            # Get recent logs first
+            result = run_command("./jj logs | tail -50")
+            if result["success"]:
+                for line in result["output"].split('\n'):
+                    if line.strip():
+                        yield f"data: {json.dumps({'line': line, 'timestamp': datetime.now().isoformat()})}\n\n"
+            
+            # Then follow new logs (simplified for demo)
+            while True:
+                await asyncio.sleep(2)
+                yield f"data: {json.dumps({'line': 'Log streaming active...', 'timestamp': datetime.now().isoformat()})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return StreamingResponse(log_generator(), media_type="text/plain")
+
+@app.get("/api/logs/recent")
+async def get_recent_logs():
+    """Get recent log entries"""
+    try:
+        result = run_command("./jj logs | tail -100")
+        if result["success"]:
+            lines = [line for line in result["output"].split('\n') if line.strip()]
+            return {"logs": lines}
+        else:
+            return {"logs": ["No logs available"], "error": result["error"]}
+    except Exception as e:
+        return {"logs": ["Error getting logs"], "error": str(e)}
+
+@app.get("/api/archive/list")
+async def list_archive():
+    """List archived files"""
+    try:
+        files = []
+        for item in ARCHIVE_DIR.iterdir():
+            if item.is_file():
+                stat = item.stat()
+                files.append({
+                    "name": item.name,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "type": item.suffix.lower()
+                })
+        
+        return {"files": sorted(files, key=lambda x: x["modified"], reverse=True)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/archive/upload")
+async def upload_to_archive(file: UploadFile = File(...)):
+    """Upload file to archive"""
+    try:
+        # Save uploaded file
+        file_path = ARCHIVE_DIR / file.filename
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return {"success": True, "message": f"File {file.filename} uploaded to archive"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/archive/download/{filename}")
+async def download_from_archive(filename: str):
+    """Download file from archive"""
+    file_path = ARCHIVE_DIR / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found in archive")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='application/octet-stream'
+    )
+
+@app.delete("/api/archive/delete/{filename}")
+async def delete_from_archive(filename: str):
+    """Delete file from archive"""
+    try:
+        file_path = ARCHIVE_DIR / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found in archive")
+        
+        file_path.unlink()
+        return {"success": True, "message": f"File {filename} deleted from archive"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8001)

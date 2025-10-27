@@ -1,0 +1,58 @@
+{
+  "enabled": true,
+  "providers": {
+    "discord": {
+      "enabled": false,
+      "webhook_url": "",
+      "username": "JJ Gorilla Bot"
+    },
+    "telegram": {
+      "enabled": false,
+      "bot_token": "",
+      "chat_id": ""
+    },
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "",
+      "password": "",
+      "to_email": ""
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  },
+  "alert_types": {
+    "big_wins": {
+      "enabled": true,
+      "threshold": 100.0
+    },
+    "big_losses": {
+      "enabled": true,
+      "threshold": -100.0
+    },
+    "daily_summary": {
+      "enabled": true,
+      "time": "18:00"
+    },
+    "risk_warnings": {
+      "enabled": true
+    },
+    "system_errors": {
+      "enabled": true
+    },
+    "strategy_signals": {
+      "enabled": false,
+      "min_confidence": 0.8
+    }
+  },
+  "rate_limiting": {
+    "max_alerts_per_hour": 10,
+    "cooldown_minutes": 5
+  }
+}

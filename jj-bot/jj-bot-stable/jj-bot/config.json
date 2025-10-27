@@ -1,0 +1,9 @@
+{
+  "risk": {
+    "MAX_POSITION_SIZE": 100,
+    "MAX_DAILY_LOSS": 1000.0,
+    "MAX_TRADES_PER_DAY": 20,
+    "COOLDOWN_SECONDS": 60,
+    "CIRCUIT_BREAKER_DROP": 0.1
+  }
+}

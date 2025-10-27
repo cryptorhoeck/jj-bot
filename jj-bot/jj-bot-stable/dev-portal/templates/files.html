@@ -1,0 +1,1248 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="fileBrowser()" class="space-y-6">
+    <!-- File Browser -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold">Project Files</h2>
+            <div class="flex gap-2">
+                <button @click="refreshFiles()" class="btn-secondary">
+                    <i class="fas fa-sync"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Path breadcrumb -->
+        <div class="mb-4 text-sm text-gray-600">
+            <span>Path: /</span><span x-text="currentPath"></span>
+        </div>
+
+        <!-- File listing -->
+        <div x-show="loading" class="text-center py-4">Loading files...</div>
+
+        <div x-show="!loading" class="space-y-2">
+            <!-- Parent directory -->
+            <div x-show="parent" @click="navigateTo(parent.path)" 
+                 class="flex items-center p-2 hover:bg-gray-100 cursor-pointer rounded">
+                <i class="fas fa-folder text-blue-500 w-6"></i>
+                <span class="ml-2 font-medium">..</span>
+            </div>
+
+            <!-- Directories -->
+            <template x-for="dir in directories" :key="dir.path">
+                <div @click="navigateTo(dir.path)" 
+                     class="flex items-center p-2 hover:bg-gray-100 cursor-pointer rounded">
+                    <i class="fas fa-folder text-blue-500 w-6"></i>
+                    <span class="ml-2 font-medium" x-text="dir.name"></span>
+                </div>
+            </template>
+
+            <!-- Files -->
+            <template x-for="file in files" :key="file.path">
+                <div class="flex items-center justify-between p-2 hover:bg-gray-100 rounded">
+                    <div class="flex items-center flex-1" @click="selectFile(file)">
+                        <i class="fas fa-file text-gray-500 w-6" 
+                           :class="getFileIcon(file.extension)"></i>
+                        <span class="ml-2" x-text="file.name"></span>
+                    </div>
+                    <div class="text-xs text-gray-500 flex gap-4">
+                        <span x-text="formatSize(file.size)"></span>
+                        <span x-text="formatDate(file.modified)"></span>
+                        <button @click="editFile(file)" 
+                                x-show="isEditable(file)"
+                                class="text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- File Editor Modal -->
+    <div x-show="showEditor" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-5/6 h-5/6 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">Edit: <span x-text="editingFile?.name"></span></h3>
+                <div class="flex gap-2">
+                    <button @click="saveFile()" class="btn-primary">Save</button>
+                    <button @click="closeEditor()" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <textarea 
+                x-model="fileContent" 
+                class="flex-1 border rounded p-3 font-mono text-sm resize-none"
+                placeholder="File content..."
+            ></textarea>
+        </div>
+    </div>
+</div>
+
+<script>
+function fileBrowser() {
+    return {
+        currentPath: '{{ current_path }}',
+        parent: null,
+        directories: [],
+        files: [],
+        loading: false,
+        showEditor: false,
+        editingFile: null,
+        fileContent: '',
+
+        async init() {
+            await this.loadFiles();
+        },
+
+        async loadFiles() {
+            this.loading = true;
+            try {
+                const response = await fetch(`/api/files/browse?path=${encodeURIComponent(this.currentPath)}`);
+                const data = await response.json();
+                
+                this.parent = data.parent;
+                this.directories = data.directories;
+                this.files = data.files;
+            } catch (error) {
+                alert('Error loading files: ' + error.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async navigateTo(path) {
+            this.currentPath = path;
+            await this.loadFiles();
+            // Update URL
+            window.history.pushState({}, '', `/files?path=${encodeURIComponent(path)}`);
+        },
+
+        async refreshFiles() {
+            await this.loadFiles();
+        },
+
+        selectFile(file) {
+            console.log('Selected file:', file);
+        },
+
+        async editFile(file) {
+            this.editingFile = file;
+            this.showEditor = true;
+            
+            try {
+                const response = await fetch(`/api/files/read?path=${encodeURIComponent(file.path)}`);
+                const data = await response.json();
+                this.fileContent = data.content;
+            } catch (error) {
+                alert('Error reading file: ' + error.message);
+                this.closeEditor();
+            }
+        },
+
+        async saveFile() {
+            if (!this.editingFile) return;
+            
+            try {
+                const response = await fetch('/api/files/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `path=${encodeURIComponent(this.editingFile.path)}&content=${encodeURIComponent(this.fileContent)}`
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('File saved successfully!');
+                    this.closeEditor();
+                    await this.loadFiles();
+                } else {
+                    alert('Save failed: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error saving file: ' + error.message);
+            }
+        },
+
+        closeEditor() {
+            this.showEditor = false;
+            this.editingFile = null;
+            this.fileContent = '';
+        },
+
+        isEditable(file) {
+            const editableExts = ['.py', '.js', '.jsx', '.html', '.css', '.json', '.txt', '.md', '.sh', '.yml', '.yaml'];
+            return editableExts.includes(file.extension);
+        },
+
+        getFileIcon(extension) {
+            const iconMap = {
+                '.py': 'fas fa-file-code text-blue-600',
+                '.js': 'fab fa-js-square text-yellow-600',
+                '.jsx': 'fab fa-react text-blue-400',
+                '.html': 'fab fa-html5 text-orange-600',
+                '.css': 'fab fa-css3-alt text-blue-600',
+                '.json': 'fas fa-file-code text-green-600',
+                '.md': 'fab fa-markdown text-gray-700',
+                '.txt': 'fas fa-file-alt text-gray-600',
+                '.sh': 'fas fa-terminal text-green-700'
+            };
+            return iconMap[extension] || 'fas fa-file text-gray-500';
+        },
+
+        formatSize(bytes) {
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            if (bytes === 0) return '0 B';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        },
+
+        formatDate(isoString) {
+            return new Date(isoString).toLocaleDateString();
+        }
+    }
+}
+</script>
+{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Viewer - JJ-Bot Dev Portal</title>
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .nav {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+        }
+        
+        .nav a {
+            text-decoration: none;
+            color: #333;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        
+        .nav a:hover, .nav a.active {
+            background: #007bff;
+            color: white;
+        }
+        
+        .status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .status-running {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-stopped {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .log-controls {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .log-viewer {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            padding: 15px;
+            height: calc(100vh - 350px);
+            overflow-y: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .log-line {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 2px 0;
+            padding: 2px 5px;
+            border-radius: 2px;
+        }
+        
+        .log-line:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .log-line.error {
+            color: #f48771;
+            background: rgba(244, 135, 113, 0.1);
+        }
+        
+        .log-line.warning {
+            color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .log-line.info {
+            color: #87d068;
+            background: rgba(135, 208, 104, 0.1);
+        }
+        
+        .log-line.debug {
+            color: #73abff;
+            background: rgba(115, 171, 255, 0.1);
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+        
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-left: auto;
+            font-size: 14px;
+        }
+        
+        .stat-item {
+            padding: 5px 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .connection-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .filter-input {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 200px;
+        }
+        
+        .log-timestamp {
+            color: #808080;
+            margin-right: 10px;
+        }
+        
+        .log-level {
+            font-weight: bold;
+            margin-right: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .level-error {
+            background: rgba(244, 135, 113, 0.2);
+            color: #f48771;
+        }
+        
+        .level-warning {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+        }
+        
+        .level-info {
+            background: rgba(135, 208, 104, 0.2);
+            color: #87d068;
+        }
+        
+        .level-debug {
+            background: rgba(115, 171, 255, 0.2);
+            color: #73abff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="status-indicator" id="apiStatus">Checking...</div>
+        
+        <div class="header">
+            <h1>📜 Real-time Log Viewer - JJ-Bot Dev Portal</h1>
+            <p>Monitor system logs and debug information</p>
+        </div>
+        
+        <div class="nav">
+            <a href="/">🏠 Dashboard</a>
+            <a href="/backups">💾 Backups</a>
+            <a href="/files">📁 Files</a>
+            <a href="/logs" class="active">📜 Logs</a>
+            <a href="/tools">🔧 Tools</a>
+        </div>
+        
+        <div class="log-controls">
+            <select id="logFile" onchange="switchLogFile()">
+                <option value="glue.log">API Log (glue.log)</option>
+                <option value="trades.log">Trades Log</option>
+                <option value="sim.log">Simulator Log</option>
+            </select>
+            
+            <input type="text" class="filter-input" id="filterInput" placeholder="Filter logs..." onkeyup="filterLogs()">
+            
+            <button class="btn btn-primary" onclick="refreshLogs()">🔄 Refresh</button>
+            <button class="btn btn-danger" onclick="clearDisplay()">🗑️ Clear Display</button>
+            <button class="btn btn-success" onclick="downloadLog()">💾 Download</button>
+            
+            <label class="checkbox-label">
+                <input type="checkbox" id="autoScroll" checked> Auto-scroll
+            </label>
+            
+            <label class="checkbox-label">
+                <input type="checkbox" id="realtime" checked onchange="toggleRealtime()"> Real-time
+            </label>
+            
+            <span id="connectionStatus" class="connection-status disconnected">Disconnected</span>
+            
+            <div class="stats">
+                <div class="stat-item">Lines: <span id="lineCount">0</span></div>
+                <div class="stat-item">Errors: <span id="errorCount">0</span></div>
+                <div class="stat-item">Warnings: <span id="warningCount">0</span></div>
+            </div>
+        </div>
+        
+        <div class="log-viewer" id="logViewer">
+            <div style="text-align: center; padding: 50px; color: #808080;">
+                Loading logs...
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        let allLogs = [];
+        let filteredLogs = [];
+        let stats = { lines: 0, errors: 0, warnings: 0 };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadLogs();
+            updateApiStatus();
+            setInterval(updateApiStatus, 10000);
+        });
+        
+        async function loadLogs() {
+            const logFile = document.getElementById('logFile').value;
+            
+            try {
+                const response = await fetch(`/api/logs/stream?file=${logFile}&lines=500`);
+                const data = await response.json();
+                
+                const viewer = document.getElementById('logViewer');
+                viewer.innerHTML = '';
+                
+                allLogs = data.lines || [];
+                stats = { lines: 0, errors: 0, warnings: 0 };
+                
+                if (allLogs.length === 0) {
+                    viewer.innerHTML = '<div style="text-align: center; padding: 50px; color: #808080;">No logs found</div>';
+                } else {
+                    allLogs.forEach(line => {
+                        addLogLine(line, false);
+                    });
+                }
+                
+                updateStats();
+                
+                // Connect WebSocket if real-time is enabled
+                if (document.getElementById('realtime').checked) {
+                    connectWebSocket();
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+                document.getElementById('logViewer').innerHTML = 
+                    '<div style="color: red; text-align: center; padding: 50px;">Error loading logs</div>';
+            }
+        }
+        
+        function connectWebSocket() {
+            if (ws) {
+                ws.close();
+            }
+            
+            const wsUrl = 'ws://127.0.0.1:8001/ws/logs';
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                document.getElementById('connectionStatus').className = 'connection-status connected';
+            };
+            
+            ws.onmessage = (event) => {
+                addLogLine(event.data, true);
+                allLogs.push(event.data);
+                
+                // Keep only last 1000 lines in memory
+                if (allLogs.length > 1000) {
+                    allLogs.shift();
+                    const viewer = document.getElementById('logViewer');
+                    if (viewer.firstChild) {
+                        viewer.removeChild(viewer.firstChild);
+                    }
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+            };
+        }
+        
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'connection-status connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'connection-status disconnected';
+            }
+        }
+        
+        function addLogLine(line, isNew = false) {
+            const viewer = document.getElementById('logViewer');
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            
+            // Parse log line for level and timestamp
+            const parsed = parseLogLine(line);
+            
+            // Apply styling based on log level
+            if (parsed.level) {
+                div.className += ` ${parsed.level.toLowerCase()}`;
+                
+                // Update stats
+                stats.lines++;
+                if (parsed.level === 'ERROR') stats.errors++;
+                if (parsed.level === 'WARNING') stats.warnings++;
+            }
+            
+            // Format the line with highlighting
+            div.innerHTML = formatLogLine(parsed);
+            
+            // Apply filter if active
+            const filterText = document.getElementById('filterInput').value.toLowerCase();
+            if (filterText && !line.toLowerCase().includes(filterText)) {
+                div.style.display = 'none';
+            }
+            
+            viewer.appendChild(div);
+            
+            // Auto-scroll if enabled
+            if (document.getElementById('autoScroll').checked) {
+                viewer.scrollTop = viewer.scrollHeight;
+            }
+            
+            // Update stats display
+            if (isNew) {
+                updateStats();
+            }
+        }
+        
+        function parseLogLine(line) {
+            // Try to parse structured log format
+            // Example: 2024-01-15 10:30:45 ERROR: Something went wrong
+            const timestampRegex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
+            const levelRegex = /(ERROR|WARNING|INFO|DEBUG):/i;
+            
+            const timestampMatch = line.match(timestampRegex);
+            const levelMatch = line.match(levelRegex);
+            
+            return {
+                timestamp: timestampMatch ? timestampMatch[1] : null,
+                level: levelMatch ? levelMatch[1].toUpperCase() : null,
+                message: line,
+                raw: line
+            };
+        }
+        
+        function formatLogLine(parsed) {
+            let formatted = '';
+            
+            if (parsed.timestamp) {
+                formatted += `<span class="log-timestamp">${parsed.timestamp}</span>`;
+            }
+            
+            if (parsed.level) {
+                formatted += `<span class="log-level level-${parsed.level.toLowerCase()}">${parsed.level}</span>`;
+            }
+            
+            // Escape HTML and preserve the rest of the message
+            const message = parsed.raw
+                .replace(parsed.timestamp || '', '')
+                .replace(new RegExp(parsed.level + ':', 'i'), '')
+                .trim();
+            
+            formatted += escapeHtml(message);
+            
+            return formatted || escapeHtml(parsed.raw);
+        }
+        
+        function filterLogs() {
+            const filterText = document.getElementById('filterInput').value.toLowerCase();
+            const lines = document.querySelectorAll('.log-line');
+            
+            lines.forEach(line => {
+                if (filterText === '' || line.textContent.toLowerCase().includes(filterText)) {
+                    line.style.display = 'block';
+                } else {
+                    line.style.display = 'none';
+                }
+            });
+        }
+        
+        function clearDisplay() {
+            document.getElementById('logViewer').innerHTML = '';
+            allLogs = [];
+            stats = { lines: 0, errors: 0, warnings: 0 };
+            updateStats();
+        }
+        
+        function refreshLogs() {
+            loadLogs();
+        }
+        
+        function switchLogFile() {
+            if (ws) {
+                ws.close();
+            }
+            loadLogs();
+        }
+        
+        function toggleRealtime() {
+            if (document.getElementById('realtime').checked) {
+                connectWebSocket();
+            } else {
+                if (ws) {
+                    ws.close();
+                }
+            }
+        }
+        
+        function downloadLog() {
+            const logFile = document.getElementById('logFile').value;
+            const content = allLogs.join('\n');
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${logFile}_${new Date().toISOString().split('T')[0]}.log`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function updateStats() {
+            document.getElementById('lineCount').textContent = stats.lines;
+            document.getElementById('errorCount').textContent = stats.errors;
+            document.getElementById('warningCount').textContent = stats.warnings;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function updateApiStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('apiStatus');
+                if (data.trading_api.status === 'running' && data.trading_api.healthy) {
+                    statusEl.textContent = 'API Running';
+                    statusEl.className = 'status-indicator status-running';
+                } else {
+                    statusEl.textContent = 'API Stopped';
+                    statusEl.className = 'status-indicator status-stopped';
+                }
+            } catch (error) {
+                console.error('Error checking API status:', error);
+            }
+        }
+    </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser - JJ-Bot Dev Portal</title>
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .nav {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+        }
+        
+        .nav a {
+            text-decoration: none;
+            color: #333;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        
+        .nav a:hover, .nav a.active {
+            background: #007bff;
+            color: white;
+        }
+        
+        .status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .status-running {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-stopped {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .file-browser {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: calc(100vh - 250px);
+        }
+        
+        .file-tree {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-content {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 2px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        
+        .file-item:hover {
+            background: #f0f0f0;
+        }
+        
+        .file-item.selected {
+            background: #e3f2fd;
+        }
+        
+        .directory {
+            font-weight: 600;
+            color: #0066cc;
+        }
+        
+        .file {
+            color: #333;
+        }
+        
+        .upload-zone {
+            background: white;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+        
+        .upload-zone.dragover {
+            border-color: #007bff;
+            background: #f0f8ff;
+        }
+        
+        .breadcrumb {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .file-preview {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .file-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+        
+        .icon {
+            width: 16px;
+            height: 16px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="status-indicator" id="apiStatus">Checking...</div>
+        
+        <div class="header">
+            <h1>📁 File Browser - JJ-Bot Dev Portal</h1>
+            <p>Browse and manage project files</p>
+        </div>
+        
+        <div class="nav">
+            <a href="/">🏠 Dashboard</a>
+            <a href="/backups">💾 Backups</a>
+            <a href="/files" class="active">📁 Files</a>
+            <a href="/logs">📜 Logs</a>
+            <a href="/tools">🔧 Tools</a>
+        </div>
+        
+        <div class="upload-zone" id="uploadZone">
+            <p>📤 Drag and drop files here or click to upload</p>
+            <input type="file" id="fileUpload" style="display: none;" multiple />
+            <button class="btn btn-primary" onclick="document.getElementById('fileUpload').click()">
+                Select Files
+            </button>
+        </div>
+        
+        <div class="file-browser">
+            <div class="file-tree">
+                <h3>Project Structure</h3>
+                <div class="breadcrumb" id="breadcrumb">~/jj-bot</div>
+                <div id="treeContent">Loading...</div>
+            </div>
+            
+            <div class="file-content">
+                <h3>File Preview</h3>
+                <div id="fileInfo" class="file-info" style="display: none;">
+                    <span id="fileName"></span> | 
+                    <span id="fileSize"></span> | 
+                    <button class="btn btn-secondary" onclick="downloadCurrentFile()">Download</button>
+                </div>
+                <div id="contentArea">
+                    <p style="color: #666; text-align: center; padding: 50px;">
+                        Select a file to preview its contents
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentPath = "";
+        let currentFile = "";
+        let pathStack = [];
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFiles();
+            setupDragDrop();
+            updateApiStatus();
+            setInterval(updateApiStatus, 10000);
+        });
+        
+        async function loadFiles(path = "") {
+            try {
+                const response = await fetch(`/api/files/browse?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                
+                currentPath = path;
+                updateBreadcrumb(path);
+                
+                const treeContent = document.getElementById('treeContent');
+                treeContent.innerHTML = '';
+                
+                // Add back button if not at root
+                if (path) {
+                    const backBtn = document.createElement('div');
+                    backBtn.className = 'file-item';
+                    backBtn.innerHTML = '⬆️ <span>.. (Parent Directory)</span>';
+                    backBtn.onclick = () => {
+                        const parentPath = path.split('/').slice(0, -1).join('/');
+                        loadFiles(parentPath);
+                    };
+                    treeContent.appendChild(backBtn);
+                }
+                
+                // Sort items: directories first, then files
+                data.items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = `file-item ${item.type}`;
+                    
+                    const icon = item.type === 'directory' ? '📁' : getFileIcon(item.name);
+                    const size = item.type === 'file' ? ` (${formatFileSize(item.size)})` : '';
+                    
+                    div.innerHTML = `${icon} <span>${item.name}${size}</span>`;
+                    
+                    div.onclick = () => {
+                        if (item.type === 'directory') {
+                            loadFiles(item.path);
+                        } else {
+                            previewFile(item.path, item.name, item.size);
+                            // Highlight selected file
+                            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+                            div.classList.add('selected');
+                        }
+                    };
+                    
+                    treeContent.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading files:', error);
+                document.getElementById('treeContent').innerHTML = 
+                    '<p style="color: red;">Error loading files</p>';
+            }
+        }
+        
+        async function previewFile(path, name, size) {
+            currentFile = path;
+            
+            // Update file info
+            document.getElementById('fileInfo').style.display = 'block';
+            document.getElementById('fileName').textContent = name;
+            document.getElementById('fileSize').textContent = formatFileSize(size);
+            
+            try {
+                const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                
+                const contentArea = document.getElementById('contentArea');
+                
+                if (data.type === 'text') {
+                    contentArea.innerHTML = `<pre class="file-preview">${escapeHtml(data.content)}</pre>`;
+                    // Add syntax highlighting if needed
+                    highlightCode(path);
+                } else {
+                    contentArea.innerHTML = `
+                        <div style="text-align: center; padding: 50px;">
+                            <p>🔒 Binary file - cannot preview</p>
+                            <button class="btn btn-primary" onclick="downloadCurrentFile()">
+                                Download File
+                            </button>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading file:', error);
+                document.getElementById('contentArea').innerHTML = 
+                    '<p style="color: red; text-align: center;">Error loading file content</p>';
+            }
+        }
+        
+        function downloadCurrentFile() {
+            if (currentFile) {
+                window.location.href = `/api/files/download?path=${encodeURIComponent(currentFile)}`;
+            }
+        }
+        
+        function setupDragDrop() {
+            const uploadZone = document.getElementById('uploadZone');
+            const fileInput = document.getElementById('fileUpload');
+            
+            uploadZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+            
+            uploadZone.addEventListener('dragleave', () => {
+                uploadZone.classList.remove('dragover');
+            });
+            
+            uploadZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                handleFiles(e.dataTransfer.files);
+            });
+            
+            fileInput.addEventListener('change', (e) => {
+                handleFiles(e.target.files);
+            });
+        }
+        
+        async function handleFiles(files) {
+            for (const file of files) {
+                await uploadFile(file);
+            }
+            // Reload current directory
+            loadFiles(currentPath);
+        }
+        
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', currentPath);
+            
+            try {
+                const response = await fetch('/api/files/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                console.log('Upload successful:', result);
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('Error uploading file: ' + error.message);
+            }
+        }
+        
+        function updateBreadcrumb(path) {
+            const parts = path ? path.split('/') : [];
+            let breadcrumb = '~/jj-bot';
+            
+            if (parts.length > 0) {
+                breadcrumb += ' / ' + parts.join(' / ');
+            }
+            
+            document.getElementById('breadcrumb').textContent = breadcrumb;
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+        
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'py': '🐍',
+                'js': '🟨',
+                'jsx': '⚛️',
+                'json': '📋',
+                'txt': '📄',
+                'md': '📝',
+                'html': '🌐',
+                'css': '🎨',
+                'png': '🖼️',
+                'jpg': '🖼️',
+                'gif': '🖼️',
+                'pdf': '📑',
+                'zip': '📦',
+                'sh': '📜',
+                'log': '📜'
+            };
+            return icons[ext] || '📄';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function highlightCode(path) {
+            // Basic syntax highlighting based on file extension
+            // You could integrate a proper syntax highlighter like Prism.js here
+        }
+        
+        async function updateApiStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('apiStatus');
+                if (data.trading_api.status === 'running' && data.trading_api.healthy) {
+                    statusEl.textContent = 'API Running';
+                    statusEl.className = 'status-indicator status-running';
+                } else {
+                    statusEl.textContent = 'API Stopped';
+                    statusEl.className = 'status-indicator status-stopped';
+                }
+            } catch (error) {
+                console.error('Error checking API status:', error);
+            }
+        }
+    </script>
+</body>
+</html>

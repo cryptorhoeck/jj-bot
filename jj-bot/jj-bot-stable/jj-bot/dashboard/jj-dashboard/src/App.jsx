@@ -1,0 +1,523 @@
+import React, { useState, useEffect } from 'react';
+import './App.css';
+import { ModuleStatus } from './ModuleStatus.jsx';
+
+const API_BASE = 'http://127.0.0.1:8000';
+
+function App() {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [trades, setTrades] = useState([]);
+  const [summary, setSummary] = useState({
+    total_trades: 0,
+    total_pnl: 0,
+    win_rate: 0,
+    avg_pnl: 0
+  });
+  const [marketData, setMarketData] = useState({});
+  const [simulatorRunning, setSimulatorRunning] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Dark mode colors
+  const colors = {
+    bg: darkMode ? '#1a1a1a' : '#f3f4f6',
+    card: darkMode ? '#2d2d2d' : 'white',
+    text: darkMode ? '#e0e0e0' : '#111827',
+    textMuted: darkMode ? '#a0a0a0' : '#6b7280',
+    border: darkMode ? '#404040' : '#e5e7eb',
+    green: '#10b981',
+    red: '#ef4444',
+    blue: darkMode ? '#60a5fa' : '#3b82f6',
+    yellow: darkMode ? '#fbbf24' : '#eab308',
+    gray: darkMode ? '#4b5563' : '#6b7280'
+  };
+
+  // ALL YOUR ORIGINAL FETCH FUNCTIONS
+  const fetchTrades = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/trades?limit=50`);
+      const data = await response.json();
+      setTrades(data.trades || []);
+    } catch (error) {
+      console.error('Error fetching trades:', error);
+    }
+  };
+
+  const fetchSummary = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/summary`);
+      const data = await response.json();
+      setSummary(data);
+    } catch (error) {
+      console.error('Error fetching summary:', error);
+    }
+  };
+
+  // NEW: Fetch real market data
+  const fetchMarketData = async () => {
+    try {
+      // First try the live endpoint if it exists
+      const response = await fetch(`${API_BASE}/api/market/live`);
+      if (response.ok) {
+        const data = await response.json();
+        setMarketData(data);
+      } else {
+        // Fallback to mock data for now
+        setMarketData({
+          "BTCUSDT": { "price": 45234, "change_24h": 2.5 },
+          "ETHUSDT": { "price": 2567, "change_24h": -1.2 },
+          "BNBUSDT": { "price": 312, "change_24h": 0.8 },
+          "ADAUSDT": { "price": 0.52, "change_24h": 3.2 },
+          "DOGEUSDT": { "price": 0.082, "change_24h": -0.5 }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching market data:', error);
+    }
+  };
+
+  const checkSimulatorStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/status`);
+      const data = await response.json();
+      setSimulatorRunning(data.running);
+    } catch (error) {
+      console.error('Error checking simulator:', error);
+    }
+  };
+
+  // ALL YOUR ORIGINAL CONTROL FUNCTIONS
+  const startSimulator = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/start`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      
+      if (data.status === 'started' || data.status === 'already_running') {
+        setSimulatorRunning(true);
+        alert('Trade simulator started! Trades will appear in a few seconds.');
+        setTimeout(() => {
+          fetchTrades();
+          fetchSummary();
+        }, 3000);
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error starting simulator: ' + error);
+    }
+    setLoading(false);
+  };
+
+  const stopSimulator = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/stop`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      setSimulatorRunning(false);
+      alert('Simulator stopped');
+    } catch (error) {
+      alert('Error stopping simulator: ' + error);
+    }
+    setLoading(false);
+  };
+
+  const exportCSV = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/data/export`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trades_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('Error exporting data: ' + error);
+    }
+  };
+
+  const clearDatabase = async () => {
+    if (confirm('Are you sure you want to clear all trade data? This will backup first.')) {
+      try {
+        const response = await fetch(`${API_BASE}/api/data/clear`, {
+          method: 'POST'
+        });
+        const data = await response.json();
+        alert('Database cleared and backed up!');
+        
+        setTrades([]);
+        setSummary({
+          total_trades: 0,
+          total_pnl: 0,
+          win_rate: 0,
+          avg_pnl: 0
+        });
+        
+        fetchTrades();
+        fetchSummary();
+      } catch (error) {
+        alert('Error clearing database: ' + error);
+      }
+    }
+  };
+
+  // Auto-refresh
+  useEffect(() => {
+    fetchTrades();
+    fetchSummary();
+    fetchMarketData();
+    checkSimulatorStatus();
+
+    const interval = setInterval(() => {
+      fetchTrades();
+      fetchSummary();
+      fetchMarketData();
+      checkSimulatorStatus();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div style={{ 
+      minHeight: '100vh', 
+      backgroundColor: colors.bg, 
+      color: colors.text,
+      fontFamily: 'system-ui',
+      transition: 'background-color 0.3s, color 0.3s'
+    }}>
+      {/* HEADER WITH DARK MODE TOGGLE */}
+      <div style={{ 
+        backgroundColor: colors.card, 
+        boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)',
+        transition: 'background-color 0.3s'
+      }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: colors.text }}>
+                JJ-Bot Trading Dashboard v2.2
+              </h1>
+              <div style={{ fontSize: '0.875rem', color: colors.textMuted, marginTop: '0.5rem' }}>
+                Simulator: {simulatorRunning ? '🟢 Running' : '🔴 Stopped'} | 
+                Trades: {summary.total_trades} | 
+                P&L: ${summary.total_pnl?.toFixed(2)}
+              </div>
+            </div>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: colors.border,
+                color: colors.text,
+                border: 'none',
+                borderRadius: '0.375rem',
+                cursor: 'pointer',
+                fontSize: '1.5rem'
+              }}
+              title="Toggle dark mode"
+            >
+              {darkMode ? '☀️' : '🌙'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+        {/* NAVIGATION TABS - NOW WITH MARKET TAB */}
+        <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', gap: '2rem' }}>
+            {['overview', 'market', 'control', 'trades'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '0.5rem 0',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === tab ? `2px solid ${colors.blue}` : '2px solid transparent',
+                  color: activeTab === tab ? colors.blue : colors.textMuted,
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                  transition: 'color 0.3s'
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* OVERVIEW TAB - YOUR ORIGINAL WITH DARK MODE SUPPORT */}
+        {activeTab === 'overview' && (
+          <div>
+            {/* Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+              <div style={{ 
+                backgroundColor: colors.card, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total Trades</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.total_trades}</div>
+              </div>
+              <div style={{ 
+                backgroundColor: colors.card, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total P&L</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.total_pnl >= 0 ? colors.green : colors.red }}>
+                  ${summary.total_pnl?.toFixed(2)}
+                </div>
+              </div>
+              <div style={{ 
+                backgroundColor: colors.card, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Win Rate</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.win_rate?.toFixed(1)}%</div>
+              </div>
+              <div style={{ 
+                backgroundColor: colors.card, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Avg P&L</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.avg_pnl >= 0 ? colors.green : colors.red }}>
+                  ${summary.avg_pnl?.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div style={{ 
+              backgroundColor: colors.card, 
+              borderRadius: '0.5rem', 
+              padding: '1.5rem', 
+              boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+            }}>
+              <h3 style={{ fontWeight: '600', marginBottom: '1rem', color: colors.text }}>Recent Activity</h3>
+              {trades.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {trades.slice(0, 5).map((trade, index) => (
+                    <div key={index} style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      padding: '0.5rem', 
+                      backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
+                      borderRadius: '0.25rem'
+                    }}>
+                      <span>{new Date(trade.timestamp).toLocaleTimeString()}</span>
+                      <span>{trade.symbol}</span>
+                      <span>{trade.signal}</span>
+                      <span>${trade.last_price}</span>
+                      <span style={{ color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
+                        ${trade.pnl?.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: colors.textMuted }}>No trades yet. Start the simulator to generate trades.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* NEW MARKET TAB WITH REAL DATA */}
+        {activeTab === 'market' && (
+          <div style={{ 
+            backgroundColor: colors.card, 
+            borderRadius: '0.5rem', 
+            padding: '1.5rem', 
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+              🌐 Live Market Data
+            </h2>
+            {marketData.source && (
+              <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+                Source: {marketData.source} | Updated: {new Date().toLocaleTimeString()}
+              </p>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              {Object.entries(marketData).filter(([key]) => key.includes('USDT')).map(([symbol, data]) => (
+                <div key={symbol} style={{ 
+                  border: `1px solid ${colors.border}`, 
+                  borderRadius: '0.5rem', 
+                  padding: '1rem',
+                  backgroundColor: darkMode ? '#1a1a1a' : 'white'
+                }}>
+                  <h3 style={{ fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>{symbol}</h3>
+                  <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>
+                    ${data.price?.toLocaleString()}
+                  </p>
+                  <p style={{ 
+                    fontSize: '0.875rem', 
+                    color: data.change_24h >= 0 ? colors.green : colors.red,
+                    fontWeight: 'bold'
+                  }}>
+                    {data.change_24h >= 0 ? '↑' : '↓'} {Math.abs(data.change_24h).toFixed(2)}%
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* CONTROL TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
+        {activeTab === 'control' && (
+          <div style={{ 
+            backgroundColor: colors.card, 
+            borderRadius: '0.5rem', 
+            padding: '1.5rem', 
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1.5rem', color: colors.text }}>
+              🎮 Control Panel
+            </h2>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+              {/* Trade Simulator */}
+              <div style={{ 
+                border: `1px solid ${colors.border}`, 
+                borderRadius: '0.5rem', 
+                padding: '1rem',
+                backgroundColor: darkMode ? '#1a1a1a' : 'white'
+              }}>
+                <h3 style={{ fontWeight: '600', marginBottom: '0.75rem', color: colors.text }}>Trade Simulator</h3>
+                <button
+                  onClick={simulatorRunning ? stopSimulator : startSimulator}
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 1rem',
+                    backgroundColor: simulatorRunning ? colors.red : colors.green,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.5 : 1
+                  }}
+                >
+                  {loading ? 'Processing...' : simulatorRunning ? '⏹️ Stop Simulator' : '▶️ Start Simulator'}
+                </button>
+                {simulatorRunning && (
+                  <p style={{ fontSize: '0.75rem', color: colors.green, marginTop: '0.5rem' }}>
+                    Generating trades every 2-5 seconds
+                  </p>
+                )}
+              </div>
+
+              {/* Data Management */}
+              <div style={{ 
+                border: `1px solid ${colors.border}`, 
+                borderRadius: '0.5rem', 
+                padding: '1rem',
+                backgroundColor: darkMode ? '#1a1a1a' : 'white'
+              }}>
+                <h3 style={{ fontWeight: '600', marginBottom: '0.75rem', color: colors.text }}>Data Management</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button
+                    onClick={exportCSV}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      backgroundColor: colors.blue,
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.375rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📁 Export CSV
+                  </button>
+                  <button
+                    onClick={clearDatabase}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      backgroundColor: colors.gray,
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.375rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ Clear Data
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TRADES TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
+        {activeTab === 'trades' && (
+          <div style={{ 
+            backgroundColor: colors.card, 
+            borderRadius: '0.5rem', 
+            padding: '1.5rem', 
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+              Recent Trades ({trades.length})
+            </h2>
+            {trades.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Time</th>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Symbol</th>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Signal</th>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Price</th>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>VWAP</th>
+                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trades.map((trade, index) => (
+                      <tr key={index} style={{ 
+                        borderBottom: `1px solid ${colors.border}`,
+                        backgroundColor: index % 2 === 0 ? 'transparent' : (darkMode ? '#1a1a1a' : '#f9fafb')
+                      }}>
+                        <td style={{ padding: '0.5rem', color: colors.text }}>{new Date(trade.timestamp).toLocaleTimeString()}</td>
+                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.symbol}</td>
+                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.signal}</td>
+                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.last_price}</td>
+                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.vwap}</td>
+                        <td style={{ padding: '0.5rem', color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
+                          ${trade.pnl?.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ color: colors.textMuted, textAlign: 'center', padding: '2rem' }}>
+                No trades yet. Go to Control tab and start the simulator.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+      <ModuleStatus API_BASE={API_BASE} />
+    </div>
+  );
+}
+
+export default App;
