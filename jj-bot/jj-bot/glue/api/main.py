@@ -106,11 +106,15 @@ async def start_simulator():
     
     # Start the simulator
     try:
+        # Use the project root directory (2 levels up from this file)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sim_trader_path = os.path.join(project_root, "glue", "api", "sim_trader.py")
+
         simulator_process = subprocess.Popen(
-            [sys.executable, "glue/api/sim_trader.py"],
+            [sys.executable, sim_trader_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd="/home/ren/jj-bot"
+            cwd=project_root
         )
         await asyncio.sleep(1)
         return {"status": "started", "message": "Trade simulator started successfully"}

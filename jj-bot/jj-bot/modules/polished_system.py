@@ -4,6 +4,7 @@ Polished Trading System - Production Ready
 Top 20 Cryptos with Enhanced Features
 """
 
+import os
 import time
 import json
 from datetime import datetime
@@ -222,7 +223,10 @@ def write_status(self):
         "signals_today": self.stats.get("signals_generated", 0)
     }
     try:
-        with open("/home/ren/jj-bot/data/module_status.json", "w") as f:
+        # Use relative path from project root
+        status_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "module_status.json")
+        os.makedirs(os.path.dirname(status_file), exist_ok=True)
+        with open(status_file, "w") as f:
             json.dump(status_data, f)
         print(f"📝 Status written: {status_data['coins_tracked']} coins tracked")
     except Exception as e:

@@ -4,8 +4,10 @@ from pathlib import Path
 from typing import Dict, List
 import datetime
 
-# Use consistent database path
-DB_PATH = Path.home() / "jj-bot" / "data" / "trades.db"
+# Use project-relative database path (cross-platform compatible)
+# Go up 2 levels from glue/api to project root, then into data/
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DB_PATH = PROJECT_ROOT / "data" / "trades.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def get_connection():

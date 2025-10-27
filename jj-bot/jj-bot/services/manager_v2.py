@@ -17,8 +17,14 @@ from services.trading.simulator_service import SimulatorService
 class ServiceManager:
     """Enhanced Service Manager with real services"""
     
-    def __init__(self, db_path: str = "jjbot.db"):
+    def __init__(self, db_path: str = None):
         self.services = {}
+        # Use data directory in project root if no path specified
+        if db_path is None:
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            data_dir = os.path.join(project_root, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            db_path = os.path.join(data_dir, "jjbot.db")
         self.db_path = db_path
         self._init_database()
         self._init_services()
