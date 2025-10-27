@@ -1,8 +1,0 @@
-root        1015  0.0  0.0  39988 20924 ?        Ss   11:37   0:00 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
-root        1188  0.0  0.0 118060 22732 ?        Ssl  11:37   0:00 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
-ren         5975  0.0  0.0 101472 23412 pts/0    Sl   13:02   0:07 python3 -m uvicorn app:app --host 0.0.0.0 --port 8001 --reload
-ren         5977  0.0  0.0  19848 11092 pts/0    S    13:02   0:00 /home/ren/jj-bot/.venv/bin/python3 -c from multiprocessing.resource_tracker import main;main(4)
-ren         5978  0.1  0.1 219976 60428 pts/0    Sl   13:02   0:18 /home/ren/jj-bot/.venv/bin/python3 -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7) --multiprocessing-fork
-ren         7024  0.0  0.0 103044 27640 pts/0    Sl   13:30   0:07 /home/ren/jj-bot/.venv/bin/python3 /home/ren/jj-bot/.venv/bin/uvicorn glue.api.main:app --host 0.0.0.0 --port 8000 --reload
-ren         7026  0.0  0.0  19852 11264 pts/0    S    13:30   0:00 /home/ren/jj-bot/.venv/bin/python3 -c from multiprocessing.resource_tracker import main;main(4)
-ren         7027  0.1  0.3 1284724 101644 pts/0  Sl   13:30   0:18 /home/ren/jj-bot/.venv/bin/python3 -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7) --multiprocessing-fork
