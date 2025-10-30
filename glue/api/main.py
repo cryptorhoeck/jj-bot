@@ -39,6 +39,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
 from service_endpoints import router as service_router
 
+# Initialize database on startup
+engine.init_db()
+print("✅ Database initialized")
+
 # Global state
 simulator_process = None
 
@@ -202,22 +206,12 @@ async def dashboard():
     """)
 
 
-# Include service endpoints
-app.include_router(service_router)
-
-if __name__ == "__main__":
-    import uvicorn
-    print("JJ-Bot API v2.1 starting...")
-    print("API: http://127.0.0.1:8000")
-    print("Dashboard: http://localhost:5173")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
-
 # ===== REAL MARKET DATA FROM COINGECKO (FREE) =====
 @app.get("/api/market/live")
 async def get_market_live():
     """Get live market data for top 20 cryptos"""
     import requests
-    
+
     try:
         # Top 20 cryptos (excluding stablecoins)
         coins = [
@@ -227,7 +221,7 @@ async def get_market_live():
             "litecoin", "bitcoin-cash", "uniswap", "stellar", "cosmos",
             "ethereum-classic"
         ]
-        
+
         symbols = {
             "bitcoin": "BTC", "ethereum": "ETH", "binancecoin": "BNB",
             "solana": "SOL", "ripple": "XRP", "cardano": "ADA",
@@ -237,7 +231,7 @@ async def get_market_live():
             "bitcoin-cash": "BCH", "uniswap": "UNI", "stellar": "XLM",
             "cosmos": "ATOM", "ethereum-classic": "ETC"
         }
-        
+
         # Fetch from CoinGecko
         ids = ",".join(coins)
         url = "https://api.coingecko.com/api/v3/simple/price"
@@ -248,10 +242,10 @@ async def get_market_live():
             "include_market_cap": "true",
             "include_24hr_vol": "true"
         }
-        
+
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
-        
+
         # Format for frontend
         result = []
         for coin_id in coins:
@@ -263,9 +257,9 @@ async def get_market_live():
                     "market_cap": data[coin_id].get("usd_market_cap", 0),
                     "volume_24h": data[coin_id].get("usd_24h_vol", 0)
                 })
-        
+
         return {"status": "success", "data": result}
-        
+
     except Exception as e:
         # Return placeholder data if API fails
         return {
@@ -277,6 +271,12 @@ async def get_market_live():
             ]
         }
 
-# Include module endpoints
+# Include service endpoints
+app.include_router(service_router)
 
-# Simple module status endpoint
+if __name__ == "__main__":
+    import uvicorn
+    print("JJ-Bot API v2.1 starting...")
+    print("API: http://127.0.0.1:8000")
+    print("Dashboard: http://localhost:5173")
+    uvicorn.run(app, host="127.0.0.1", port=8000)
