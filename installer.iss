@@ -78,28 +78,29 @@ Filename: "taskkill"; Parameters: "/F /IM node.exe /FI ""WINDOWTITLE eq *vite*""
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
+  ErrorCode: Integer;
 begin
   Result := True;
 
   // Check if Python is installed
-  if not ShellExec('', 'python', '--version', '', SW_HIDE, ewNoWait, ResultCode) then
+  if not Exec('cmd.exe', '/C python --version', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
   begin
     if MsgBox('Python 3.8+ is required but not found. Would you like to download it now?',
               mbConfirmation, MB_YESNO) = IDYES then
     begin
-      ShellExec('open', 'https://www.python.org/downloads/', '', '', SW_SHOW, ewNoWait, ResultCode);
+      ShellExec('open', 'https://www.python.org/downloads/', '', '', SW_SHOW, ewNoWait, ErrorCode);
     end;
     Result := False;
     Exit;
   end;
 
   // Check if Node.js is installed
-  if not ShellExec('', 'node', '--version', '', SW_HIDE, ewNoWait, ResultCode) then
+  if not Exec('cmd.exe', '/C node --version', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
   begin
     if MsgBox('Node.js 16+ is required but not found. Would you like to download it now?',
               mbConfirmation, MB_YESNO) = IDYES then
     begin
-      ShellExec('open', 'https://nodejs.org/', '', '', SW_SHOW, ewNoWait, ResultCode);
+      ShellExec('open', 'https://nodejs.org/', '', '', SW_SHOW, ewNoWait, ErrorCode);
     end;
     Result := False;
     Exit;
