@@ -30,7 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startup"; Description: "Start JJ-Bot automatically when Windows starts"; GroupDescription: "Auto-start:"; Flags: checked
+Name: "startup"; Description: "Start JJ-Bot automatically when Windows starts"; GroupDescription: "Auto-start:"
 
 [Files]
 ; Main application files
