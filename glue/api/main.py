@@ -12,7 +12,6 @@ from io import StringIO
 from typing import List, Dict, Any
 
 from fastapi import FastAPI
-from service_endpoints import router as service_router
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -38,6 +37,7 @@ app.add_middleware(
 # Import engine with proper path handling
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
+from service_endpoints import router as service_router
 
 # Global state
 simulator_process = None
@@ -204,35 +204,6 @@ async def dashboard():
 
 # Include service endpoints
 app.include_router(service_router)
-
-@app.get("/api/market/live")
-async def get_market_live():
-    """Get live market data for top 20 cryptos"""
-    return {
-        "status": "success",
-        "data": [
-            {"symbol": "BTC", "price": 45000, "change_24h": 2.5},
-            {"symbol": "ETH", "price": 2500, "change_24h": -1.2},
-            {"symbol": "BNB", "price": 350, "change_24h": 0.8},
-            {"symbol": "SOL", "price": 100, "change_24h": 5.2},
-            {"symbol": "XRP", "price": 0.65, "change_24h": -0.5},
-            {"symbol": "ADA", "price": 0.45, "change_24h": 1.8},
-            {"symbol": "DOGE", "price": 0.08, "change_24h": 3.2},
-            {"symbol": "AVAX", "price": 35, "change_24h": -2.1},
-            {"symbol": "TRX", "price": 0.11, "change_24h": 0.3},
-            {"symbol": "LINK", "price": 15, "change_24h": 4.5},
-            {"symbol": "DOT", "price": 7, "change_24h": -1.8},
-            {"symbol": "MATIC", "price": 0.85, "change_24h": 2.2},
-            {"symbol": "WBTC", "price": 44900, "change_24h": 2.4},
-            {"symbol": "SHIB", "price": 0.000025, "change_24h": 6.5},
-            {"symbol": "LTC", "price": 85, "change_24h": 1.2},
-            {"symbol": "BCH", "price": 280, "change_24h": -0.8},
-            {"symbol": "UNI", "price": 6.5, "change_24h": 3.8},
-            {"symbol": "XLM", "price": 0.12, "change_24h": -2.5},
-            {"symbol": "ATOM", "price": 9.5, "change_24h": 4.1},
-            {"symbol": "ETC", "price": 22, "change_24h": -1.5}
-        ]
-    }
 
 if __name__ == "__main__":
     import uvicorn
