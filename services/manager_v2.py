@@ -51,45 +51,20 @@ class ServiceManager:
     
     def _init_services(self):
         """Initialize real service instances"""
-        # Create real service instances
-        # Initialize all services (placeholder for now)
+        # Import all services
         from services.trading.simulator_service import SimulatorService
-        
-        # Create placeholder service instances
-        simulator = SimulatorService()
-        
-        # For now, create placeholder services
-        class PlaceholderService:
-            def __init__(self, name, auto_start=False):
-                self.name = name
-                self.auto_start = auto_start
-                self.status = "stopped"
-                
-            def start(self):
-                self.status = "running"
-                return {"success": True, "message": f"{self.name} started"}
-                
-            def stop(self):
-                self.status = "stopped"
-                return {"success": True, "message": f"{self.name} stopped"}
-                
-            def get_status(self):
-                return {
-                    "name": self.name,
-                    "status": self.status,
-                    "auto_start": self.auto_start,
-                    "uptime": None,
-                    "config": {},
-                    "stats": {}
-                }
-        
+        from services.trading.market_feed_service import MarketFeedService
+        from services.trading.analytics_service import AnalyticsService
+        from services.trading.trading_bot_service import TradingBotService
+
+        # Create real service instances
         self.services = {
-            "simulator": simulator,
-            "market_feed": PlaceholderService("market_feed", auto_start=True),
-            "analytics": PlaceholderService("analytics", auto_start=True),
-            "trading_bot": PlaceholderService("trading_bot", auto_start=False)
+            "simulator": SimulatorService(),
+            "market_feed": MarketFeedService(),
+            "analytics": AnalyticsService(),
+            "trading_bot": TradingBotService()
         }
-        
+
         # Sync with database
         for name, service in self.services.items():
             self._sync_service_state(name)
@@ -166,6 +141,21 @@ class ServiceManager:
     def get_all_services(self) -> List[Dict[str, Any]]:
         """Get status of all real services"""
         return [
-            self.get_service_status(name) 
+            self.get_service_status(name)
             for name in self.services
         ]
+
+    def start_auto_services(self) -> List[str]:
+        """
+        Start all services marked with auto_start=True
+
+        Returns:
+            List of service names that were started
+        """
+        started = []
+        for name, service in self.services.items():
+            if service.auto_start and service.status != "running":
+                result = self.start_service(name)
+                if result.get("success"):
+                    started.append(name)
+        return started

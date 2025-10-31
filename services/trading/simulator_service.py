@@ -53,3 +53,68 @@ class SimulatorService(BaseService):
             requests.post(f"{self.api_base}/api/simulator/stop")
         except:
             pass
+
+    def generate_trades(self, num_trades: int = 50):
+        """Generate test trades directly"""
+        try:
+            import sqlite3
+            import random
+            from datetime import datetime, timedelta
+
+            # Connect to database
+            db_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'trades.db')
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Symbols to trade
+            symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'DOT', 'LINK', 'MATIC', 'UNI', 'AVAX']
+
+            # Base prices
+            base_prices = {
+                'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
+                'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35
+            }
+
+            # Generate trades
+            trades_inserted = 0
+            current_time = datetime.now()
+
+            for i in range(num_trades):
+                # Random symbol
+                symbol = random.choice(symbols)
+                base_price = base_prices[symbol]
+
+                # Random price variation (±5%)
+                last_price = base_price * (1 + random.uniform(-0.05, 0.05))
+                vwap = last_price * (1 + random.uniform(-0.02, 0.02))
+
+                # Random signal
+                signal = random.choice(['BUY', 'SELL'])
+
+                # Random P&L (-50 to +100)
+                pnl = random.uniform(-50, 100)
+
+                # Timestamp (spread over last 24 hours)
+                timestamp = current_time - timedelta(hours=random.randint(0, 24), minutes=random.randint(0, 59))
+
+                # Insert trade - match actual schema: timestamp, symbol, signal, last_price, vwap, pnl
+                cursor.execute("""
+                    INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (timestamp.isoformat(), symbol, signal, last_price, vwap, pnl))
+
+                trades_inserted += 1
+
+            conn.commit()
+            conn.close()
+
+            self.stats["last_generation"] = {
+                "trades": trades_inserted,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            return {"success": True, "trades_generated": trades_inserted}
+
+        except Exception as e:
+            self.stats["error"] = str(e)
+            raise Exception(f"Failed to generate trades: {str(e)}")

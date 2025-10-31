@@ -5,14 +5,13 @@ import sys
 import json
 import math
 import asyncio
-import datetime
+from datetime import datetime, timedelta
 import subprocess
 import csv
 from io import StringIO
 from typing import List, Dict, Any
 
 from fastapi import FastAPI
-from service_endpoints import router as service_router
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -38,6 +37,11 @@ app.add_middleware(
 # Import engine with proper path handling
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
+from service_endpoints import router as service_router
+
+# Initialize database on startup
+engine.init_db()
+print("✅ Database initialized")
 
 # Global state
 simulator_process = None
@@ -202,51 +206,12 @@ async def dashboard():
     """)
 
 
-# Include service endpoints
-app.include_router(service_router)
-
-@app.get("/api/market/live")
-async def get_market_live():
-    """Get live market data for top 20 cryptos"""
-    return {
-        "status": "success",
-        "data": [
-            {"symbol": "BTC", "price": 45000, "change_24h": 2.5},
-            {"symbol": "ETH", "price": 2500, "change_24h": -1.2},
-            {"symbol": "BNB", "price": 350, "change_24h": 0.8},
-            {"symbol": "SOL", "price": 100, "change_24h": 5.2},
-            {"symbol": "XRP", "price": 0.65, "change_24h": -0.5},
-            {"symbol": "ADA", "price": 0.45, "change_24h": 1.8},
-            {"symbol": "DOGE", "price": 0.08, "change_24h": 3.2},
-            {"symbol": "AVAX", "price": 35, "change_24h": -2.1},
-            {"symbol": "TRX", "price": 0.11, "change_24h": 0.3},
-            {"symbol": "LINK", "price": 15, "change_24h": 4.5},
-            {"symbol": "DOT", "price": 7, "change_24h": -1.8},
-            {"symbol": "MATIC", "price": 0.85, "change_24h": 2.2},
-            {"symbol": "WBTC", "price": 44900, "change_24h": 2.4},
-            {"symbol": "SHIB", "price": 0.000025, "change_24h": 6.5},
-            {"symbol": "LTC", "price": 85, "change_24h": 1.2},
-            {"symbol": "BCH", "price": 280, "change_24h": -0.8},
-            {"symbol": "UNI", "price": 6.5, "change_24h": 3.8},
-            {"symbol": "XLM", "price": 0.12, "change_24h": -2.5},
-            {"symbol": "ATOM", "price": 9.5, "change_24h": 4.1},
-            {"symbol": "ETC", "price": 22, "change_24h": -1.5}
-        ]
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    print("JJ-Bot API v2.1 starting...")
-    print("API: http://127.0.0.1:8000")
-    print("Dashboard: http://localhost:5173")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
-
 # ===== REAL MARKET DATA FROM COINGECKO (FREE) =====
 @app.get("/api/market/live")
 async def get_market_live():
     """Get live market data for top 20 cryptos"""
     import requests
-    
+
     try:
         # Top 20 cryptos (excluding stablecoins)
         coins = [
@@ -256,7 +221,7 @@ async def get_market_live():
             "litecoin", "bitcoin-cash", "uniswap", "stellar", "cosmos",
             "ethereum-classic"
         ]
-        
+
         symbols = {
             "bitcoin": "BTC", "ethereum": "ETH", "binancecoin": "BNB",
             "solana": "SOL", "ripple": "XRP", "cardano": "ADA",
@@ -266,7 +231,7 @@ async def get_market_live():
             "bitcoin-cash": "BCH", "uniswap": "UNI", "stellar": "XLM",
             "cosmos": "ATOM", "ethereum-classic": "ETC"
         }
-        
+
         # Fetch from CoinGecko
         ids = ",".join(coins)
         url = "https://api.coingecko.com/api/v3/simple/price"
@@ -277,35 +242,43 @@ async def get_market_live():
             "include_market_cap": "true",
             "include_24hr_vol": "true"
         }
-        
+
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
-        
-        # Format for frontend
-        result = []
+
+        # Format for frontend - return as dict keyed by symbol
+        result = {}
         for coin_id in coins:
             if coin_id in data:
-                result.append({
-                    "symbol": symbols[coin_id],
-                    "price": data[coin_id].get("usd", 0),
-                    "change_24h": data[coin_id].get("usd_24h_change", 0),
-                    "market_cap": data[coin_id].get("usd_market_cap", 0),
-                    "volume_24h": data[coin_id].get("usd_24h_vol", 0)
-                })
-        
+                symbol = symbols[coin_id]
+                result[symbol.lower()] = {
+                    "symbol": symbol,
+                    "usd": data[coin_id].get("usd", 0),
+                    "usd_24h_change": data[coin_id].get("usd_24h_change", 0),
+                    "usd_market_cap": data[coin_id].get("usd_market_cap", 0),
+                    "usd_24h_vol": data[coin_id].get("usd_24h_vol", 0),
+                    "timestamp": datetime.now().isoformat()
+                }
+
         return {"status": "success", "data": result}
-        
+
     except Exception as e:
-        # Return placeholder data if API fails
+        # Return placeholder data if API fails - as dict
         return {
             "status": "error",
-            "data": [
-                {"symbol": "BTC", "price": 45000, "change_24h": 0},
-                {"symbol": "ETH", "price": 2500, "change_24h": 0},
-                {"symbol": "BNB", "price": 350, "change_24h": 0}
-            ]
+            "data": {
+                "btc": {"symbol": "BTC", "usd": 45000, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
+                "eth": {"symbol": "ETH", "usd": 2500, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
+                "bnb": {"symbol": "BNB", "usd": 350, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()}
+            }
         }
 
-# Include module endpoints
+# Include service endpoints
+app.include_router(service_router)
 
-# Simple module status endpoint
+if __name__ == "__main__":
+    import uvicorn
+    print("JJ-Bot API v2.1 starting...")
+    print("API: http://127.0.0.1:8000")
+    print("Dashboard: http://localhost:5173")
+    uvicorn.run(app, host="127.0.0.1", port=8000)
