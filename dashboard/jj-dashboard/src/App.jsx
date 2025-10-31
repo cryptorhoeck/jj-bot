@@ -63,13 +63,26 @@ function App() {
       const response = await fetch(`${API_BASE}/api/market/live`);
       if (response.ok) {
         const data = await response.json();
-        setMarketData(data.data || []);
+        // Convert object to array
+        if (data.data && typeof data.data === 'object') {
+          const marketArray = Object.values(data.data).map(coin => ({
+            symbol: coin.symbol,
+            price: coin.usd,
+            change_24h: coin.usd_24h_change || 0,
+            market_cap: coin.usd_market_cap || 0,
+            volume_24h: coin.usd_24h_vol || 0
+          }));
+          setMarketData(marketArray);
+        } else {
+          setMarketData([]);
+        }
       } else {
         // Fallback to mock data for now
         setMarketData([]);
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
+      setMarketData([]);
     }
   };
 
