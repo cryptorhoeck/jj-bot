@@ -3,6 +3,7 @@ import { ControlPanel } from "./ControlPanel.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
+const WS_URL = 'ws://127.0.0.1:8000/ws';
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -17,6 +18,8 @@ function App() {
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [realtimeEvents, setRealtimeEvents] = useState([]);
 
   // Dark mode colors
   const colors = {
@@ -159,7 +162,108 @@ function App() {
     }
   };
 
-  // Auto-refresh
+  // WebSocket connection for real-time updates
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimer = null;
+
+    const connectWebSocket = () => {
+      try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+          console.log('✅ WebSocket connected');
+          setWsConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message);
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setWsConnected(false);
+        };
+
+        ws.onclose = () => {
+          console.log('🔌 WebSocket disconnected');
+          setWsConnected(false);
+          // Reconnect after 3 seconds
+          reconnectTimer = setTimeout(connectWebSocket, 3000);
+        };
+      } catch (error) {
+        console.error('WebSocket connection error:', error);
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+    };
+  }, []);
+
+  // Handle WebSocket messages
+  const handleWebSocketMessage = (message) => {
+    switch (message.type) {
+      case 'price_update':
+        updateMarketPrice(message.data);
+        break;
+      case 'trading_signal':
+        addRealtimeEvent({ type: 'signal', ...message.data });
+        break;
+      case 'trade_executed':
+        addRealtimeEvent({ type: 'trade', ...message.data });
+        fetchTrades(); // Refresh trade list
+        fetchSummary(); // Refresh summary
+        break;
+      case 'connection':
+        console.log('Connected:', message.message);
+        break;
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  };
+
+  // Update market price in real-time
+  const updateMarketPrice = (priceData) => {
+    setMarketData(prev => {
+      const updated = [...prev];
+      const index = updated.findIndex(item => item.symbol === priceData.symbol);
+      if (index !== -1) {
+        updated[index] = {
+          ...updated[index],
+          price: priceData.price,
+          change_24h: priceData.change_24h
+        };
+      } else {
+        updated.push({
+          symbol: priceData.symbol,
+          price: priceData.price,
+          change_24h: priceData.change_24h
+        });
+      }
+      return updated;
+    });
+  };
+
+  // Add real-time event notification
+  const addRealtimeEvent = (event) => {
+    setRealtimeEvents(prev => [event, ...prev].slice(0, 10)); // Keep last 10 events
+  };
+
+  // Initial data fetch and periodic refresh (less frequent now with WebSocket)
   useEffect(() => {
     fetchTrades();
     fetchSummary();
@@ -167,11 +271,9 @@ function App() {
     checkSimulatorStatus();
 
     const interval = setInterval(() => {
-      fetchTrades();
       fetchSummary();
-      fetchMarketData();
       checkSimulatorStatus();
-    }, 5000);
+    }, 10000); // Reduced to every 10 seconds instead of 5
 
     return () => clearInterval(interval);
   }, []);
@@ -194,11 +296,12 @@ function App() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: colors.text }}>
-                JJ-Bot Trading Dashboard v2.2
+                JJ-Bot Trading Dashboard v2.3
               </h1>
               <div style={{ fontSize: '0.875rem', color: colors.textMuted, marginTop: '0.5rem' }}>
-                Simulator: {simulatorRunning ? '🟢 Running' : '🔴 Stopped'} | 
-                Trades: {summary.total_trades} | 
+                {wsConnected ? '🟢 Live' : '🔴 Offline'} |
+                Simulator: {simulatorRunning ? '🟢 Running' : '🔴 Stopped'} |
+                Trades: {summary.total_trades} |
                 P&L: ${summary.total_pnl?.toFixed(2)}
               </div>
             </div>

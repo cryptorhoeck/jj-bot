@@ -11,7 +11,7 @@ import csv
 from io import StringIO
 from typing import List, Dict, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -38,6 +38,8 @@ app.add_middleware(
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
 from service_endpoints import router as service_router
+from backtest_endpoints import router as backtest_router
+from websocket_manager import ws_manager
 
 # Initialize database on startup
 engine.init_db()
@@ -275,6 +277,42 @@ async def get_market_live():
 
 # Include service endpoints
 app.include_router(service_router)
+app.include_router(backtest_router)
+
+# ===== WEBSOCKET ENDPOINT =====
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time updates
+    Broadcasts: price_update, trading_signal, trade_executed, etc.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive and receive any client messages
+            data = await websocket.receive_text()
+
+            # Handle client requests
+            try:
+                message = json.loads(data)
+                if message.get("type") == "ping":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": datetime.now().isoformat()
+                    })
+            except json.JSONDecodeError:
+                pass
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"⚠️ WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+@app.get("/api/websocket/stats")
+async def websocket_stats():
+    """Get WebSocket manager statistics"""
+    return ws_manager.get_stats()
 
 if __name__ == "__main__":
     import uvicorn
