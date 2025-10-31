@@ -760,9 +760,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("JJ-Bot Trading System")
         self.setMinimumSize(1200, 800)
 
-        # Create toolbar
-        self.create_toolbar()
-
         # Create tabs
         self.tabs = QTabWidget()
 
@@ -779,6 +776,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.settings_tab, "⚙️ Settings")
 
         self.setCentralWidget(self.tabs)
+
+        # Create toolbar (after tabs are created)
+        self.create_toolbar()
 
         # Status bar
         self.status_bar = QStatusBar()
