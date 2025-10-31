@@ -9,7 +9,24 @@ echo Step 1: Cleaning up old processes...
 python cleanup.py
 
 echo.
-echo Step 2: Starting JJ-Bot...
+echo Step 2: Checking dependencies...
+echo.
+
+REM Check if virtual environment exists
+if not exist "venv\Scripts\activate.bat" (
+    echo Creating virtual environment...
+    python -m venv venv
+)
+
+REM Activate virtual environment
+call venv\Scripts\activate.bat
+
+REM Install/update requirements
+echo Installing dependencies...
+pip install -q -r requirements.txt
+
+echo.
+echo Step 3: Starting JJ-Bot...
 echo.
 
 REM Start the GUI
