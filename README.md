@@ -4,7 +4,7 @@ A full-featured cryptocurrency trading bot with paper trading, real-time market 
 
 **Platform:** Windows 10/11
 **Status:** ✅ Ready for Production
-**Version:** 1.0.0
+**Version:** 2.3.0
 
 ---
 
@@ -83,24 +83,28 @@ jj-bot/
 
 ### Working Features ✅
 - ✅ **Web Dashboard** - Modern React interface with 4 tabs
-- ✅ **Real-Time Market Data** - Live prices for top 20 cryptocurrencies
+- ✅ **Real-Time Market Data** - Live prices for top 20 cryptocurrencies via CoinGecko (Canada-compatible)
+- ✅ **WebSocket Updates** - Real-time price, signal, and trade notifications
 - ✅ **Paper Trading** - Simulated trading without real money
-- ✅ **Service Management** - Start/stop 4 microservices
+- ✅ **Service Management** - Start/stop 5 microservices
+- ✅ **Strategy Engine** - Automated trading signal generation with technical indicators
+- ✅ **Backtesting Framework** - Test strategies on historical data
 - ✅ **Trade History** - View and export trades to CSV
 - ✅ **Dark/Light Mode** - Theme switcher
-- ✅ **Live Updates** - Real-time price and trade updates
+- ✅ **Live Connection Status** - Real-time connection indicator
 
 ### Dashboard Tabs
 1. **Overview** - System status and quick stats
 2. **Market** - Live crypto prices (20 coins)
-3. **Control Panel** - Service management (4 services)
+3. **Control Panel** - Service management (5 services)
 4. **Trades** - Trade history and export
 
 ### Services
 1. **Trade Simulator** - Paper trading engine
-2. **Market Feed** - Real-time market data fetcher
-3. **Analytics Engine** - Trading analytics
-4. **Trading Bot** - Automated trading (paper mode)
+2. **Market Feed** - Real-time market data fetcher (CoinGecko API)
+3. **Strategy Engine** - Technical analysis and signal generation (RSI, SMA, MACD, Bollinger Bands)
+4. **Analytics Engine** - Trading analytics and performance metrics
+5. **Trading Bot** - Automated trading with risk management (paper mode)
 
 ---
 
@@ -168,6 +172,21 @@ POST /api/simulator/stop                 - Stop simulator
 ```
 GET  /api/data/export                    - Export trades (CSV)
 POST /api/data/clear                     - Clear all trade data
+```
+
+### WebSocket
+```
+WS   /ws                                 - WebSocket endpoint for real-time updates
+GET  /api/websocket/stats                - WebSocket connection statistics
+```
+
+### Backtesting
+```
+POST /api/backtest/load-data             - Load historical price data
+POST /api/backtest/run                   - Run backtest with configuration
+GET  /api/backtest/results               - Get backtest results
+GET  /api/backtest/summary               - Get formatted backtest summary
+POST /api/backtest/generate-sample-data  - Generate sample data for testing
 ```
 
 ---
@@ -271,16 +290,16 @@ taskkill /PID <process_id> /F
 
 ## 🚧 Future Enhancements
 
-- [ ] Real exchange API integration (Binance, etc.)
+- [ ] Real exchange API integration (Kraken, Coinbase - Canada-compatible)
 - [ ] Database backend (PostgreSQL/MongoDB)
 - [ ] User authentication system
 - [ ] Advanced charting and indicators
-- [ ] Backtesting framework
+- [x] **Backtesting framework** ✅ **DONE v2.3**
 - [ ] Multi-user support
 - [ ] Mobile responsive design
-- [ ] WebSocket live updates
+- [x] **WebSocket live updates** ✅ **DONE v2.3**
 - [ ] Trading strategies editor
-- [ ] Performance analytics
+- [x] **Performance analytics** ✅ **DONE v2.3**
 
 ---
 
@@ -328,5 +347,37 @@ For issues or questions:
 ---
 
 **Built with Claude Code** 🤖
-**Last Updated:** October 27, 2025
+**Last Updated:** October 31, 2025
+**Version:** 2.3.0
 **Status:** Production Ready ✅
+
+---
+
+## 🆕 What's New in v2.3
+
+### WebSocket Real-Time Updates
+- Live price updates without polling
+- Instant trading signal notifications
+- Real-time trade execution alerts
+- Connection status indicator in dashboard
+- Auto-reconnect on disconnect
+
+### Backtesting Framework
+- Test strategies on historical data
+- Advanced performance metrics (Win rate, Profit factor, Sharpe ratio, Max drawdown)
+- Configurable commission and slippage
+- Position sizing controls
+- Sample data generation for testing
+- API endpoints for automated backtesting
+
+### Strategy Engine Service
+- Automated technical analysis (RSI, SMA, MACD, Bollinger Bands)
+- Real-time signal generation
+- Configurable strategy parameters
+- Service management through dashboard
+
+### Canada-Compatible Market Data
+- Uses CoinGecko API (no geographic restrictions)
+- Works from anywhere including Canada
+- No Binance or restricted exchanges required
+- Free tier available for development
