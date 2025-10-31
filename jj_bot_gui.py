@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QLabel, QTableWidget, QTableWidgetItem, QPushButton,
     QSystemTrayIcon, QMenu, QGroupBox, QGridLayout, QCheckBox,
     QSpinBox, QDoubleSpinBox, QTextEdit, QHeaderView, QStatusBar,
-    QToolBar, QMessageBox, QComboBox, QLineEdit, QFileDialog
+    QToolBar, QMessageBox, QComboBox, QLineEdit, QFileDialog, QScrollArea
 )
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QObject, QSize
 from PyQt6.QtGui import QIcon, QAction, QColor, QPainter, QPixmap, QImage
@@ -76,11 +76,11 @@ class DataUpdater(QObject):
                 try:
                     services = requests.get(f"{self.api_base}/api/services/status", timeout=1).json()
                     self.services_updated.emit(services)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Error fetching services: {e}")
 
             except Exception as e:
-                pass  # Silently continue
+                print(f"Error fetching data: {e}")
 
             time.sleep(2)
 
@@ -295,10 +295,19 @@ class MarketDataTab(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
         layout.addWidget(title)
 
-        # Live ticker
+        # Live ticker in scroll area
+        ticker_scroll = QScrollArea()
+        ticker_scroll.setMaximumHeight(40)
+        ticker_scroll.setWidgetResizable(True)
+        ticker_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        ticker_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         self.ticker_label = QLabel("Fetching live prices...")
-        self.ticker_label.setStyleSheet("font-size: 14px; padding: 5px; background-color: #f3f4f6; border-radius: 3px;")
-        layout.addWidget(self.ticker_label)
+        self.ticker_label.setStyleSheet("font-size: 14px; padding: 5px; background-color: #f3f4f6;")
+        self.ticker_label.setWordWrap(False)  # Don't wrap, allow horizontal scroll
+
+        ticker_scroll.setWidget(self.ticker_label)
+        layout.addWidget(ticker_scroll)
 
         # Market table
         self.table = QTableWidget()
@@ -895,13 +904,22 @@ class MainWindow(QMainWindow):
 
     def on_data_updated(self, data):
         """Handle data updates"""
-        self.dashboard_tab.update_data(data)
-        self.market_tab.update_data(data)
-        self.trades_tab.update_data(data)
-        self.analytics_tab.update_data(data)
+        try:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Data update received")
 
-        total_trades = data.get('summary', {}).get('total_trades', 0)
-        self.status_bar.showMessage(f"Last update: {datetime.now().strftime('%H:%M:%S')} | Trades: {total_trades}")
+            self.dashboard_tab.update_data(data)
+            self.market_tab.update_data(data)
+            self.trades_tab.update_data(data)
+            self.analytics_tab.update_data(data)
+
+            total_trades = data.get('summary', {}).get('total_trades', 0)
+            self.status_bar.showMessage(f"✅ Updated: {datetime.now().strftime('%H:%M:%S')} | Trades: {total_trades}")
+
+            print(f"    Summary: {total_trades} trades, P&L: ${data.get('summary', {}).get('total_pnl', 0):.2f}")
+        except Exception as e:
+            print(f"Error in on_data_updated: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_services_updated(self, services):
         """Handle services status updates"""
