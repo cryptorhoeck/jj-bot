@@ -367,7 +367,7 @@ class TradesTab(QWidget):
         # Trades table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Time", "Symbol", "Type", "Price", "Size", "P&L"])
+        self.table.setHorizontalHeaderLabels(["Time", "Symbol", "Signal", "Last Price", "VWAP", "P&L"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
 
@@ -389,22 +389,22 @@ class TradesTab(QWidget):
                 # Symbol
                 self.table.setItem(row, 1, QTableWidgetItem(trade.get('symbol', '')))
 
-                # Type
-                trade_type = trade.get('side', '').upper()
-                type_item = QTableWidgetItem(trade_type)
-                if trade_type == 'BUY':
-                    type_item.setForeground(QColor("#10b981"))
+                # Signal (BUY/SELL)
+                signal = trade.get('signal', '').upper()
+                signal_item = QTableWidgetItem(signal)
+                if signal == 'BUY':
+                    signal_item.setForeground(QColor("#10b981"))
                 else:
-                    type_item.setForeground(QColor("#ef4444"))
-                self.table.setItem(row, 2, type_item)
+                    signal_item.setForeground(QColor("#ef4444"))
+                self.table.setItem(row, 2, signal_item)
 
-                # Price
-                price = trade.get('price', 0)
-                self.table.setItem(row, 3, QTableWidgetItem(f"${price:.2f}"))
+                # Last Price
+                last_price = trade.get('last_price', 0)
+                self.table.setItem(row, 3, QTableWidgetItem(f"${last_price:.2f}"))
 
-                # Size
-                size = trade.get('size', 0)
-                self.table.setItem(row, 4, QTableWidgetItem(f"{size:.4f}"))
+                # VWAP
+                vwap = trade.get('vwap', 0)
+                self.table.setItem(row, 4, QTableWidgetItem(f"${vwap:.2f}"))
 
                 # P&L
                 pnl = trade.get('pnl', 0)

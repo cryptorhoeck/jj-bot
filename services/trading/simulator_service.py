@@ -85,13 +85,11 @@ class SimulatorService(BaseService):
                 base_price = base_prices[symbol]
 
                 # Random price variation (±5%)
-                price = base_price * (1 + random.uniform(-0.05, 0.05))
+                last_price = base_price * (1 + random.uniform(-0.05, 0.05))
+                vwap = last_price * (1 + random.uniform(-0.02, 0.02))
 
-                # Random side
-                side = random.choice(['buy', 'sell'])
-
-                # Random size
-                size = random.uniform(0.01, 0.5)
+                # Random signal
+                signal = random.choice(['BUY', 'SELL'])
 
                 # Random P&L (-50 to +100)
                 pnl = random.uniform(-50, 100)
@@ -99,11 +97,11 @@ class SimulatorService(BaseService):
                 # Timestamp (spread over last 24 hours)
                 timestamp = current_time - timedelta(hours=random.randint(0, 24), minutes=random.randint(0, 59))
 
-                # Insert trade
+                # Insert trade - match actual schema: timestamp, symbol, signal, last_price, vwap, pnl
                 cursor.execute("""
-                    INSERT INTO trades (timestamp, symbol, side, price, size, pnl)
+                    INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (timestamp.isoformat(), symbol, side, price, size, pnl))
+                """, (timestamp.isoformat(), symbol, signal, last_price, vwap, pnl))
 
                 trades_inserted += 1
 
