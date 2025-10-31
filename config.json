@@ -1,0 +1,42 @@
+{
+  "market_feed": {
+    "update_interval": 30,
+    "api_url": "https://api.coingecko.com/api/v3/simple/price",
+    "coins": [
+      "bitcoin", "ethereum", "binancecoin", "solana", "ripple",
+      "cardano", "dogecoin", "avalanche-2", "tron", "chainlink",
+      "polkadot", "polygon", "wrapped-bitcoin", "shiba-inu",
+      "litecoin", "bitcoin-cash", "uniswap", "stellar", "cosmos",
+      "ethereum-classic"
+    ]
+  },
+  "strategy_engine": {
+    "rsi_oversold": 30,
+    "rsi_overbought": 70,
+    "sma_fast": 10,
+    "sma_slow": 20,
+    "min_signal_strength": 0.7
+  },
+  "trading_bot": {
+    "enabled": false,
+    "paper_trading": true,
+    "max_positions": 5,
+    "risk_per_trade": 0.02,
+    "cooldown_minutes": 5,
+    "min_signal_strength": 0.7
+  },
+  "analytics": {
+    "analysis_interval": 60,
+    "lookback_days": 30
+  },
+  "backtesting": {
+    "commission": 0.001,
+    "slippage": 0.0005,
+    "position_size": 0.1,
+    "initial_capital": 10000.0
+  },
+  "system": {
+    "auto_start_services": true,
+    "log_level": "INFO"
+  }
+}
