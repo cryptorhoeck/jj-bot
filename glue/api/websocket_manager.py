@@ -81,6 +81,24 @@ class WebSocketManager:
             print(f"⚠️ Error sending to client: {e}")
             self.disconnect(websocket)
 
+    def _safe_broadcast(self, message: Dict[str, Any]):
+        """Safely schedule a broadcast from sync context"""
+        if not self.active_connections:
+            return
+
+        try:
+            # Try to get the running event loop
+            loop = asyncio.get_running_loop()
+            # Schedule the broadcast as a task
+            loop.create_task(self.broadcast(message))
+        except RuntimeError:
+            # No running event loop - silently skip
+            # This happens when events fire before the server starts
+            pass
+        except Exception as e:
+            # Unexpected error - log but don't crash
+            print(f"⚠️ Error scheduling broadcast: {e}")
+
     async def broadcast(self, message: Dict[str, Any]):
         """Broadcast message to all connected clients"""
         if not self.active_connections:
@@ -115,8 +133,8 @@ class WebSocketManager:
             }
         }
 
-        # Schedule broadcast (must be async)
-        asyncio.create_task(self.broadcast(message))
+        # Schedule broadcast safely
+        self._safe_broadcast(message)
 
     def _on_trading_signal(self, event: Dict):
         """Handle trading signal events"""
@@ -135,7 +153,7 @@ class WebSocketManager:
             }
         }
 
-        asyncio.create_task(self.broadcast(message))
+        self._safe_broadcast(message)
 
     def _on_trade_executed(self, event: Dict):
         """Handle trade execution events"""
@@ -154,7 +172,7 @@ class WebSocketManager:
             }
         }
 
-        asyncio.create_task(self.broadcast(message))
+        self._safe_broadcast(message)
 
     def _on_trade_approved(self, event: Dict):
         """Handle trade approval events"""
@@ -170,7 +188,7 @@ class WebSocketManager:
             }
         }
 
-        asyncio.create_task(self.broadcast(message))
+        self._safe_broadcast(message)
 
     def _on_trade_rejected(self, event: Dict):
         """Handle trade rejection events"""
@@ -187,7 +205,7 @@ class WebSocketManager:
             }
         }
 
-        asyncio.create_task(self.broadcast(message))
+        self._safe_broadcast(message)
 
     async def send_system_message(self, message: str, level: str = "info"):
         """Send a system message to all clients"""
