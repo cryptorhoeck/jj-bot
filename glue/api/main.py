@@ -246,29 +246,31 @@ async def get_market_live():
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
 
-        # Format for frontend
-        result = []
+        # Format for frontend - return as dict keyed by symbol
+        result = {}
         for coin_id in coins:
             if coin_id in data:
-                result.append({
-                    "symbol": symbols[coin_id],
-                    "price": data[coin_id].get("usd", 0),
-                    "change_24h": data[coin_id].get("usd_24h_change", 0),
-                    "market_cap": data[coin_id].get("usd_market_cap", 0),
-                    "volume_24h": data[coin_id].get("usd_24h_vol", 0)
-                })
+                symbol = symbols[coin_id]
+                result[symbol.lower()] = {
+                    "symbol": symbol,
+                    "usd": data[coin_id].get("usd", 0),
+                    "usd_24h_change": data[coin_id].get("usd_24h_change", 0),
+                    "usd_market_cap": data[coin_id].get("usd_market_cap", 0),
+                    "usd_24h_vol": data[coin_id].get("usd_24h_vol", 0),
+                    "timestamp": datetime.now().isoformat()
+                }
 
         return {"status": "success", "data": result}
 
     except Exception as e:
-        # Return placeholder data if API fails
+        # Return placeholder data if API fails - as dict
         return {
             "status": "error",
-            "data": [
-                {"symbol": "BTC", "price": 45000, "change_24h": 0},
-                {"symbol": "ETH", "price": 2500, "change_24h": 0},
-                {"symbol": "BNB", "price": 350, "change_24h": 0}
-            ]
+            "data": {
+                "btc": {"symbol": "BTC", "usd": 45000, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
+                "eth": {"symbol": "ETH", "usd": 2500, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
+                "bnb": {"symbol": "BNB", "usd": 350, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()}
+            }
         }
 
 # Include service endpoints
