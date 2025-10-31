@@ -60,3 +60,58 @@ async def start_auto_services():
         "started": started,
         "count": len(started)
     }
+
+@router.get("/status")
+async def get_all_services_status():
+    """Get status of all services"""
+    services = {}
+    for name in service_manager.services.keys():
+        services[name] = service_manager.get_service_status(name)
+    return {
+        "services": services,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@router.get("/{service_name}/data")
+async def get_service_data(service_name: str):
+    """Get data from a specific service"""
+    if service_name not in service_manager.services:
+        raise HTTPException(status_code=404, detail=f"Service '{service_name}' not found")
+
+    service = service_manager.services[service_name]
+
+    # Get service-specific data
+    if hasattr(service, 'get_data'):
+        data = service.get_data()
+        return {
+            "service": service_name,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+    else:
+        return {
+            "service": service_name,
+            "data": {},
+            "message": "Service does not provide data",
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/simulator/generate")
+async def generate_trades(num_trades: int = 50):
+    """Generate test trades using simulator"""
+    if "simulator" not in service_manager.services:
+        raise HTTPException(status_code=404, detail="Simulator service not found")
+
+    service = service_manager.services["simulator"]
+
+    # Call simulator's generate method
+    if hasattr(service, 'generate_trades'):
+        result = service.generate_trades(num_trades)
+        return {
+            "success": True,
+            "trades_generated": num_trades,
+            "message": f"Successfully generated {num_trades} trades",
+            "timestamp": datetime.now().isoformat()
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Simulator does not support trade generation")

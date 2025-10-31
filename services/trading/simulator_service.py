@@ -53,3 +53,23 @@ class SimulatorService(BaseService):
             requests.post(f"{self.api_base}/api/simulator/stop")
         except:
             pass
+
+    def generate_trades(self, num_trades: int = 50):
+        """Generate test trades directly"""
+        try:
+            # Import the simulator and generate trades
+            from glue import simulator
+
+            result = simulator.generate_trades(num_trades)
+
+            self.stats["last_generation"] = {
+                "trades": num_trades,
+                "timestamp": datetime.now().isoformat(),
+                "result": result
+            }
+
+            return result
+
+        except Exception as e:
+            self.stats["error"] = str(e)
+            raise Exception(f"Failed to generate trades: {str(e)}")
