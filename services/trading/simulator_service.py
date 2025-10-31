@@ -57,18 +57,65 @@ class SimulatorService(BaseService):
     def generate_trades(self, num_trades: int = 50):
         """Generate test trades directly"""
         try:
-            # Import the simulator and generate trades
-            from glue import simulator
+            import sqlite3
+            import random
+            from datetime import datetime, timedelta
 
-            result = simulator.generate_trades(num_trades)
+            # Connect to database
+            db_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'trades.db')
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
 
-            self.stats["last_generation"] = {
-                "trades": num_trades,
-                "timestamp": datetime.now().isoformat(),
-                "result": result
+            # Symbols to trade
+            symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'DOT', 'LINK', 'MATIC', 'UNI', 'AVAX']
+
+            # Base prices
+            base_prices = {
+                'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
+                'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35
             }
 
-            return result
+            # Generate trades
+            trades_inserted = 0
+            current_time = datetime.now()
+
+            for i in range(num_trades):
+                # Random symbol
+                symbol = random.choice(symbols)
+                base_price = base_prices[symbol]
+
+                # Random price variation (±5%)
+                price = base_price * (1 + random.uniform(-0.05, 0.05))
+
+                # Random side
+                side = random.choice(['buy', 'sell'])
+
+                # Random size
+                size = random.uniform(0.01, 0.5)
+
+                # Random P&L (-50 to +100)
+                pnl = random.uniform(-50, 100)
+
+                # Timestamp (spread over last 24 hours)
+                timestamp = current_time - timedelta(hours=random.randint(0, 24), minutes=random.randint(0, 59))
+
+                # Insert trade
+                cursor.execute("""
+                    INSERT INTO trades (timestamp, symbol, side, price, size, pnl)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (timestamp.isoformat(), symbol, side, price, size, pnl))
+
+                trades_inserted += 1
+
+            conn.commit()
+            conn.close()
+
+            self.stats["last_generation"] = {
+                "trades": trades_inserted,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            return {"success": True, "trades_generated": trades_inserted}
 
         except Exception as e:
             self.stats["error"] = str(e)
