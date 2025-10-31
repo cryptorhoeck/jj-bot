@@ -56,11 +56,13 @@ class ServiceManager:
         from services.trading.market_feed_service import MarketFeedService
         from services.trading.analytics_service import AnalyticsService
         from services.trading.trading_bot_service import TradingBotService
+        from services.trading.strategy_service import StrategyService
 
         # Create real service instances
         self.services = {
             "simulator": SimulatorService(),
             "market_feed": MarketFeedService(),
+            "strategy_engine": StrategyService(),
             "analytics": AnalyticsService(),
             "trading_bot": TradingBotService()
         }
