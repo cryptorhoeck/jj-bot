@@ -34,24 +34,24 @@ class BaseService(ABC):
         """Start the service"""
         if self.status == "running":
             return {"success": False, "message": f"{self.name} already running"}
-        
+
         try:
-            self.status = "starting"
+            # Set to running BEFORE starting thread so _run() loop executes
+            self.status = "running"
             self.start_time = datetime.now()
-            
+
             # Run service in thread
             self.thread = threading.Thread(target=self._run, daemon=True)
             self.thread.start()
-            
+
             time.sleep(1)  # Give it a moment to start
-            self.status = "running"
-            
+
             return {
-                "success": True, 
+                "success": True,
                 "message": f"{self.name} started",
                 "start_time": self.start_time.isoformat()
             }
-            
+
         except Exception as e:
             self.status = "error"
             return {"success": False, "message": str(e)}

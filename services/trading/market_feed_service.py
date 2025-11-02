@@ -59,11 +59,14 @@ class MarketFeedService(BaseService):
     def _run(self):
         """Fetch market data in a loop"""
         print(f"🌐 Market Feed Service starting (update every {self.config['update_interval']}s)...")
+        print(f"🔍 Market Feed _run() entered, status={self.status}")
 
         while self.status == "running":
             try:
                 # Fetch market data
+                print(f"🔍 Market Feed: Fetching data...")
                 data = self._fetch_market_data()
+                print(f"🔍 Market Feed: Received {len(data) if data else 0} symbols")
 
                 if data:
                     # Update stats

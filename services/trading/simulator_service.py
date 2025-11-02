@@ -25,12 +25,17 @@ class SimulatorService(BaseService):
         
     def _run(self):
         """Start the simulator via API"""
+        print("🔍 SimulatorService._run() called")
         try:
             # Call the existing simulator start endpoint
+            print(f"🔍 Calling POST {self.api_base}/api/simulator/start")
             response = requests.post(f"{self.api_base}/api/simulator/start")
+            print(f"🔍 Response: {response.status_code} - {response.text}")
+
             if response.status_code == 200:
                 self.stats["start_response"] = response.json()
-                
+                print("✅ Simulator start request successful")
+
                 # Keep checking status
                 while self.status == "running":
                     time.sleep(5)
@@ -41,9 +46,11 @@ class SimulatorService(BaseService):
                     except:
                         pass
             else:
+                print(f"❌ Simulator start failed: {response.status_code}")
                 self.status = "error"
-                
+
         except Exception as e:
+            print(f"❌ SimulatorService error: {e}")
             self.status = "error"
             self.stats["error"] = str(e)
     
