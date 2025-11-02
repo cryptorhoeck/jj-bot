@@ -20,30 +20,41 @@ export function ControlPanel({ colors, API_BASE }) {
 
   // Start a service
   const startService = async (name) => {
-    setLoading({ ...loading, [name]: true });
+    setLoading(prev => ({ ...prev, [name]: true }));
     try {
       const response = await fetch(`${API_BASE}/api/services/${name}/start`, { method: 'POST' });
       if (response.ok) {
+        const result = await response.json();
+        console.log(`Service ${name} start result:`, result);
+        // Wait a moment for service to fully start
+        await new Promise(resolve => setTimeout(resolve, 1000));
         await fetchServices(); // Refresh to get actual status
       }
     } catch (error) {
       console.error(`Error starting ${name}:`, error);
+      alert(`Failed to start ${name}. Check console for details.`);
+    } finally {
+      setLoading(prev => ({ ...prev, [name]: false }));
     }
-    setLoading({ ...loading, [name]: false });
   };
 
   // Stop a service
   const stopService = async (name) => {
-    setLoading({ ...loading, [name]: true });
+    setLoading(prev => ({ ...prev, [name]: true }));
     try {
       const response = await fetch(`${API_BASE}/api/services/${name}/stop`, { method: 'POST' });
       if (response.ok) {
+        const result = await response.json();
+        console.log(`Service ${name} stop result:`, result);
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchServices(); // Refresh to get actual status
       }
     } catch (error) {
       console.error(`Error stopping ${name}:`, error);
+      alert(`Failed to stop ${name}. Check console for details.`);
+    } finally {
+      setLoading(prev => ({ ...prev, [name]: false }));
     }
-    setLoading({ ...loading, [name]: false });
   };
 
   // Start all services
@@ -75,24 +86,29 @@ export function ControlPanel({ colors, API_BASE }) {
 
   // Display names and descriptions
   const serviceInfo = {
-    'simulator': { 
-      displayName: 'Trade Simulator', 
+    'simulator': {
+      displayName: 'Trade Simulator',
       description: 'Paper trading with virtual funds',
       icon: '📊'
     },
-    'market_feed': { 
-      displayName: 'Market Data Feed', 
-      description: 'Real-time cryptocurrency prices',
+    'market_feed': {
+      displayName: 'Market Data Feed',
+      description: 'Real-time cryptocurrency prices from CoinGecko',
       icon: '📈'
     },
-    'analytics': { 
-      displayName: 'Analytics Engine', 
-      description: 'Performance tracking and analysis',
+    'strategy_engine': {
+      displayName: 'Strategy Engine',
+      description: 'Technical analysis and trading signals (RSI, SMA, MACD)',
+      icon: '🎯'
+    },
+    'analytics': {
+      displayName: 'Analytics Engine',
+      description: 'Performance tracking and trade analysis',
       icon: '📉'
     },
-    'trading_bot': { 
-      displayName: 'Trading Bot', 
-      description: 'Automated trading strategies',
+    'trading_bot': {
+      displayName: 'Trading Bot',
+      description: 'Automated trading (⚠️ disabled by default)',
       icon: '🤖'
     }
   };
@@ -223,56 +239,40 @@ export function ControlPanel({ colors, API_BASE }) {
                     onClick={() => startService(service.name)}
                     disabled={loading[service.name]}
                     style={{
-                      flex: 1,
+                      width: '100%',
                       padding: '0.5rem',
-                      backgroundColor: '#10b981',
+                      backgroundColor: loading[service.name] ? '#6b7280' : '#10b981',
                       color: 'white',
                       border: 'none',
                       borderRadius: '0.375rem',
                       cursor: loading[service.name] ? 'not-allowed' : 'pointer',
                       fontSize: '0.875rem',
                       fontWeight: '600',
-                      opacity: loading[service.name] ? 0.7 : 1
+                      transition: 'background-color 0.2s'
                     }}
                   >
-                    {loading[service.name] ? 'Starting...' : '▶ START'}
+                    {loading[service.name] ? '⏳ Starting...' : '▶ START'}
                   </button>
                 ) : (
                   <button
                     onClick={() => stopService(service.name)}
                     disabled={loading[service.name]}
                     style={{
-                      flex: 1,
+                      width: '100%',
                       padding: '0.5rem',
-                      backgroundColor: '#dc2626',
+                      backgroundColor: loading[service.name] ? '#6b7280' : '#dc2626',
                       color: 'white',
                       border: 'none',
                       borderRadius: '0.375rem',
                       cursor: loading[service.name] ? 'not-allowed' : 'pointer',
                       fontSize: '0.875rem',
                       fontWeight: '600',
-                      opacity: loading[service.name] ? 0.7 : 1
+                      transition: 'background-color 0.2s'
                     }}
                   >
-                    {loading[service.name] ? 'Stopping...' : '⏹ STOP'}
+                    {loading[service.name] ? '⏳ Stopping...' : '⏹ STOP'}
                   </button>
                 )}
-                
-                <button
-                  onClick={() => alert(`Config for ${info.displayName} coming soon!`)}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    backgroundColor: colors.bg,
-                    color: colors.textMuted,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '0.375rem',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem'
-                  }}
-                  title="Configure"
-                >
-                  ⚙️
-                </button>
               </div>
             </div>
           );
