@@ -83,9 +83,8 @@ class MarketFeedService(BaseService):
 
                     self.stats["total_updates"] += 1
 
-                    # Log summary
-                    if self.stats["total_updates"] % 10 == 0:
-                        print(f"📊 Market Feed: {len(data)} coins updated ({self.stats['total_updates']} total updates)")
+                    # Log every update
+                    print(f"📊 Market Feed: {len(data)} coins updated | Total: {self.stats['total_updates']}")
 
                 else:
                     self.stats["failed_fetches"] += 1
