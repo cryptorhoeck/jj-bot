@@ -20,11 +20,11 @@ class TradingBotService(BaseService):
     """Automated trading bot service"""
 
     def __init__(self):
-        super().__init__(name="trading_bot", auto_start=False)
+        super().__init__(name="trading_bot", auto_start=True)
 
         # Configuration
         self.config = {
-            "enabled": False,  # Safety: disabled by default
+            "enabled": True,  # ENABLED: Bot will execute paper trades based on real analysis
             "paper_trading": True,  # Always use paper trading for safety
             "max_open_positions": 5,
             "risk_per_trade": 0.02,  # 2% risk per trade
