@@ -117,7 +117,20 @@ async def start_simulator():
         project_root = os.path.dirname(project_root)
         sim_trader_path = os.path.join(project_root, "glue", "api", "sim_trader.py")
 
-        # On Windows, open simulator in new console window so output is visible`n        # On Linux, output will go to current terminal`n        import platform`n        if platform.system() == 'Windows':`n            simulator_process = subprocess.Popen(`n                [sys.executable, sim_trader_path],`n                creationflags=subprocess.CREATE_NEW_CONSOLE,`n                cwd=project_root`n            )`n        else:`n            simulator_process = subprocess.Popen(`n                [sys.executable, sim_trader_path],`n                cwd=project_root`n            )
+        # On Windows, open simulator in new console window so output is visible
+        # On Linux, output will go to current terminal
+        import platform
+        if platform.system() == 'Windows':
+            simulator_process = subprocess.Popen(
+                [sys.executable, sim_trader_path],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                cwd=project_root
+            )
+        else:
+            simulator_process = subprocess.Popen(
+                [sys.executable, sim_trader_path],
+                cwd=project_root
+            )
         await asyncio.sleep(1)
         return {"status": "started", "message": "Trade simulator started successfully"}
     except Exception as e:

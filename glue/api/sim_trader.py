@@ -30,7 +30,10 @@ BASE_PRICES = {
 
 def init_database():
     """Initialize the trades database"""
-    # Ensure data directory exists`n    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)`n`n    conn = sqlite3.connect(DB_PATH)
+    # Ensure data directory exists
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Create trades table if not exists
