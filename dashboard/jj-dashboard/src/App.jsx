@@ -283,9 +283,7 @@ function App() {
     fetchMarketData();
     checkSimulatorStatus();
 
-    const interval = setInterval(() => {
-      fetchSummary();
-      checkSimulatorStatus();
+    const interval = setInterval(() => {`n      fetchTrades();      // Refresh trades list`n      fetchSummary();`n      fetchMarketData();  // Refresh market data`n      checkSimulatorStatus();
     }, 10000); // Reduced to every 10 seconds instead of 5
 
     return () => clearInterval(interval);
@@ -545,3 +543,4 @@ function App() {
 }
 
 export default App;
+

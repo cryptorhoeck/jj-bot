@@ -18,7 +18,7 @@
     "min_signal_strength": 0.7
   },
   "trading_bot": {
-    "enabled": false,
+    "enabled": true,
     "paper_trading": true,
     "max_positions": 5,
     "risk_per_trade": 0.02,
