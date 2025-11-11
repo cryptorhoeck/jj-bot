@@ -316,3 +316,56 @@ class StrategyEngine(BaseModule):
     def get_signal_history(self, limit: int = 10) -> List[Dict]:
         """Get recent signal history"""
         return self.signal_history[-limit:]
+
+    def calculate_indicators(self, prices: List[float]) -> Dict[str, Any]:
+        """
+        Calculate all technical indicators for a price array.
+        Used by realistic simulator.
+
+        Args:
+            prices: List of historical prices
+
+        Returns:
+            Dictionary of calculated indicators
+        """
+        if len(prices) < 2:
+            return {}
+
+        indicators = {
+            "rsi": self.calculate_rsi(prices),
+            "sma_short": self.calculate_sma(prices, self.sma_fast),
+            "sma_long": self.calculate_sma(prices, self.sma_slow),
+            "macd": None,
+            "macd_signal": None,
+            "bollinger_upper": None,
+            "bollinger_middle": None,
+            "bollinger_lower": None
+        }
+
+        # MACD
+        macd_result = self.calculate_macd(prices)
+        if macd_result:
+            indicators["macd"] = macd_result.get("macd")
+            indicators["macd_signal"] = macd_result.get("signal")
+
+        # Bollinger Bands
+        bb_result = self.calculate_bollinger_bands(prices)
+        if bb_result:
+            indicators["bollinger_upper"] = bb_result.get("upper")
+            indicators["bollinger_middle"] = bb_result.get("middle")
+            indicators["bollinger_lower"] = bb_result.get("lower")
+
+        # Store for get_indicators()
+        self.indicators["_latest"] = indicators
+
+        return indicators
+
+    def get_indicators(self) -> Dict[str, Any]:
+        """
+        Get the most recently calculated indicators.
+        Used by realistic simulator.
+
+        Returns:
+            Dictionary of indicators
+        """
+        return self.indicators.get("_latest", {})
