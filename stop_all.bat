@@ -7,32 +7,26 @@ echo Stopping JJ-Bot Trading System
 echo ========================================
 echo.
 
-echo [1/4] Stopping API server...
-REM Kill Python processes
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot API Server*" >nul 2>&1
-taskkill /F /IM python.exe >nul 2>&1
+echo [1/4] Killing Python processes...
+taskkill /F /T /IM python.exe >nul 2>&1
 
-echo [2/4] Stopping Dashboard...
-REM Kill Node processes
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot Dashboard*" >nul 2>&1
-taskkill /F /IM node.exe >nul 2>&1
+echo [2/4] Killing Node processes...
+taskkill /F /T /IM node.exe >nul 2>&1
 
-echo [3/4] Stopping any remaining services...
-REM Kill any uvicorn processes
-taskkill /F /IM uvicorn.exe >nul 2>&1
-REM Kill any remaining npm/vite processes
-taskkill /F /IM npm.exe >nul 2>&1
+echo [3/4] Killing remaining services...
+taskkill /F /T /IM uvicorn.exe >nul 2>&1
+taskkill /F /T /IM npm.exe >nul 2>&1
 
-echo [4/4] Cleaning up...
-REM Wait for processes to fully terminate
+echo [4/4] Closing terminal windows...
+REM Kill cmd.exe windows by title - this closes the windows themselves
+for /f "tokens=2" %%a in ('tasklist /v /fi "windowtitle eq JJ-Bot API Server*" /fo list ^| find "PID:"') do taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=2" %%a in ('tasklist /v /fi "windowtitle eq JJ-Bot Dashboard*" /fo list ^| find "PID:"') do taskkill /F /PID %%a >nul 2>&1
+
+echo.
+echo ========================================
+echo All processes stopped and windows closed!
+========================================
+echo.
+echo This window will close in 2 seconds...
 timeout /t 2 /nobreak >nul
-
-echo.
-echo ========================================
-echo All processes stopped!
-echo ========================================
-echo.
-echo NOTE: Terminal windows may remain open.
-echo You can manually close them with X button.
-echo.
-pause
+exit
