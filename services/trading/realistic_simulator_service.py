@@ -34,6 +34,7 @@ from modules.simulator.market_simulator import (
     PositionSide
 )
 from modules.strategy.strategy_engine import StrategyEngine
+from modules.database.connection import init_all_databases
 
 # Try to import adaptive selector, but make it optional
 try:
@@ -108,6 +109,10 @@ class RealisticSimulatorService(BaseService):
     def _initialize_components(self):
         """Initialize all simulator components"""
         try:
+            # Initialize databases first
+            print("📦 Initializing databases...")
+            init_all_databases()
+
             # Price generator
             self.price_generator = MultiSymbolPriceGenerator(
                 symbols_config=self.symbols_config,
