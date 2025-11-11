@@ -27,29 +27,34 @@ echo Starting services...
 echo.
 
 REM Start API Server in new window
-echo [1/2] Starting API Server on port 8000...
+echo [1/3] Starting API Server on port 8000...
 start "JJ-Bot API Server" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && cd glue\api && python main.py"
 
-REM Wait a moment for API to start
-timeout /t 3 /nobreak >nul
+REM Wait for API to start
+timeout /t 2 /nobreak >nul
 
 REM Start Dashboard in new window
-echo [2/2] Starting Dashboard on port 5173...
+echo [2/3] Starting Dashboard on port 5173...
 start "JJ-Bot Dashboard" cmd /k "cd /d %~dp0dashboard\jj-dashboard && npm run dev"
+
+REM Wait for dashboard to start before opening browser
+timeout /t 3 /nobreak >nul
+
+REM Open browser automatically
+echo [3/3] Opening dashboard in your browser...
+start http://localhost:5173
 
 echo.
 echo ========================================
 echo JJ-Bot Started Successfully!
 echo ========================================
 echo.
-echo Two windows have been opened:
-echo   1. API Server  - http://127.0.0.1:8000
-echo   2. Dashboard   - http://localhost:5173
+echo Services running:
+echo   - API Server:  http://127.0.0.1:8000
+echo   - Dashboard:   http://localhost:5173
 echo.
-echo To stop the system:
-echo   Close both command windows or press Ctrl+C in each
+echo To stop the system, run: stop_all.bat
 echo.
-echo Your browser should automatically open to the dashboard.
-echo If not, navigate to: http://localhost:5173
-echo.
-pause
+echo This window will close in 2 seconds...
+timeout /t 2 /nobreak >nul
+exit

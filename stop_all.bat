@@ -25,7 +25,7 @@ for /f "tokens=2" %%a in ('tasklist /v /fi "windowtitle eq JJ-Bot Dashboard*" /f
 echo.
 echo ========================================
 echo All processes stopped and windows closed!
-========================================
+echo ========================================
 echo.
 echo This window will close in 2 seconds...
 timeout /t 2 /nobreak >nul
