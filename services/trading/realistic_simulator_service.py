@@ -130,14 +130,7 @@ class RealisticSimulatorService(BaseService):
             print("✅ Market simulator initialized")
 
             # Strategy engine
-            self.strategy_engine = StrategyEngine(
-                sma_short=20,
-                sma_long=50,
-                rsi_period=14,
-                macd_fast=12,
-                macd_slow=26,
-                macd_signal=9
-            )
+            self.strategy_engine = StrategyEngine()
             print("✅ Strategy engine initialized")
 
             # Adaptive selector (optional)

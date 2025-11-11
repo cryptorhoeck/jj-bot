@@ -131,14 +131,13 @@ class RealisticPriceGenerator:
         self.base_volume = initial_price * 10  # Base volume proportional to price
 
         # Random seed for reproducibility (can be set externally)
-        self.rng = np.random.default_rng()
 
     def _sample_regime_duration(self) -> int:
         """Sample regime duration from normal distribution (in minutes)"""
         params = self.REGIME_PARAMS[self.current_regime]
         duration = max(
             30,  # Minimum 30 minutes
-            int(self.rng.normal(params.duration_mean, params.duration_std))
+            int(np.random.normal(params.duration_mean, params.duration_std))
         )
         return duration
 
@@ -181,7 +180,7 @@ class RealisticPriceGenerator:
         regimes = list(probs.keys())
         probabilities = list(probs.values())
 
-        self.current_regime = self.rng.choice(regimes, p=probabilities)
+        self.current_regime = np.random.choice(regimes, p=probabilities)
         self.regime_start_time = self.current_time
         self.regime_duration = self._sample_regime_duration()
 
@@ -231,7 +230,7 @@ class RealisticPriceGenerator:
         volatility = params.volatility * np.sqrt(dt) * self.volatility_multiplier
 
         # Random shock from normal distribution
-        shock = self.rng.normal(0, 1)
+        shock = np.random.normal(0, 1)
 
         # GBM formula: S_next = S * exp((μ - σ²/2)*dt + σ*√dt*ε)
         # Simplified to: log(S_next/S) = drift - 0.5*vol² + vol*shock
@@ -263,7 +262,7 @@ class RealisticPriceGenerator:
         Higher volatility typically correlates with higher volume.
         """
         # Base volume varies ±50%
-        volume_multiplier = self.rng.uniform(0.5, 1.5)
+        volume_multiplier = np.random.uniform(0.5, 1.5)
 
         # Higher volatility → higher volume
         volume_multiplier *= self.volatility_multiplier
