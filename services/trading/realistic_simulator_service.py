@@ -16,6 +16,7 @@ import time
 import sys
 import os
 import sqlite3
+import requests
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -45,6 +46,55 @@ try:
 except ImportError:
     HAS_ADAPTIVE_SELECTOR = False
     print("⚠️ Adaptive strategy selector not available - using fixed strategy")
+
+
+def fetch_real_prices() -> Dict[str, float]:
+    """
+    Fetch current real market prices from CoinGecko API.
+
+    Returns:
+        Dictionary mapping symbol -> current USD price
+    """
+    # Symbol mapping from CoinGecko IDs to our symbols
+    coin_mapping = {
+        'bitcoin': 'BTC',
+        'ethereum': 'ETH',
+        'solana': 'SOL',
+        'binancecoin': 'BNB',
+        'cardano': 'ADA',
+        'polkadot': 'DOT',
+        'chainlink': 'LINK',
+        'polygon': 'MATIC',
+        'uniswap': 'UNI',
+        'avalanche-2': 'AVAX'
+    }
+
+    try:
+        # Fetch prices from CoinGecko
+        coin_ids = ','.join(coin_mapping.keys())
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_ids}&vs_currencies=usd"
+
+        print("🌐 Fetching real market prices from CoinGecko...")
+        response = requests.get(url, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            prices = {}
+
+            for coin_id, symbol in coin_mapping.items():
+                if coin_id in data and 'usd' in data[coin_id]:
+                    prices[symbol] = data[coin_id]['usd']
+                    print(f"   {symbol}: ${prices[symbol]:,.2f}")
+
+            print(f"✅ Fetched {len(prices)} real prices")
+            return prices
+        else:
+            print(f"⚠️ CoinGecko API returned status {response.status_code}")
+            return {}
+
+    except Exception as e:
+        print(f"⚠️ Failed to fetch real prices: {e}")
+        return {}
 
 
 class RealisticSimulatorService(BaseService):
@@ -116,6 +166,15 @@ class RealisticSimulatorService(BaseService):
             # Initialize databases first
             print("📦 Initializing databases...")
             init_all_databases()
+
+            # Fetch REAL current market prices
+            real_prices = fetch_real_prices()
+            if real_prices:
+                # Update symbol config with real prices
+                self.symbols_config.update(real_prices)
+                print(f"✅ Using REAL market prices for {len(real_prices)} symbols")
+            else:
+                print("⚠️ Using fallback prices (failed to fetch real data)")
 
             # Price generator
             self.price_generator = MultiSymbolPriceGenerator(
