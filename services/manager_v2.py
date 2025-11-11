@@ -57,8 +57,10 @@ class ServiceManager:
         from services.trading.strategy_service import StrategyService
 
         # Create real service instances
+        realistic_sim = RealisticSimulatorService()
         self.services = {
-            "simulator": RealisticSimulatorService(),  # NEW: Realistic simulator
+            "simulator": realistic_sim,  # Keep old name for compatibility
+            "realistic_simulator": realistic_sim,  # New name for frontend
             "market_feed": MarketFeedService(),
             "strategy_engine": StrategyService(),
             "analytics": AnalyticsService(),

@@ -18,15 +18,18 @@ taskkill /F /T /IM uvicorn.exe >nul 2>&1
 taskkill /F /T /IM npm.exe >nul 2>&1
 
 echo [4/4] Closing terminal windows...
-REM Kill cmd.exe windows by title - this closes the windows themselves
-for /f "tokens=2" %%a in ('tasklist /v /fi "windowtitle eq JJ-Bot API Server*" /fo list ^| find "PID:"') do taskkill /F /PID %%a >nul 2>&1
-for /f "tokens=2" %%a in ('tasklist /v /fi "windowtitle eq JJ-Bot Dashboard*" /fo list ^| find "PID:"') do taskkill /F /PID %%a >nul 2>&1
+REM Give processes a moment to die
+timeout /t 1 /nobreak >nul
+
+REM Close all cmd windows except this one (using WMIC to find orphaned cmd processes)
+for /f "skip=1" %%p in ('wmic process where "name='cmd.exe' and commandline like '%%JJ-Bot%%'" get processid 2^>nul') do (
+    if not "%%p"=="%%" taskkill /F /PID %%p >nul 2>&1
+)
 
 echo.
 echo ========================================
-echo All processes stopped and windows closed!
+echo All processes stopped!
 echo ========================================
 echo.
-echo This window will close in 2 seconds...
-timeout /t 2 /nobreak >nul
-exit
+echo Press any key to close this window...
+pause >nul
