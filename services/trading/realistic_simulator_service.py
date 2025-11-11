@@ -24,7 +24,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'glue'))
 
 from services.base.service import BaseService
-from modules.logger import get_logger
 from modules.simulator.price_generator import (
     MultiSymbolPriceGenerator,
     MarketRegime,
@@ -37,8 +36,6 @@ from modules.simulator.market_simulator import (
 from modules.strategy.strategy_engine import StrategyEngine
 from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
 from modules.database import connection as db
-
-logger = get_logger("realistic_simulator")
 
 
 class RealisticSimulatorService(BaseService):
@@ -111,7 +108,7 @@ class RealisticSimulatorService(BaseService):
                 correlation=0.3,  # 30% correlation between crypto prices
                 tick_interval_seconds=self.tick_interval
             )
-            logger.info("✅ Price generator initialized")
+            print("✅ Price generator initialized")
 
             # Market simulator
             self.market_simulator = MarketSimulator(
@@ -124,7 +121,7 @@ class RealisticSimulatorService(BaseService):
                 use_take_profit=True,
                 take_profit_pct=0.05        # 5% take-profit
             )
-            logger.info("✅ Market simulator initialized")
+            print("✅ Market simulator initialized")
 
             # Strategy engine
             self.strategy_engine = StrategyEngine(
@@ -135,7 +132,7 @@ class RealisticSimulatorService(BaseService):
                 macd_slow=26,
                 macd_signal=9
             )
-            logger.info("✅ Strategy engine initialized")
+            print("✅ Strategy engine initialized")
 
             # Adaptive selector
             self.adaptive_selector = AdaptiveStrategySelector(
@@ -147,12 +144,12 @@ class RealisticSimulatorService(BaseService):
             state = self.adaptive_selector.get_state()
             if state:
                 self.current_strategy = state["current_strategy"]
-                logger.info(f"✅ Loaded strategy: {self.current_strategy}")
+                print(f"✅ Loaded strategy: {self.current_strategy}")
             else:
-                logger.info(f"✅ Using default strategy: {self.current_strategy}")
+                print(f"✅ Using default strategy: {self.current_strategy}")
 
         except Exception as e:
-            logger.error(f"Failed to initialize components: {e}", exc_info=True)
+            print(f"Failed to initialize components: {e}")
             raise
 
     def _get_strategy_signal(
@@ -234,7 +231,7 @@ class RealisticSimulatorService(BaseService):
             return None
 
         except Exception as e:
-            logger.error(f"Error getting strategy signal: {e}")
+            print(f"Error getting strategy signal: {e}")
             return None
 
     def _save_trade_to_db(self, trade):
@@ -269,7 +266,7 @@ class RealisticSimulatorService(BaseService):
 
             self.trades_generated += 1
 
-            logger.info(
+            print(
                 f"💾 {trade.signal} {trade.symbol} | "
                 f"Entry: ${trade.entry_price:.2f} | "
                 f"Exit: ${trade.exit_price:.2f} | "
@@ -278,7 +275,7 @@ class RealisticSimulatorService(BaseService):
             )
 
         except Exception as e:
-            logger.error(f"Error saving trade to database: {e}", exc_info=True)
+            print(f"Error saving trade to database: {e}")
 
     def _check_adaptive_selector(self):
         """Check if adaptive selector wants to switch strategies"""
@@ -291,7 +288,7 @@ class RealisticSimulatorService(BaseService):
                     old_strategy = self.current_strategy
                     self.current_strategy = recommendation["strategy"]
 
-                    logger.info(
+                    print(
                         f"🔄 Strategy switch: {old_strategy} → {self.current_strategy} "
                         f"(confidence: {recommendation['confidence']:.2f})"
                     )
@@ -299,17 +296,17 @@ class RealisticSimulatorService(BaseService):
                 self.last_selector_check = self.trades_generated
 
         except Exception as e:
-            logger.error(f"Error checking adaptive selector: {e}")
+            print(f"Error checking adaptive selector: {e}")
 
     def _run(self):
         """Main simulator loop"""
-        logger.info("🚀 Realistic Simulator starting...")
+        print("🚀 Realistic Simulator starting...")
 
         # Initialize components
         try:
             self._initialize_components()
         except Exception as e:
-            logger.error(f"Failed to initialize: {e}")
+            print(f"Failed to initialize: {e}")
             self.status = "error"
             return
 
@@ -318,10 +315,10 @@ class RealisticSimulatorService(BaseService):
             symbol: [] for symbol in self.symbols_config.keys()
         }
 
-        logger.info(f"💰 Initial capital: ${self.initial_capital:,.2f}")
-        logger.info(f"📊 Trading {len(self.symbols_config)} symbols")
-        logger.info(f"🎯 Starting strategy: {self.current_strategy}")
-        logger.info("=" * 60)
+        print(f"💰 Initial capital: ${self.initial_capital:,.2f}")
+        print(f"📊 Trading {len(self.symbols_config)} symbols")
+        print(f"🎯 Starting strategy: {self.current_strategy}")
+        print("=" * 60)
 
         try:
             while self.status == "running":
@@ -379,7 +376,7 @@ class RealisticSimulatorService(BaseService):
                             )
 
                             if position:
-                                logger.info(
+                                print(
                                     f"🟢 LONG {symbol} @ ${position.entry_price:.2f} | "
                                     f"Qty: {position.quantity:.4f} | "
                                     f"Stop: ${position.stop_loss:.2f} | "
@@ -419,7 +416,7 @@ class RealisticSimulatorService(BaseService):
 
                 # Log status every 10 ticks
                 if self.tick_count % 10 == 0:
-                    logger.info(
+                    print(
                         f"📊 Tick {self.tick_count} | "
                         f"Capital: ${stats['current_capital']:,.2f} | "
                         f"P&L: ${stats['total_pnl']:+,.2f} ({stats['total_return_pct']:+.2f}%) | "
@@ -434,24 +431,24 @@ class RealisticSimulatorService(BaseService):
                 time.sleep(self.tick_interval)
 
         except Exception as e:
-            logger.error(f"Simulator error: {e}", exc_info=True)
+            print(f"Simulator error: {e}")
             self.status = "error"
             self.stats["error"] = str(e)
 
     def _cleanup(self):
         """Cleanup simulator resources"""
-        logger.info("🛑 Realistic Simulator stopping...")
+        print("🛑 Realistic Simulator stopping...")
 
         if self.market_simulator:
             stats = self.market_simulator.get_statistics()
-            logger.info("=" * 60)
-            logger.info("📈 Final Statistics:")
-            logger.info(f"   Initial Capital: ${stats['initial_capital']:,.2f}")
-            logger.info(f"   Final Capital:   ${stats['current_capital']:,.2f}")
-            logger.info(f"   Total P&L:       ${stats['total_pnl']:+,.2f}")
-            logger.info(f"   Return:          {stats['total_return_pct']:+.2f}%")
-            logger.info(f"   Total Trades:    {stats['total_trades']}")
-            logger.info(f"   Win Rate:        {stats['win_rate']:.2f}%")
-            logger.info(f"   Commission Paid: ${stats['total_commission_paid']:.2f}")
-            logger.info(f"   Slippage Paid:   ${stats['total_slippage_paid']:.2f}")
-            logger.info("=" * 60)
+            print("=" * 60)
+            print("📈 Final Statistics:")
+            print(f"   Initial Capital: ${stats['initial_capital']:,.2f}")
+            print(f"   Final Capital:   ${stats['current_capital']:,.2f}")
+            print(f"   Total P&L:       ${stats['total_pnl']:+,.2f}")
+            print(f"   Return:          {stats['total_return_pct']:+.2f}%")
+            print(f"   Total Trades:    {stats['total_trades']}")
+            print(f"   Win Rate:        {stats['win_rate']:.2f}%")
+            print(f"   Commission Paid: ${stats['total_commission_paid']:.2f}")
+            print(f"   Slippage Paid:   ${stats['total_slippage_paid']:.2f}")
+            print("=" * 60)
