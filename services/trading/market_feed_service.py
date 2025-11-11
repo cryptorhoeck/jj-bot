@@ -20,11 +20,11 @@ class MarketFeedService(BaseService):
     """Service that fetches real-time market data and publishes price updates"""
 
     def __init__(self):
-        super().__init__(name="market_feed", auto_start=True)
+        super().__init__(name="market_feed", auto_start=False)  # Disabled - simulator uses real prices
 
         # Configuration
         self.config = {
-            "update_interval": 30,  # seconds
+            "update_interval": 60,  # seconds (increased to avoid 429 errors)
             "api_url": "https://api.coingecko.com/api/v3/simple/price",
             "coins": [
                 "bitcoin", "ethereum", "binancecoin", "solana", "ripple",
