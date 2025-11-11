@@ -34,7 +34,6 @@ from modules.simulator.market_simulator import (
     PositionSide
 )
 from modules.strategy.strategy_engine import StrategyEngine
-from modules.database import connection as db
 
 # Try to import adaptive selector, but make it optional
 try:
