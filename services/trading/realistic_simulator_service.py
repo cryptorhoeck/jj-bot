@@ -34,8 +34,15 @@ from modules.simulator.market_simulator import (
     PositionSide
 )
 from modules.strategy.strategy_engine import StrategyEngine
-from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
 from modules.database import connection as db
+
+# Try to import adaptive selector, but make it optional
+try:
+    from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
+    HAS_ADAPTIVE_SELECTOR = True
+except ImportError:
+    HAS_ADAPTIVE_SELECTOR = False
+    print("⚠️ Adaptive strategy selector not available - using fixed strategy")
 
 
 class RealisticSimulatorService(BaseService):
@@ -134,19 +141,23 @@ class RealisticSimulatorService(BaseService):
             )
             print("✅ Strategy engine initialized")
 
-            # Adaptive selector
-            self.adaptive_selector = AdaptiveStrategySelector(
-                reevaluation_interval=10,  # Check every 10 trades
-                min_confidence=0.6
-            )
+            # Adaptive selector (optional)
+            if HAS_ADAPTIVE_SELECTOR:
+                self.adaptive_selector = AdaptiveStrategySelector(
+                    reevaluation_interval=10,  # Check every 10 trades
+                    min_confidence=0.6
+                )
 
-            # Load initial strategy recommendation
-            state = self.adaptive_selector.get_state()
-            if state:
-                self.current_strategy = state["current_strategy"]
-                print(f"✅ Loaded strategy: {self.current_strategy}")
+                # Load initial strategy recommendation
+                state = self.adaptive_selector.get_state()
+                if state:
+                    self.current_strategy = state["current_strategy"]
+                    print(f"✅ Loaded strategy: {self.current_strategy}")
+                else:
+                    print(f"✅ Using default strategy: {self.current_strategy}")
             else:
-                print(f"✅ Using default strategy: {self.current_strategy}")
+                self.adaptive_selector = None
+                print(f"✅ Using fixed strategy: {self.current_strategy}")
 
         except Exception as e:
             print(f"Failed to initialize components: {e}")
@@ -279,6 +290,10 @@ class RealisticSimulatorService(BaseService):
 
     def _check_adaptive_selector(self):
         """Check if adaptive selector wants to switch strategies"""
+        # Skip if adaptive selector not available
+        if not HAS_ADAPTIVE_SELECTOR or self.adaptive_selector is None:
+            return
+
         try:
             # Check every 10 trades
             if self.trades_generated - self.last_selector_check >= 10:
