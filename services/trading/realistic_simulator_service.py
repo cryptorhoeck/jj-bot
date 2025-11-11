@@ -65,8 +65,8 @@ class RealisticSimulatorService(BaseService):
     def __init__(
         self,
         initial_capital: float = 10000.0,
-        tick_interval_seconds: int = 60,
-        trade_frequency_ticks: int = 5,  # Attempt trade every N ticks
+        tick_interval_seconds: int = 2,  # FAST: 2 seconds between ticks
+        trade_frequency_ticks: int = 1,  # FAST: Check signals every tick
     ):
         """
         Initialize realistic simulator.
@@ -192,7 +192,7 @@ class RealisticSimulatorService(BaseService):
         try:
             # Prepare data for strategy engine
             # Strategy engine expects price history
-            if len(price_history) < 50:
+            if len(price_history) < 20:  # FAST: Reduced from 50 to 20
                 return None  # Need enough history
 
             # Calculate indicators
@@ -362,8 +362,8 @@ class RealisticSimulatorService(BaseService):
                 for symbol, tick in price_ticks.items():
                     price_histories[symbol].append(tick.price)
 
-                    # Keep only recent history (last 200 ticks)
-                    if len(price_histories[symbol]) > 200:
+                    # Keep only recent history (last 100 ticks) - FAST mode
+                    if len(price_histories[symbol]) > 100:
                         price_histories[symbol].pop(0)
 
                     # Store price to database for learning system
@@ -455,8 +455,8 @@ class RealisticSimulatorService(BaseService):
                     "market_regime": self.price_generator.market_regime.value
                 })
 
-                # Log status every 10 ticks
-                if self.tick_count % 10 == 0:
+                # Log status every 5 ticks (FAST mode)
+                if self.tick_count % 5 == 0:
                     print(
                         f"📊 Tick {self.tick_count} | "
                         f"Capital: ${stats['current_capital']:,.2f} | "
