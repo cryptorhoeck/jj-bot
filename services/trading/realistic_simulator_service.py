@@ -35,6 +35,8 @@ from modules.simulator.market_simulator import (
 )
 from modules.strategy.strategy_engine import StrategyEngine
 from modules.database.connection import init_all_databases
+from modules.learning.price_history import PriceHistory
+from modules.learning.strategy_performance_tracker import StrategyPerformanceTracker
 
 # Try to import adaptive selector, but make it optional
 try:
@@ -99,6 +101,8 @@ class RealisticSimulatorService(BaseService):
         self.market_simulator: Optional[MarketSimulator] = None
         self.strategy_engine: Optional[StrategyEngine] = None
         self.adaptive_selector: Optional[AdaptiveStrategySelector] = None
+        self.price_history: Optional[PriceHistory] = None
+        self.performance_tracker: Optional[StrategyPerformanceTracker] = None
 
         # State
         self.current_strategy = "rsi_strategy"  # Default
@@ -137,6 +141,14 @@ class RealisticSimulatorService(BaseService):
             # Strategy engine
             self.strategy_engine = StrategyEngine()
             print("✅ Strategy engine initialized")
+
+            # Price history for learning system
+            self.price_history = PriceHistory()
+            print("✅ Price history tracker initialized")
+
+            # Performance tracker for learning system
+            self.performance_tracker = StrategyPerformanceTracker()
+            print("✅ Performance tracker initialized")
 
             # Adaptive selector (optional)
             if HAS_ADAPTIVE_SELECTOR:
@@ -274,6 +286,15 @@ class RealisticSimulatorService(BaseService):
 
             self.trades_generated += 1
 
+            # Record performance metrics for learning system
+            self.performance_tracker.record_trade(
+                strategy_name=trade.strategy,
+                pnl=trade.pnl,
+                entry_price=trade.entry_price,
+                exit_price=trade.exit_price,
+                timestamp=trade.timestamp
+            )
+
             print(
                 f"💾 {trade.signal} {trade.symbol} | "
                 f"Entry: ${trade.entry_price:.2f} | "
@@ -344,6 +365,14 @@ class RealisticSimulatorService(BaseService):
                     # Keep only recent history (last 200 ticks)
                     if len(price_histories[symbol]) > 200:
                         price_histories[symbol].pop(0)
+
+                    # Store price to database for learning system
+                    self.price_history.add_price_tick(
+                        symbol=symbol,
+                        price=tick.price,
+                        volume=tick.volume,
+                        timestamp=tick.timestamp
+                    )
 
                 # Update open positions and check stop-loss/take-profit
                 prices = {symbol: tick.price for symbol, tick in price_ticks.items()}
