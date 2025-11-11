@@ -39,6 +39,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
 from service_endpoints import router as service_router
 from backtest_endpoints import router as backtest_router
+from simulator_config_endpoints import router as simulator_config_router
+from strategy_config_endpoints import router as strategy_config_router
 from websocket_manager import ws_manager
 
 # Initialize database on startup
@@ -286,6 +288,8 @@ async def get_market_live():
 # Include service endpoints
 app.include_router(service_router)
 app.include_router(backtest_router)
+app.include_router(simulator_config_router)
+app.include_router(strategy_config_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")
