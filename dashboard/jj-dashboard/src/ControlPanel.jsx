@@ -5,6 +5,7 @@ export function ControlPanel({ colors, API_BASE }) {
   const [loading, setLoading] = useState({});
   const [tradingMode, setTradingMode] = useState('paper');
   const [positions, setPositions] = useState([]);
+  const [showBackgroundServices, setShowBackgroundServices] = useState(false);
 
   // Fetch service status
   const fetchServices = async () => {
@@ -25,11 +26,8 @@ export function ControlPanel({ colors, API_BASE }) {
     try {
       const response = await fetch(`${API_BASE}/api/services/${name}/start`, { method: 'POST' });
       if (response.ok) {
-        const result = await response.json();
-        console.log(`Service ${name} start result:`, result);
-        // Wait a moment for service to fully start
         await new Promise(resolve => setTimeout(resolve, 1000));
-        await fetchServices(); // Refresh to get actual status
+        await fetchServices();
       }
     } catch (error) {
       console.error(`Error starting ${name}:`, error);
@@ -45,37 +43,14 @@ export function ControlPanel({ colors, API_BASE }) {
     try {
       const response = await fetch(`${API_BASE}/api/services/${name}/stop`, { method: 'POST' });
       if (response.ok) {
-        const result = await response.json();
-        console.log(`Service ${name} stop result:`, result);
         await new Promise(resolve => setTimeout(resolve, 500));
-        await fetchServices(); // Refresh to get actual status
+        await fetchServices();
       }
     } catch (error) {
       console.error(`Error stopping ${name}:`, error);
       alert(`Failed to stop ${name}. Check console for details.`);
     } finally {
       setLoading(prev => ({ ...prev, [name]: false }));
-    }
-  };
-
-  // Start all services
-  const startAll = async () => {
-    for (const service of services) {
-      if (service.status !== 'running') {
-        await startService(service.name);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between starts
-      }
-    }
-  };
-
-  // Stop all services
-  const stopAll = async () => {
-    if (!confirm('Stop all running services?')) return;
-
-    for (const service of services) {
-      if (service.status === 'running') {
-        await stopService(service.name);
-      }
     }
   };
 
@@ -102,42 +77,19 @@ export function ControlPanel({ colors, API_BASE }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Display names and descriptions
-  const serviceInfo = {
-    'simulator': {
-      displayName: 'Trade Simulator',
-      description: 'Paper trading with virtual funds',
-      icon: '📊'
-    },
-    'market_feed': {
-      displayName: 'Market Data Feed',
-      description: 'Real-time cryptocurrency prices from CoinGecko',
-      icon: '📈'
-    },
-    'strategy_engine': {
-      displayName: 'Strategy Engine',
-      description: 'Technical analysis and trading signals (RSI, SMA, MACD)',
-      icon: '🎯'
-    },
-    'analytics': {
-      displayName: 'Analytics Engine',
-      description: 'Performance tracking and trade analysis',
-      icon: '📉'
-    },
-    'trading_bot': {
-      displayName: 'Trading Bot',
-      description: 'Automated trading (⚠️ disabled by default)',
-      icon: '🤖'
-    }
-  };
+  // Get specific services
+  const simulator = services.find(s => s.name === 'realistic_simulator');
+  const backgroundServices = services.filter(s =>
+    s.auto_start && s.name !== 'realistic_simulator' && s.name !== 'simulator' && s.name !== 'market_feed'
+  );
 
   return (
     <div style={{ backgroundColor: colors.card, borderRadius: '0.5rem', padding: '1.5rem' }}>
       {/* Header with Trading Mode */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: '1.5rem',
         paddingBottom: '1rem',
         borderBottom: `1px solid ${colors.border}`
@@ -145,7 +97,7 @@ export function ControlPanel({ colors, API_BASE }) {
         <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text }}>
           🎮 Control Panel
         </h2>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ color: colors.textMuted, fontSize: '0.875rem', marginRight: '0.5rem' }}>Trading Mode:</span>
           <button
@@ -185,157 +137,193 @@ export function ControlPanel({ colors, API_BASE }) {
         </div>
       </div>
 
-      {/* Service Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-        {services.map(service => {
-          const info = serviceInfo[service.name] || { 
-            displayName: service.name, 
-            description: 'Service',
-            icon: '⚙️'
-          };
-          
-          return (
-            <div 
-              key={service.name}
-              style={{ 
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem',
-                padding: '1rem',
-                backgroundColor: colors.bg
-              }}
-            >
-              {/* Service Header */}
-              <div style={{ marginBottom: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                  <h3 style={{ color: colors.text, fontSize: '1rem', fontWeight: '600', margin: 0 }}>
-                    {info.icon} {info.displayName}
-                  </h3>
-                  {service.auto_start && (
-                    <span style={{ 
-                      fontSize: '0.625rem', 
-                      padding: '0.125rem 0.25rem',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      borderRadius: '0.25rem',
-                      fontWeight: '500'
-                    }}>
-                      AUTO
-                    </span>
-                  )}
-                </div>
-                <p style={{ color: colors.textMuted, fontSize: '0.75rem', margin: 0 }}>
-                  {info.description}
-                </p>
-              </div>
+      {/* Featured Trading Simulator Card */}
+      {simulator && (
+        <div style={{
+          border: `2px solid ${simulator.status === 'running' ? '#10b981' : colors.border}`,
+          borderRadius: '0.75rem',
+          padding: '1.5rem',
+          backgroundColor: colors.bg,
+          marginBottom: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: colors.text, margin: 0, marginBottom: '0.25rem' }}>
+                🚀 Trading Simulator
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: colors.textMuted, margin: 0 }}>
+                Realistic paper trading with real-time market data, strategy execution, and position management
+              </p>
+            </div>
+            <div style={{
+              width: '1rem',
+              height: '1rem',
+              borderRadius: '50%',
+              backgroundColor: simulator.status === 'running' ? '#10b981' : '#6b7280',
+              boxShadow: simulator.status === 'running' ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none'
+            }} />
+          </div>
 
-              {/* Status */}
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.5rem',
-                marginBottom: '0.75rem'
-              }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            {simulator.status !== 'running' ? (
+              <button
+                onClick={() => startService('realistic_simulator')}
+                disabled={loading['realistic_simulator']}
+                style={{
+                  flex: 1,
+                  padding: '1rem',
+                  backgroundColor: loading['realistic_simulator'] ? '#6b7280' : '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  cursor: loading['realistic_simulator'] ? 'not-allowed' : 'pointer',
+                  fontSize: '1.125rem',
+                  fontWeight: '700',
+                  transition: 'all 0.2s',
+                  boxShadow: loading['realistic_simulator'] ? 'none' : '0 2px 4px rgba(16, 185, 129, 0.2)'
+                }}
+              >
+                {loading['realistic_simulator'] ? '⏳ Starting...' : '▶ START SIMULATOR'}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => stopService('realistic_simulator')}
+                  disabled={loading['realistic_simulator']}
+                  style={{
+                    flex: 1,
+                    padding: '1rem',
+                    backgroundColor: loading['realistic_simulator'] ? '#6b7280' : '#dc2626',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    cursor: loading['realistic_simulator'] ? 'not-allowed' : 'pointer',
+                    fontSize: '1.125rem',
+                    fontWeight: '700',
+                    transition: 'all 0.2s',
+                    boxShadow: loading['realistic_simulator'] ? 'none' : '0 2px 4px rgba(220, 38, 38, 0.2)'
+                  }}
+                >
+                  {loading['realistic_simulator'] ? '⏳ Stopping...' : '⏹ STOP SIMULATOR'}
+                </button>
                 <div style={{
-                  width: '0.5rem',
-                  height: '0.5rem',
-                  borderRadius: '50%',
-                  backgroundColor: service.status === 'running' ? '#10b981' : '#6b7280'
-                }} />
-                <span style={{ 
-                  color: service.status === 'running' ? '#10b981' : colors.textMuted,
-                  fontSize: '0.875rem',
-                  fontWeight: '500'
+                  padding: '1rem',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid #10b981'
                 }}>
-                  {service.status === 'running' ? 'Running' : 'Stopped'}
-                </span>
-              </div>
+                  <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Open Positions</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#10b981' }}>
+                    {positions.length}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Buttons */}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {service.status !== 'running' ? (
-                  <button
-                    onClick={() => startService(service.name)}
-                    disabled={loading[service.name]}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      backgroundColor: loading[service.name] ? '#6b7280' : '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.375rem',
-                      cursor: loading[service.name] ? 'not-allowed' : 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      transition: 'background-color 0.2s'
-                    }}
-                  >
-                    {loading[service.name] ? '⏳ Starting...' : '▶ START'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => stopService(service.name)}
-                    disabled={loading[service.name]}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      backgroundColor: loading[service.name] ? '#6b7280' : '#dc2626',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.375rem',
-                      cursor: loading[service.name] ? 'not-allowed' : 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      transition: 'background-color 0.2s'
-                    }}
-                  >
-                    {loading[service.name] ? '⏳ Stopping...' : '⏹ STOP'}
-                  </button>
-                )}
+      {/* Collapsible Background Services */}
+      {backgroundServices.length > 0 && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <button
+            onClick={() => setShowBackgroundServices(!showBackgroundServices)}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              backgroundColor: colors.bg,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              color: colors.text,
+              fontSize: '0.875rem',
+              fontWeight: '600'
+            }}
+          >
+            <span>⚙️ Background Services ({backgroundServices.length})</span>
+            <span style={{ fontSize: '1rem' }}>{showBackgroundServices ? '▼' : '▶'}</span>
+          </button>
+
+          {showBackgroundServices && (
+            <div style={{
+              marginTop: '0.5rem',
+              padding: '1rem',
+              backgroundColor: colors.bg,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '0.5rem'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {backgroundServices.map(service => {
+                  const icons = {
+                    'strategy_engine': '🎯',
+                    'analytics': '📊',
+                    'trading_bot': '🤖'
+                  };
+                  const names = {
+                    'strategy_engine': 'Strategy Engine',
+                    'analytics': 'Analytics',
+                    'trading_bot': 'Trading Bot'
+                  };
+
+                  return (
+                    <div
+                      key={service.name}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.75rem',
+                        backgroundColor: colors.card,
+                        borderRadius: '0.375rem',
+                        border: `1px solid ${colors.border}`
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '1.25rem' }}>{icons[service.name] || '⚙️'}</span>
+                        <div>
+                          <div style={{ color: colors.text, fontWeight: '600', fontSize: '0.875rem' }}>
+                            {names[service.name] || service.name}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Auto-start enabled</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{
+                          width: '0.5rem',
+                          height: '0.5rem',
+                          borderRadius: '50%',
+                          backgroundColor: service.status === 'running' ? '#10b981' : '#6b7280'
+                        }} />
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          color: service.status === 'running' ? '#10b981' : colors.textMuted
+                        }}>
+                          {service.status === 'running' ? 'Running' : 'Stopped'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderRadius: '0.375rem',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                fontSize: '0.75rem',
+                color: colors.text
+              }}>
+                ℹ️ These services start automatically when the API boots up. They run in the background to support the trading simulator.
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Bottom Actions - Simplified */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        paddingTop: '1rem',
-        borderTop: `1px solid ${colors.border}`
-      }}>
-        <button
-          onClick={startAll}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.375rem',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: '600'
-          }}
-        >
-          🚀 Start All Services
-        </button>
-        
-        <button
-          onClick={stopAll}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#dc2626',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.375rem',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: '700'
-          }}
-        >
-          ⏹ Stop All Services
-        </button>
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Open Positions Section */}
       <div style={{
@@ -500,9 +488,11 @@ export function ControlPanel({ colors, API_BASE }) {
             borderRadius: '0.5rem',
             border: `1px dashed ${colors.border}`
           }}>
-            <p style={{ margin: 0 }}>No open positions</p>
+            <p style={{ margin: 0, fontSize: '1rem' }}>No open positions</p>
             <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>
-              Start the realistic_simulator service to see live positions
+              {simulator?.status === 'running'
+                ? 'Waiting for trading signals...'
+                : 'Start the Trading Simulator to see live positions'}
             </p>
           </div>
         )}
