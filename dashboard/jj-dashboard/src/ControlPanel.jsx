@@ -318,7 +318,13 @@ export function ControlPanel({ colors, API_BASE }) {
                 fontSize: '0.75rem',
                 color: colors.text
               }}>
-                ℹ️ These services start automatically when the API boots up. They run in the background to support the trading simulator.
+                {backgroundServices.every(s => s.status === 'running') ? (
+                  <>✅ All background services are running and supporting the Trading Simulator.</>
+                ) : backgroundServices.some(s => s.status === 'running') ? (
+                  <>⚠️ Some background services are stopped. They should auto-start when you restart the API server.</>
+                ) : (
+                  <>ℹ️ These services auto-start when the API boots up. If they're stopped, try restarting the API server or use the endpoint: POST /api/services/auto-start</>
+                )}
               </div>
             </div>
           )}

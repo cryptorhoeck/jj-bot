@@ -37,7 +37,7 @@ app.add_middleware(
 # Import engine with proper path handling
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
-from service_endpoints import router as service_router
+from service_endpoints import router as service_router, service_manager
 from backtest_endpoints import router as backtest_router
 from simulator_config_endpoints import router as simulator_config_router
 from strategy_config_endpoints import router as strategy_config_router
@@ -49,6 +49,17 @@ from websocket_manager import ws_manager
 # Initialize database on startup
 engine.init_db()
 print("✅ Database initialized")
+
+# Startup event - auto-start services
+@app.on_event("startup")
+async def startup_event():
+    """Start auto-start services when API boots up"""
+    print("🚀 Starting auto-start services...")
+    started = service_manager.start_auto_services()
+    if started:
+        print(f"✅ Auto-started services: {', '.join(started)}")
+    else:
+        print("ℹ️  No auto-start services configured")
 
 # Global state
 simulator_process = None
