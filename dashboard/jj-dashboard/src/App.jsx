@@ -23,6 +23,10 @@ function App() {
   const [realtimeEvents, setRealtimeEvents] = useState([]);
   const [symbols, setSymbols] = useState([]);
   const [learningData, setLearningData] = useState(null);
+  const [marketDataError, setMarketDataError] = useState(null);
+  const [marketDataLoading, setMarketDataLoading] = useState(false);
+  const [lastMarketFetch, setLastMarketFetch] = useState(null);
+  const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000); // 2 minutes default
 
   // Dark mode colors
   const colors = {
@@ -59,14 +63,36 @@ function App() {
     }
   };
 
-  // NEW: Fetch real market data
-  const fetchMarketData = async () => {
+  // Fetch real market data with rate limiting and error handling
+  const fetchMarketData = async (force = false) => {
+    // Rate limit check - don't fetch more than once per interval (unless forced)
+    if (!force && lastMarketFetch) {
+      const timeSinceLastFetch = Date.now() - lastMarketFetch;
+      if (timeSinceLastFetch < marketRefreshInterval) {
+        console.log(`⏸️  Rate limit: ${Math.ceil((marketRefreshInterval - timeSinceLastFetch) / 1000)}s until next fetch`);
+        return;
+      }
+    }
+
+    setMarketDataLoading(true);
+    setMarketDataError(null);
+
     try {
-      // First try the live endpoint if it exists
       const response = await fetch(`${API_BASE}/api/market/live`);
+
+      // Handle 429 Too Many Requests
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : marketRefreshInterval * 2;
+
+        setMarketDataError(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
+        setMarketRefreshInterval(Math.min(waitTime, 300000)); // Cap at 5 minutes
+        console.warn(`⚠️  Rate limited! Increasing interval to ${waitTime / 1000}s`);
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
-        // Convert object to array
         if (data.data && typeof data.data === 'object') {
           const marketArray = Object.values(data.data).map(coin => ({
             symbol: coin.symbol,
@@ -77,16 +103,24 @@ function App() {
           }));
           setMarketData(marketArray);
           setLastMarketUpdate(new Date());
+          setLastMarketFetch(Date.now());
+          setMarketDataError(null);
+
+          // Success - reset interval to default if it was increased
+          if (marketRefreshInterval > 120000) {
+            setMarketRefreshInterval(120000);
+          }
         } else {
           setMarketData([]);
         }
       } else {
-        // Fallback to mock data for now
-        setMarketData([]);
+        setMarketDataError(`Failed to fetch: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
-      setMarketData([]);
+      setMarketDataError(error.message);
+    } finally {
+      setMarketDataLoading(false);
     }
   };
 
@@ -333,7 +367,7 @@ function App() {
     setRealtimeEvents(prev => [event, ...prev].slice(0, 10)); // Keep last 10 events
   };
 
-  // Initial data fetch and periodic refresh (less frequent now with WebSocket)
+  // Initial data fetch and periodic refresh with smart rate limiting
   useEffect(() => {
     fetchTrades();
     fetchSummary();
@@ -342,16 +376,27 @@ function App() {
     fetchSymbols();
     fetchLearningData();
 
-    const interval = setInterval(() => {
-      fetchTrades();      // Refresh trades list
+    // Fast interval for trades/summary (10 seconds)
+    const fastInterval = setInterval(() => {
+      fetchTrades();
       fetchSummary();
-      fetchMarketData();  // Refresh market data
       checkSimulatorStatus();
       fetchLearningData();
-    }, 10000); // Reduced to every 10 seconds instead of 5
+    }, 10000);
 
-    return () => clearInterval(interval);
-  }, []);
+    // Slow interval for market data only when on Market tab (120 seconds = 2 minutes)
+    const marketInterval = setInterval(() => {
+      // Only fetch market data if on Market tab
+      if (activeTab === 'market') {
+        fetchMarketData();
+      }
+    }, 120000);
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(marketInterval);
+    };
+  }, [activeTab, marketRefreshInterval]); // Re-run if active tab or interval changes
 
   return (
     <div style={{ 
@@ -515,16 +560,50 @@ function App() {
             padding: '1.5rem',
             boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text, margin: 0 }}>
-                🌐 Live Market Data
-              </h2>
-              {lastMarketUpdate && (
-                <span style={{ fontSize: '0.875rem', color: colors.textMuted }}>
-                  Last updated: {lastMarketUpdate.toLocaleTimeString()}
-                </span>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text, margin: 0, marginBottom: '0.25rem' }}>
+                  🌐 Live Market Data
+                </h2>
+                {lastMarketUpdate && (
+                  <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+                    Last updated: {lastMarketUpdate.toLocaleTimeString()} • Refreshes every 2 minutes
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => fetchMarketData(true)}
+                disabled={marketDataLoading}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: marketDataLoading ? colors.gray : colors.blue,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.375rem',
+                  cursor: marketDataLoading ? 'not-allowed' : 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {marketDataLoading ? '⏳ Loading...' : '🔄 Refresh Now'}
+              </button>
             </div>
+
+            {/* Error Display */}
+            {marketDataError && (
+              <div style={{
+                padding: '0.75rem',
+                marginBottom: '1rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid #ef4444',
+                borderRadius: '0.5rem',
+                color: colors.text,
+                fontSize: '0.875rem'
+              }}>
+                ⚠️ {marketDataError}
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', marginBottom: '2rem' }}>
               {marketData.map((coin, index) => (
