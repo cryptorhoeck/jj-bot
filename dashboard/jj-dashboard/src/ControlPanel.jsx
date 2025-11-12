@@ -4,6 +4,7 @@ export function ControlPanel({ colors, API_BASE }) {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState({});
   const [tradingMode, setTradingMode] = useState('paper');
+  const [positions, setPositions] = useState([]);
 
   // Fetch service status
   const fetchServices = async () => {
@@ -70,7 +71,7 @@ export function ControlPanel({ colors, API_BASE }) {
   // Stop all services
   const stopAll = async () => {
     if (!confirm('Stop all running services?')) return;
-    
+
     for (const service of services) {
       if (service.status === 'running') {
         await stopService(service.name);
@@ -78,9 +79,26 @@ export function ControlPanel({ colors, API_BASE }) {
     }
   };
 
+  // Fetch open positions
+  const fetchPositions = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/services/realistic_simulator/positions`);
+      if (response.ok) {
+        const data = await response.json();
+        setPositions(data.positions || []);
+      }
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+    }
+  };
+
   useEffect(() => {
     fetchServices();
-    const interval = setInterval(fetchServices, 5000);
+    fetchPositions();
+    const interval = setInterval(() => {
+      fetchServices();
+      fetchPositions();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -317,6 +335,177 @@ export function ControlPanel({ colors, API_BASE }) {
         >
           ⏹ Stop All Services
         </button>
+      </div>
+
+      {/* Open Positions Section */}
+      <div style={{
+        marginTop: '1.5rem',
+        paddingTop: '1.5rem',
+        borderTop: `1px solid ${colors.border}`
+      }}>
+        <h3 style={{
+          fontSize: '1.125rem',
+          fontWeight: '600',
+          color: colors.text,
+          marginBottom: '1rem'
+        }}>
+          📊 Open Positions ({positions.length})
+        </h3>
+
+        {positions.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {positions.map((pos, index) => {
+              const pnlColor = pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444';
+              const pnlPercentage = ((pos.unrealized_pnl / pos.position_value) * 100).toFixed(2);
+
+              return (
+                <div
+                  key={index}
+                  style={{
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '0.5rem',
+                    padding: '1rem',
+                    backgroundColor: colors.bg
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '0.75rem'
+                  }}>
+                    {/* Left: Symbol and Side */}
+                    <div>
+                      <h4 style={{
+                        fontSize: '1.125rem',
+                        fontWeight: '700',
+                        color: colors.text,
+                        margin: 0,
+                        marginBottom: '0.25rem'
+                      }}>
+                        {pos.symbol}
+                        <span style={{
+                          marginLeft: '0.5rem',
+                          fontSize: '0.875rem',
+                          padding: '0.125rem 0.5rem',
+                          borderRadius: '0.25rem',
+                          backgroundColor: pos.side === 'LONG' ? '#10b981' : '#ef4444',
+                          color: 'white',
+                          fontWeight: '600'
+                        }}>
+                          {pos.side}
+                        </span>
+                      </h4>
+                      <p style={{
+                        fontSize: '0.75rem',
+                        color: colors.textMuted,
+                        margin: 0
+                      }}>
+                        Strategy: {pos.strategy}
+                      </p>
+                    </div>
+
+                    {/* Right: P&L */}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        fontSize: '1.25rem',
+                        fontWeight: '700',
+                        color: pnlColor
+                      }}>
+                        {pos.unrealized_pnl >= 0 ? '+' : ''}${pos.unrealized_pnl.toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: '0.875rem',
+                        color: pnlColor,
+                        fontWeight: '600'
+                      }}>
+                        ({pnlPercentage >= 0 ? '+' : ''}{pnlPercentage}%)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Position Details Grid */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '0.75rem',
+                    fontSize: '0.875rem'
+                  }}>
+                    <div>
+                      <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Entry Price</div>
+                      <div style={{ color: colors.text, fontWeight: '600' }}>
+                        ${pos.entry_price.toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Quantity</div>
+                      <div style={{ color: colors.text, fontWeight: '600' }}>
+                        {pos.quantity.toFixed(4)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Position Value</div>
+                      <div style={{ color: colors.text, fontWeight: '600' }}>
+                        ${pos.position_value.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk Management */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '0.75rem',
+                    marginTop: '0.75rem',
+                    fontSize: '0.875rem'
+                  }}>
+                    {pos.stop_loss && (
+                      <div>
+                        <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Stop Loss</div>
+                        <div style={{ color: '#ef4444', fontWeight: '600' }}>
+                          ${pos.stop_loss.toFixed(2)}
+                        </div>
+                      </div>
+                    )}
+                    {pos.take_profit && (
+                      <div>
+                        <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Take Profit</div>
+                        <div style={{ color: '#10b981', fontWeight: '600' }}>
+                          ${pos.take_profit.toFixed(2)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Entry Time */}
+                  <div style={{
+                    marginTop: '0.75rem',
+                    paddingTop: '0.75rem',
+                    borderTop: `1px solid ${colors.border}`,
+                    fontSize: '0.75rem',
+                    color: colors.textMuted
+                  }}>
+                    Opened: {new Date(pos.entry_time).toLocaleString()}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{
+            padding: '2rem',
+            textAlign: 'center',
+            color: colors.textMuted,
+            backgroundColor: colors.bg,
+            borderRadius: '0.5rem',
+            border: `1px dashed ${colors.border}`
+          }}>
+            <p style={{ margin: 0 }}>No open positions</p>
+            <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>
+              Start the realistic_simulator service to see live positions
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
