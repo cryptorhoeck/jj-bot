@@ -13,6 +13,7 @@ from pydantic import BaseModel
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from modules.backtesting.backtester import Backtester
+from modules.strategy.strategy_config import STRATEGY_METADATA
 
 # Create router
 router = APIRouter(prefix="/api/backtest", tags=["backtesting"])
@@ -21,9 +22,24 @@ router = APIRouter(prefix="/api/backtest", tags=["backtesting"])
 backtester = None
 
 
+@router.get("/strategies")
+async def get_available_strategies():
+    """
+    Get list of available trading strategies
+
+    Returns:
+        List of strategy metadata with names, descriptions, categories
+    """
+    return {
+        "success": True,
+        "strategies": STRATEGY_METADATA
+    }
+
+
 class BacktestRequest(BaseModel):
     """Request model for running a backtest"""
     symbol: str
+    strategy: Optional[str] = "rsi_strategy"  # Strategy to use
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     initial_capital: Optional[float] = 10000.0
@@ -212,6 +228,63 @@ async def generate_sample_data(symbol: str = "BTC", days: int = 30):
             "data_points": len(data),
             "start_date": data[0]["timestamp"],
             "end_date": data[-1]["timestamp"]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload-csv")
+async def upload_csv_data(symbol: str, csv_content: str):
+    """
+    Upload historical price data from CSV format
+
+    Args:
+        symbol: Symbol for the data
+        csv_content: CSV data as string (columns: timestamp,price,volume)
+
+    Returns:
+        Success status and data loaded count
+    """
+    global backtester
+
+    try:
+        import csv
+        from io import StringIO
+
+        # Initialize backtester if needed
+        if backtester is None:
+            backtester = Backtester()
+
+        # Parse CSV
+        csv_reader = csv.DictReader(StringIO(csv_content))
+        data = []
+
+        for row in csv_reader:
+            try:
+                data.append({
+                    "timestamp": row.get("timestamp", row.get("date", "")),
+                    "price": float(row.get("price", row.get("close", 0))),
+                    "volume": float(row.get("volume", 0))
+                })
+            except (ValueError, KeyError) as e:
+                continue  # Skip invalid rows
+
+        if len(data) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid data found in CSV. Expected columns: timestamp,price,volume"
+            )
+
+        # Load into backtester
+        backtester.load_historical_data(symbol, data)
+
+        return {
+            "success": True,
+            "message": f"Loaded {len(data)} data points for {symbol}",
+            "data_points": len(data),
+            "start_date": data[0]["timestamp"] if data else None,
+            "end_date": data[-1]["timestamp"] if data else None
         }
 
     except Exception as e:
