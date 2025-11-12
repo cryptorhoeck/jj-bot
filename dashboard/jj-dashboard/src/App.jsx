@@ -448,7 +448,7 @@ function App() {
         {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'learning', 'control', 'trades', 'data'].map((tab) => (
+            {['overview', 'market', 'backtest', 'learning', 'control', 'trades', 'data'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -666,6 +666,140 @@ function App() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BACKTEST TAB */}
+        {activeTab === 'backtest' && (
+          <div style={{
+            backgroundColor: colors.card,
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+              📊 Strategy Backtesting
+            </h2>
+
+            <div style={{ marginBottom: '2rem' }}>
+              <div style={{
+                padding: '1rem',
+                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
+                borderRadius: '0.5rem',
+                marginBottom: '1.5rem'
+              }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+                  Quick Start
+                </h3>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`${API_BASE}/api/backtest/generate-sample-data?symbol=BTC&days=30`, {
+                          method: 'POST'
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                          alert(`✅ Generated 30 days of sample BTC data`);
+                        }
+                      } catch (error) {
+                        alert('Error generating sample data: ' + error);
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      backgroundColor: colors.blue,
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.375rem',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '600'
+                    }}
+                  >
+                    📥 Generate Sample Data (BTC 30d)
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`${API_BASE}/api/backtest/run`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            symbol: 'BTC',
+                            initial_capital: 10000,
+                            commission: 0.001,
+                            slippage: 0.0005,
+                            position_size: 0.1
+                          })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                          alert(`✅ Backtest complete!\n\nTotal Trades: ${data.results.total_trades}\nWin Rate: ${data.results.win_rate}%\nTotal P&L: $${data.results.total_pnl.toFixed(2)}\nReturn: ${data.results.total_return}%`);
+                        }
+                      } catch (error) {
+                        alert('Error running backtest: ' + error);
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      backgroundColor: colors.green,
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.375rem',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ▶ Run Backtest
+                  </button>
+                </div>
+              </div>
+
+              <div style={{
+                padding: '1.5rem',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                border: `1px solid rgba(59, 130, 246, 0.3)`,
+                borderRadius: '0.5rem',
+                marginBottom: '1.5rem'
+              }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.75rem', color: colors.text }}>
+                  ℹ️ How to Use Backtesting
+                </h3>
+                <ol style={{ marginLeft: '1.5rem', color: colors.text, fontSize: '0.875rem', lineHeight: '1.6' }}>
+                  <li>Click "Generate Sample Data" to create test price data (30 days of hourly BTC prices)</li>
+                  <li>Click "Run Backtest" to test the RSI strategy on that data</li>
+                  <li>View results showing trades, win rate, and total profit/loss</li>
+                </ol>
+                <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: colors.card, borderRadius: '0.375rem', fontSize: '0.75rem', color: colors.textMuted }}>
+                  <strong>Backtest Parameters:</strong><br/>
+                  • Initial Capital: $10,000<br/>
+                  • Commission: 0.1% per trade<br/>
+                  • Slippage: 0.05%<br/>
+                  • Position Size: 10% of capital<br/>
+                  • Strategy: RSI (Buy &lt;30, Sell &gt;70)
+                </div>
+              </div>
+
+              <div style={{
+                padding: '1.5rem',
+                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
+                borderRadius: '0.5rem'
+              }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.75rem', color: colors.text }}>
+                  🚀 Coming Soon
+                </h3>
+                <ul style={{ marginLeft: '1.5rem', color: colors.textMuted, fontSize: '0.875rem', lineHeight: '1.6' }}>
+                  <li>Upload your own historical CSV data</li>
+                  <li>Choose from 24 different strategies to backtest</li>
+                  <li>Detailed equity curve visualization</li>
+                  <li>Trade-by-trade breakdown table</li>
+                  <li>Advanced metrics (Sharpe ratio, max drawdown, etc.)</li>
+                  <li>Compare multiple strategies side-by-side</li>
+                </ul>
               </div>
             </div>
           </div>
