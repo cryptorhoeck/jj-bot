@@ -42,6 +42,8 @@ from backtest_endpoints import router as backtest_router
 from simulator_config_endpoints import router as simulator_config_router
 from strategy_config_endpoints import router as strategy_config_router
 from enhanced_analytics_endpoints import router as enhanced_analytics_router
+from symbol_management_endpoints import router as symbol_management_router
+from learning_endpoints import router as learning_router
 from websocket_manager import ws_manager
 
 # Initialize database on startup
@@ -184,16 +186,16 @@ async def export_data():
 async def clear_data():
     """Clear all trade data with backup"""
     import shutil
-    
+
     # Backup database
     db_path = "data/jj_trades.db"
     if os.path.exists(db_path):
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_dir = "backups"
         os.makedirs(backup_dir, exist_ok=True)
         backup_path = f"{backup_dir}/jj_trades_backup_{timestamp}.db"
         shutil.copy2(db_path, backup_path)
-    
+
     # Clear trades
     try:
         with engine.get_connection() as conn:
@@ -201,6 +203,97 @@ async def clear_data():
             cur.execute("DELETE FROM trades")
             conn.commit()
         return {"status": "cleared", "message": "Database cleared and backed up"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/data/import")
+async def import_data():
+    """Import trades from CSV file"""
+    from fastapi import File, UploadFile
+    # Will be implemented with file upload
+    return {"status": "not_implemented", "message": "Import functionality coming soon"}
+
+
+@app.post("/api/data/archive")
+async def archive_data():
+    """Archive all trade data to timestamped backup"""
+    import shutil
+
+    try:
+        db_path = "data/jj_trades.db"
+        if not os.path.exists(db_path):
+            return {"status": "error", "message": "No database to archive"}
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_dir = "backups/archives"
+        os.makedirs(backup_dir, exist_ok=True)
+        archive_path = f"{backup_dir}/jj_trades_archive_{timestamp}.db"
+
+        # Copy database
+        shutil.copy2(db_path, archive_path)
+
+        # Get trade count
+        trades = engine.get_trades(limit=100000)
+        trade_count = len(trades)
+
+        return {
+            "status": "archived",
+            "message": f"Archived {trade_count} trades",
+            "archive_path": archive_path,
+            "trade_count": trade_count
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/data/backups")
+async def list_backups():
+    """List all available backups"""
+    try:
+        backup_dir = "backups"
+        archive_dir = "backups/archives"
+
+        backups = []
+
+        # List regular backups
+        if os.path.exists(backup_dir):
+            for file in os.listdir(backup_dir):
+                if file.endswith('.db'):
+                    file_path = os.path.join(backup_dir, file)
+                    size = os.path.getsize(file_path)
+                    modified = os.path.getmtime(file_path)
+                    backups.append({
+                        "filename": file,
+                        "type": "backup",
+                        "size": size,
+                        "modified": datetime.fromtimestamp(modified).isoformat(),
+                        "path": file_path
+                    })
+
+        # List archives
+        if os.path.exists(archive_dir):
+            for file in os.listdir(archive_dir):
+                if file.endswith('.db'):
+                    file_path = os.path.join(archive_dir, file)
+                    size = os.path.getsize(file_path)
+                    modified = os.path.getmtime(file_path)
+                    backups.append({
+                        "filename": file,
+                        "type": "archive",
+                        "size": size,
+                        "modified": datetime.fromtimestamp(modified).isoformat(),
+                        "path": file_path
+                    })
+
+        # Sort by modified date (newest first)
+        backups.sort(key=lambda x: x['modified'], reverse=True)
+
+        return {
+            "status": "success",
+            "backups": backups,
+            "total": len(backups)
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -292,6 +385,8 @@ app.include_router(backtest_router)
 app.include_router(simulator_config_router)
 app.include_router(strategy_config_router)
 app.include_router(enhanced_analytics_router)
+app.include_router(symbol_management_router)
+app.include_router(learning_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")

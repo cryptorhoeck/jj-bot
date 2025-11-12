@@ -15,11 +15,14 @@ function App() {
     avg_pnl: 0
   });
   const [marketData, setMarketData] = useState([]);
+  const [lastMarketUpdate, setLastMarketUpdate] = useState(null);
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [realtimeEvents, setRealtimeEvents] = useState([]);
+  const [symbols, setSymbols] = useState([]);
+  const [learningData, setLearningData] = useState(null);
 
   // Dark mode colors
   const colors = {
@@ -73,6 +76,7 @@ function App() {
             volume_24h: coin.usd_24h_vol || 0
           }));
           setMarketData(marketArray);
+          setLastMarketUpdate(new Date());
         } else {
           setMarketData([]);
         }
@@ -172,6 +176,59 @@ function App() {
       } catch (error) {
         alert('Error clearing database: ' + error);
       }
+    }
+  };
+
+  const archiveData = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/data/archive`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      alert(data.message);
+    } catch (error) {
+      alert('Error archiving data: ' + error);
+    }
+  };
+
+  const fetchSymbols = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/symbols/list`);
+      const data = await response.json();
+      if (data.success) {
+        setSymbols(data.symbols);
+      }
+    } catch (error) {
+      console.error('Error fetching symbols:', error);
+    }
+  };
+
+  const toggleSymbol = async (symbol, enabled) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/symbols/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, enabled })
+      });
+      const data = await response.json();
+      if (data.success) {
+        fetchSymbols();
+        fetchMarketData();
+      }
+    } catch (error) {
+      console.error('Error toggling symbol:', error);
+    }
+  };
+
+  const fetchLearningData = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/learning/insights`);
+      const data = await response.json();
+      if (data.success) {
+        setLearningData(data.insights);
+      }
+    } catch (error) {
+      console.error('Error fetching learning data:', error);
     }
   };
 
@@ -282,12 +339,15 @@ function App() {
     fetchSummary();
     fetchMarketData();
     checkSimulatorStatus();
+    fetchSymbols();
+    fetchLearningData();
 
     const interval = setInterval(() => {
       fetchTrades();      // Refresh trades list
       fetchSummary();
       fetchMarketData();  // Refresh market data
       checkSimulatorStatus();
+      fetchLearningData();
     }, 10000); // Reduced to every 10 seconds instead of 5
 
     return () => clearInterval(interval);
@@ -340,10 +400,10 @@ function App() {
       </div>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
-        {/* NAVIGATION TABS - NOW WITH MARKET TAB */}
+        {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'control', 'trades'].map((tab) => (
+            {['overview', 'market', 'learning', 'control', 'trades', 'data'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -449,33 +509,40 @@ function App() {
 
         {/* NEW MARKET TAB WITH REAL DATA */}
         {activeTab === 'market' && (
-          <div style={{ 
-            backgroundColor: colors.card, 
-            borderRadius: '0.5rem', 
-            padding: '1.5rem', 
+          <div style={{
+            backgroundColor: colors.card,
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
             boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
           }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              🌐 Live Market Data
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text, margin: 0 }}>
+                🌐 Live Market Data
+              </h2>
+              {lastMarketUpdate && (
+                <span style={{ fontSize: '0.875rem', color: colors.textMuted }}>
+                  Last updated: {lastMarketUpdate.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', marginBottom: '2rem' }}>
               {marketData.map((coin, index) => (
-                <div key={index} style={{ 
-                  border: `1px solid ${colors.border}`, 
-                  borderRadius: '0.5rem', 
+                <div key={index} style={{
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '0.5rem',
                   padding: '0.75rem',
                   backgroundColor: darkMode ? '#1a1a1a' : 'white'
                 }}>
                   <h3 style={{ fontWeight: '600', marginBottom: '0.25rem', color: colors.text, fontSize: '0.875rem' }}>{coin.symbol}</h3>
                   <p style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text, marginBottom: '0.25rem' }}>
-                    ${coin.price?.toLocaleString(undefined, { 
+                    ${coin.price?.toLocaleString(undefined, {
                       minimumFractionDigits: coin.price < 1 ? 4 : 2,
                       maximumFractionDigits: coin.price < 1 ? 4 : 2
                     })}
                   </p>
-                  <p style={{ 
-                    fontSize: '0.75rem', 
+                  <p style={{
+                    fontSize: '0.75rem',
                     color: coin.change_24h >= 0 ? colors.green : colors.red,
                     fontWeight: 'bold'
                   }}>
@@ -483,6 +550,259 @@ function App() {
                   </p>
                 </div>
               ))}
+            </div>
+
+            {/* Symbol Management */}
+            <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+                📊 Manage Tracked Symbols
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                {symbols.map((sym, index) => (
+                  <div key={index} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.5rem',
+                    backgroundColor: colors.card,
+                    borderRadius: '0.25rem',
+                    border: `1px solid ${colors.border}`
+                  }}>
+                    <span style={{ color: colors.text, fontSize: '0.875rem' }}>
+                      {sym.symbol} {sym.custom && '⭐'}
+                    </span>
+                    <button
+                      onClick={() => toggleSymbol(sym.symbol, !sym.enabled)}
+                      style={{
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.75rem',
+                        backgroundColor: sym.enabled ? colors.green : colors.gray,
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '0.25rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {sym.enabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LEARNING TAB */}
+        {activeTab === 'learning' && (
+          <div style={{
+            backgroundColor: colors.card,
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+              🧠 Learning System Insights
+            </h2>
+
+            {learningData ? (
+              <>
+                {/* Current State */}
+                <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Current State</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Recommended Strategy</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.blue }}>
+                        {learningData.current_state?.recommended_strategy || 'None'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Market Regime</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.yellow }}>
+                        {learningData.current_state?.market_regime || 'Unknown'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Confidence</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.green }}>
+                        {((learningData.current_state?.regime_confidence || 0) * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Strategies */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Top Performing Strategies</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {learningData.top_strategies?.map((strat, index) => (
+                      <div key={index} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '0.75rem',
+                        backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
+                        borderRadius: '0.5rem'
+                      }}>
+                        <span style={{ color: colors.text, fontWeight: '600' }}>{index + 1}. {strat.name}</span>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                          <span style={{ color: colors.text }}>Win Rate: {strat.win_rate?.toFixed(1)}%</span>
+                          <span style={{ color: strat.total_pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
+                            P&L: ${strat.total_pnl?.toFixed(2)}
+                          </span>
+                          <span style={{ color: colors.textMuted }}>Trades: {strat.trade_count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Learning Stats */}
+                <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Learning Statistics</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Total Evaluations</div>
+                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
+                        {learningData.learning_stats?.total_evaluations || 0}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Strategy Switches</div>
+                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
+                        {learningData.learning_stats?.strategy_switches || 0}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Regime Changes (24h)</div>
+                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
+                        {learningData.learning_stats?.regime_changes || 0}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Insights */}
+                {learningData.insights && learningData.insights.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Insights</h3>
+                    {learningData.insights.map((insight, index) => (
+                      <div key={index} style={{
+                        padding: '0.75rem',
+                        marginBottom: '0.5rem',
+                        backgroundColor: insight.type === 'warning' ? 'rgba(239, 68, 68, 0.1)' :
+                                       insight.type === 'suggestion' ? 'rgba(16, 185, 129, 0.1)' :
+                                       'rgba(96, 165, 250, 0.1)',
+                        border: `1px solid ${insight.type === 'warning' ? colors.red :
+                                            insight.type === 'suggestion' ? colors.green : colors.blue}`,
+                        borderRadius: '0.5rem',
+                        color: colors.text
+                      }}>
+                        {insight.type === 'warning' && '⚠️ '}
+                        {insight.type === 'suggestion' && '💡 '}
+                        {insight.type === 'info' && 'ℹ️ '}
+                        {insight.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p style={{ color: colors.textMuted }}>Loading learning data...</p>
+            )}
+          </div>
+        )}
+
+        {/* DATA MANAGEMENT TAB */}
+        {activeTab === 'data' && (
+          <div style={{
+            backgroundColor: colors.card,
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
+            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+              💾 Data Management
+            </h2>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+              {/* Export Data */}
+              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Export Data</h3>
+                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+                  Download all trades as CSV file
+                </p>
+                <button
+                  onClick={exportCSV}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: colors.blue,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  📥 Export to CSV
+                </button>
+              </div>
+
+              {/* Archive Data */}
+              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Archive Data</h3>
+                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+                  Create timestamped backup archive
+                </p>
+                <button
+                  onClick={archiveData}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: colors.yellow,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  📦 Archive Now
+                </button>
+              </div>
+
+              {/* Clear Database */}
+              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Clear Database</h3>
+                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+                  Clear all trades (creates backup first)
+                </p>
+                <button
+                  onClick={clearDatabase}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: colors.red,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  🗑️ Clear Database
+                </button>
+              </div>
+
+              {/* Database Info */}
+              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Database Info</h3>
+                <div style={{ fontSize: '0.875rem', color: colors.text }}>
+                  <p>Total Trades: {summary.total_trades}</p>
+                  <p>Total P&L: ${summary.total_pnl?.toFixed(2)}</p>
+                  <p>Win Rate: {summary.win_rate?.toFixed(1)}%</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
