@@ -101,8 +101,12 @@ async def run_backtest(request: BacktestRequest):
     global backtester
 
     try:
-        # Initialize backtester with config
-        backtester = Backtester(initial_capital=request.initial_capital)
+        # Initialize backtester if needed, or use existing one with loaded data
+        if backtester is None:
+            backtester = Backtester(initial_capital=request.initial_capital)
+        else:
+            # Update capital for new backtest
+            backtester.initial_capital = request.initial_capital
 
         # Apply configuration
         if request.commission:
@@ -112,15 +116,21 @@ async def run_backtest(request: BacktestRequest):
         if request.position_size:
             backtester.config["position_size"] = request.position_size
 
-        # Run backtest
+        # Run backtest with strategy parameter
         results = backtester.run_backtest(
             request.symbol,
+            strategy=request.strategy,
             start_date=request.start_date,
             end_date=request.end_date
         )
 
         if "error" in results:
             raise HTTPException(status_code=400, detail=results["error"])
+
+        # Transform equity curve to simple array of values for frontend
+        if "equity_curve" in results:
+            # Convert from list of dicts to list of equity values
+            results["equity_curve"] = [point["equity"] for point in results["equity_curve"]]
 
         return {
             "success": True,
@@ -145,10 +155,13 @@ async def get_backtest_results():
         raise HTTPException(status_code=404, detail="No backtest results available")
 
     try:
+        # Transform equity curve to simple array for frontend
+        equity_curve = [point["equity"] for point in backtester.equity_curve] if backtester.equity_curve else []
+
         return {
             "success": True,
             "trades": backtester.trades,
-            "equity_curve": backtester.equity_curve,
+            "equity_curve": equity_curve,
             "metrics": backtester.metrics
         }
 
