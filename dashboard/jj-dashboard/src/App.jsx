@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ControlPanel } from "./ControlPanel.jsx";
 import { BacktestTab } from "./BacktestTab.jsx";
 import { ChartsTab } from "./ChartsTab.jsx";
+import { MarketChart } from "./MarketChart.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -450,7 +451,7 @@ function App() {
         {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'backtest', 'charts', 'learning', 'control', 'trades', 'data'].map((tab) => (
+            {['overview', 'market', 'backtest', 'learning', 'control', 'trades', 'data'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -551,136 +552,22 @@ function App() {
                 <p style={{ color: colors.textMuted }}>No trades yet. Start the simulator to generate trades.</p>
               )}
             </div>
+
+            {/* Performance Analytics Section */}
+            <div style={{ marginTop: '2rem' }}>
+              <ChartsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
+            </div>
           </div>
         )}
 
-        {/* NEW MARKET TAB WITH REAL DATA */}
+        {/* MARKET TAB - TradingView Style */}
         {activeTab === 'market' && (
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.5rem',
-            padding: '1.5rem',
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text, margin: 0, marginBottom: '0.25rem' }}>
-                  🌐 Live Market Data
-                </h2>
-                {lastMarketUpdate && (
-                  <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>
-                    Last updated: {lastMarketUpdate.toLocaleTimeString()} • Refreshes every 2 minutes
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => fetchMarketData(true)}
-                disabled={marketDataLoading}
-                style={{
-                  padding: '0.5rem 1rem',
-                  backgroundColor: marketDataLoading ? colors.gray : colors.blue,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '0.375rem',
-                  cursor: marketDataLoading ? 'not-allowed' : 'pointer',
-                  fontSize: '0.875rem',
-                  fontWeight: '600',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                {marketDataLoading ? '⏳ Loading...' : '🔄 Refresh Now'}
-              </button>
-            </div>
-
-            {/* Error Display */}
-            {marketDataError && (
-              <div style={{
-                padding: '0.75rem',
-                marginBottom: '1rem',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid #ef4444',
-                borderRadius: '0.5rem',
-                color: colors.text,
-                fontSize: '0.875rem'
-              }}>
-                ⚠️ {marketDataError}
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', marginBottom: '2rem' }}>
-              {marketData.map((coin, index) => (
-                <div key={index} style={{
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '0.5rem',
-                  padding: '0.75rem',
-                  backgroundColor: darkMode ? '#1a1a1a' : 'white'
-                }}>
-                  <h3 style={{ fontWeight: '600', marginBottom: '0.25rem', color: colors.text, fontSize: '0.875rem' }}>{coin.symbol}</h3>
-                  <p style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text, marginBottom: '0.25rem' }}>
-                    ${coin.price?.toLocaleString(undefined, {
-                      minimumFractionDigits: coin.price < 1 ? 4 : 2,
-                      maximumFractionDigits: coin.price < 1 ? 4 : 2
-                    })}
-                  </p>
-                  <p style={{
-                    fontSize: '0.75rem',
-                    color: coin.change_24h >= 0 ? colors.green : colors.red,
-                    fontWeight: 'bold'
-                  }}>
-                    {coin.change_24h >= 0 ? '↑' : '↓'} {Math.abs(coin.change_24h).toFixed(2)}%
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* Symbol Management */}
-            <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-                📊 Manage Tracked Symbols
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
-                {symbols.map((sym, index) => (
-                  <div key={index} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.5rem',
-                    backgroundColor: colors.card,
-                    borderRadius: '0.25rem',
-                    border: `1px solid ${colors.border}`
-                  }}>
-                    <span style={{ color: colors.text, fontSize: '0.875rem' }}>
-                      {sym.symbol} {sym.custom && '⭐'}
-                    </span>
-                    <button
-                      onClick={() => toggleSymbol(sym.symbol, !sym.enabled)}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        fontSize: '0.75rem',
-                        backgroundColor: sym.enabled ? colors.green : colors.gray,
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '0.25rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {sym.enabled ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <MarketChart colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
         )}
 
         {/* BACKTEST TAB */}
         {activeTab === 'backtest' && (
           <BacktestTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
-        )}
-
-        {/* CHARTS TAB */}
-        {activeTab === 'charts' && (
-          <ChartsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
         )}
 
         {/* LEARNING TAB */}
