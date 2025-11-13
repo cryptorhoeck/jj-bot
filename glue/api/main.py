@@ -444,5 +444,11 @@ if __name__ == "__main__":
     print("JJ-Bot API v2.1 starting...")
     print("API: http://127.0.0.1:8000")
     print("Dashboard: http://localhost:5173")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        access_log=False,  # Disable HTTP request logging
+        log_level="warning"  # Only show warnings and errors
+    )
 
