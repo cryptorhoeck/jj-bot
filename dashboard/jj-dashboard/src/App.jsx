@@ -530,17 +530,17 @@ function App() {
               {trades.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {trades.slice(0, 5).map((trade, index) => (
-                    <div key={index} style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      padding: '0.5rem', 
+                    <div key={index} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '0.5rem',
                       backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
                       borderRadius: '0.25rem'
                     }}>
                       <span>{new Date(trade.timestamp).toLocaleTimeString()}</span>
                       <span>{trade.symbol}</span>
                       <span>{trade.signal}</span>
-                      <span>${trade.last_price}</span>
+                      <span>${parseFloat(trade.last_price).toFixed(2)}</span>
                       <span style={{ color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
                         ${trade.pnl?.toFixed(2)}
                       </span>
