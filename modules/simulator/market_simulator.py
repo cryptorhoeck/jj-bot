@@ -335,10 +335,17 @@ class MarketSimulator:
         commission = self._calculate_commission(position_value)
         slippage = abs(execution_price - price) * quantity
 
+        # DEBUG: Print capital deduction details
+        total_cost = position_value + commission
+        print(f"💰 DEBUG Opening {symbol}: position_value=${position_value:.2f}, commission=${commission:.2f}, total_cost=${total_cost:.2f}")
+        print(f"💰 DEBUG Before: available_capital=${self.available_capital:.2f}")
+
         # Update capital
         self.available_capital -= (position_value + commission)
         self.total_commission_paid += commission
         self.total_slippage_paid += slippage
+
+        print(f"💰 DEBUG After: available_capital=${self.available_capital:.2f}, deducted=${total_cost:.2f}")
 
         # Calculate stop-loss and take-profit
         stop_loss = None
