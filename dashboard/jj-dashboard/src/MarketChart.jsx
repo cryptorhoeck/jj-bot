@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 export function MarketChart({ colors, darkMode, API_BASE }) {
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
@@ -7,10 +7,37 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
   const [priceData, setPriceData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [favorites, setFavorites] = useState(['BTC', 'ETH', 'SOL', 'BNB']);
-  const [activeTab, setActiveTab] = useState('favorites'); // 'favorites' or 'all'
+  const [favorites, setFavorites] = useState(() => {
+    // Load favorites from localStorage
+    const saved = localStorage.getItem('marketFavorites');
+    return saved ? JSON.parse(saved) : ['BTC', 'ETH', 'SOL', 'BNB'];
+  });
+  const [activeTab, setActiveTab] = useState('favorites');
+  const [showMA, setShowMA] = useState(true);
+  const [showRSI, setShowRSI] = useState(false);
+  const [indicators, setIndicators] = useState({ ma20: [], ma50: [], rsi: [] });
+  const [showIndicatorsMenu, setShowIndicatorsMenu] = useState(false);
 
   const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
+
+  // Timeframe to data points mapping
+  const getTimeframeConfig = (tf) => {
+    const configs = {
+      '1m': { points: 60, interval: 60000 },      // 1 hour of 1-min data
+      '5m': { points: 72, interval: 300000 },     // 6 hours of 5-min data
+      '15m': { points: 96, interval: 900000 },    // 24 hours of 15-min data
+      '1h': { points: 168, interval: 3600000 },   // 1 week of 1-hour data
+      '4h': { points: 180, interval: 14400000 },  // 1 month of 4-hour data
+      '1d': { points: 90, interval: 86400000 },   // 3 months of daily data
+      '1w': { points: 52, interval: 604800000 }   // 1 year of weekly data
+    };
+    return configs[tf] || configs['1h'];
+  };
+
+  // Save favorites to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('marketFavorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   // Fetch market overview data
   const fetchMarketData = async () => {
@@ -34,51 +61,152 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     );
   };
 
-  // Fetch price data for selected symbol
-  const fetchPriceData = async (symbol) => {
+  // Calculate moving average
+  const calculateMA = (data, period) => {
+    const ma = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) {
+        ma.push(null);
+      } else {
+        const sum = data.slice(i - period + 1, i + 1).reduce((acc, val) => acc + val.price, 0);
+        ma.push(sum / period);
+      }
+    }
+    return ma;
+  };
+
+  // Calculate RSI
+  const calculateRSI = (data, period = 14) => {
+    const rsi = [];
+    const changes = [];
+
+    for (let i = 1; i < data.length; i++) {
+      changes.push(data[i].price - data[i - 1].price);
+    }
+
+    for (let i = 0; i < changes.length; i++) {
+      if (i < period) {
+        rsi.push(null);
+      } else {
+        const gains = changes.slice(i - period + 1, i + 1).filter(c => c > 0);
+        const losses = changes.slice(i - period + 1, i + 1).filter(c => c < 0).map(c => Math.abs(c));
+
+        const avgGain = gains.length > 0 ? gains.reduce((a, b) => a + b, 0) / period : 0;
+        const avgLoss = losses.length > 0 ? losses.reduce((a, b) => a + b, 0) / period : 0;
+
+        if (avgLoss === 0) {
+          rsi.push(100);
+        } else {
+          const rs = avgGain / avgLoss;
+          rsi.push(100 - (100 / (1 + rs)));
+        }
+      }
+    }
+
+    return rsi;
+  };
+
+  // Generate realistic price data based on real current price and timeframe
+  const generatePriceData = useCallback((basePrice, config) => {
+    const data = [];
+    let currentPrice = basePrice;
+    const now = Date.now();
+
+    // Create realistic volatility based on timeframe
+    const volatility = {
+      '1m': 0.001, '5m': 0.003, '15m': 0.005,
+      '1h': 0.01, '4h': 0.02, '1d': 0.03, '1w': 0.05
+    }[timeframe] || 0.01;
+
+    for (let i = 0; i < config.points; i++) {
+      const timestamp = now - (config.points - i) * config.interval;
+
+      // Add trend and noise
+      const trend = Math.sin(i / config.points * Math.PI * 2) * basePrice * 0.02;
+      const noise = (Math.random() - 0.5) * basePrice * volatility;
+      currentPrice += (trend + noise) / config.points;
+
+      // Keep price within reasonable range
+      currentPrice = Math.max(basePrice * 0.85, Math.min(basePrice * 1.15, currentPrice));
+
+      const high = currentPrice * (1 + Math.random() * volatility);
+      const low = currentPrice * (1 - Math.random() * volatility);
+
+      data.push({
+        timestamp,
+        price: currentPrice,
+        high,
+        low,
+        open: i > 0 ? data[i - 1].price : currentPrice,
+        close: currentPrice,
+        volume: Math.random() * 1000000 * (1 + Math.abs(noise) / basePrice)
+      });
+    }
+
+    return data;
+  }, [timeframe]);
+
+  // Fetch price data for selected symbol and timeframe
+  const fetchPriceData = useCallback(async () => {
     setLoading(true);
     try {
-      const mockPriceData = generateMockPriceData(100);
-      setPriceData(mockPriceData);
+      const coin = marketData.find(m => m.symbol === selectedSymbol);
+      if (!coin) {
+        setLoading(false);
+        return;
+      }
+
+      const config = getTimeframeConfig(timeframe);
+      const data = generatePriceData(coin.price, config);
+      setPriceData(data);
+
+      // Calculate indicators
+      const ma20 = calculateMA(data, 20);
+      const ma50 = calculateMA(data, 50);
+      const rsi = calculateRSI(data, 14);
+
+      setIndicators({ ma20, ma50, rsi });
     } catch (error) {
       console.error('Error fetching price data:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  // Generate mock price data for demo
-  const generateMockPriceData = (points) => {
-    const data = [];
-    let basePrice = marketData.find(m => m.symbol === selectedSymbol)?.price || 45000;
-    let currentPrice = basePrice;
-
-    for (let i = 0; i < points; i++) {
-      const change = (Math.random() - 0.5) * (basePrice * 0.02);
-      currentPrice += change;
-      data.push({
-        timestamp: Date.now() - (points - i) * 60000,
-        price: currentPrice,
-        high: currentPrice * 1.01,
-        low: currentPrice * 0.99,
-        volume: Math.random() * 1000000
-      });
-    }
-
-    return data;
-  };
+  }, [selectedSymbol, timeframe, marketData, generatePriceData]);
 
   useEffect(() => {
     fetchMarketData();
-    const interval = setInterval(fetchMarketData, 30000);
+    const interval = setInterval(fetchMarketData, 30000); // Update every 30s
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (selectedSymbol) {
-      fetchPriceData(selectedSymbol);
+    if (selectedSymbol && marketData.length > 0) {
+      fetchPriceData();
     }
-  }, [selectedSymbol, timeframe]);
+  }, [selectedSymbol, timeframe, marketData, fetchPriceData]);
+
+  // Auto-refresh price data every 30 seconds
+  useEffect(() => {
+    if (!priceData) return;
+
+    const interval = setInterval(() => {
+      fetchPriceData();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [priceData, fetchPriceData]);
+
+  // Close indicators menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (showIndicatorsMenu) {
+        setShowIndicatorsMenu(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showIndicatorsMenu]);
 
   // Render symbol in list
   const renderSymbolItem = (coin, isFavorite = false) => {
@@ -151,6 +279,98 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             {coin.change_24h >= 0 ? '+' : ''}{coin.change_24h?.toFixed(2)}%
           </div>
         </div>
+      </div>
+    );
+  };
+
+  // Render RSI chart
+  const renderRSIChart = () => {
+    if (!priceData || priceData.length === 0 || indicators.rsi.length === 0) {
+      return null;
+    }
+
+    const width = 1000;
+    const height = 100;
+    const padding = 60;
+    const chartWidth = width - (padding * 2);
+    const chartHeight = height - 20;
+
+    return (
+      <div style={{
+        height: '120px',
+        borderTop: `1px solid ${darkMode ? '#1e293b' : '#e2e8f0'}`,
+        backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+        position: 'relative'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '0.5rem',
+          left: '1rem',
+          fontSize: '0.75rem',
+          fontWeight: '600',
+          color: colors.textMuted
+        }}>
+          RSI(14)
+        </div>
+
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+          {/* Overbought line (70) */}
+          <line
+            x1={padding}
+            y1={10 + (chartHeight * 0.3)}
+            x2={width - padding}
+            y2={10 + (chartHeight * 0.3)}
+            stroke="#ef4444"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+            vectorEffect="non-scaling-stroke"
+            opacity="0.5"
+          />
+
+          {/* Midline (50) */}
+          <line
+            x1={padding}
+            y1={10 + (chartHeight * 0.5)}
+            x2={width - padding}
+            y2={10 + (chartHeight * 0.5)}
+            stroke={darkMode ? '#475569' : '#cbd5e1'}
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {/* Oversold line (30) */}
+          <line
+            x1={padding}
+            y1={10 + (chartHeight * 0.7)}
+            x2={width - padding}
+            y2={10 + (chartHeight * 0.7)}
+            stroke="#10b981"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+            vectorEffect="non-scaling-stroke"
+            opacity="0.5"
+          />
+
+          {/* RSI line */}
+          <polyline
+            points={indicators.rsi.map((value, index) => {
+              if (value === null) return null;
+              const x = padding + (index / (indicators.rsi.length - 1)) * chartWidth;
+              const y = 10 + chartHeight - ((value / 100) * chartHeight);
+              return `${x},${y}`;
+            }).filter(p => p !== null).join(' ')}
+            fill="none"
+            stroke="#8b5cf6"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {/* Y-axis labels */}
+          <text x={width - padding + 5} y={10 + (chartHeight * 0.3) + 4} textAnchor="start" fill={colors.textMuted} fontSize="10">70</text>
+          <text x={width - padding + 5} y={10 + (chartHeight * 0.5) + 4} textAnchor="start" fill={colors.textMuted} fontSize="10">50</text>
+          <text x={width - padding + 5} y={10 + (chartHeight * 0.7) + 4} textAnchor="start" fill={colors.textMuted} fontSize="10">30</text>
+        </svg>
       </div>
     );
   };
@@ -252,6 +472,40 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             opacity="0.1"
           />
 
+          {/* MA20 overlay */}
+          {showMA && indicators.ma20.length > 0 && (
+            <polyline
+              points={indicators.ma20.map((value, index) => {
+                if (value === null) return null;
+                const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                return `${x},${y}`;
+              }).filter(p => p !== null).join(' ')}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth="1.5"
+              strokeDasharray="3,3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+
+          {/* MA50 overlay */}
+          {showMA && indicators.ma50.length > 0 && (
+            <polyline
+              points={indicators.ma50.map((value, index) => {
+                if (value === null) return null;
+                const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                return `${x},${y}`;
+              }).filter(p => p !== null).join(' ')}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+              strokeDasharray="5,5"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+
           {/* Gradient definitions */}
           <defs>
             <linearGradient id="priceGradientGreen" x1="0" y1="0" x2="0" y2="1">
@@ -264,6 +518,32 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             </linearGradient>
           </defs>
         </svg>
+
+        {/* Indicator Legend */}
+        {showMA && (
+          <div style={{
+            position: 'absolute',
+            top: '1rem',
+            left: '1rem',
+            display: 'flex',
+            gap: '1rem',
+            backgroundColor: darkMode ? '#1e293b90' : '#ffffff90',
+            backdropFilter: 'blur(4px)',
+            padding: '0.5rem 0.75rem',
+            borderRadius: '0.375rem',
+            fontSize: '0.75rem',
+            fontWeight: '600'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <div style={{ width: '16px', height: '2px', backgroundColor: '#3b82f6', borderStyle: 'dashed' }} />
+              <span style={{ color: '#3b82f6' }}>MA20</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <div style={{ width: '16px', height: '2px', backgroundColor: '#f59e0b', borderStyle: 'dashed' }} />
+              <span style={{ color: '#f59e0b' }}>MA50</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -458,25 +738,147 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
           </div>
 
           {/* Indicators */}
-          <div style={{ display: 'flex', gap: '0.5rem', paddingLeft: '0.5rem', borderLeft: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}` }}>
-            {['Indicators', 'Compare', 'Alerts'].map((btn) => (
-              <button
-                key={btn}
+          <div style={{ display: 'flex', gap: '0.5rem', paddingLeft: '0.5rem', borderLeft: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`, position: 'relative' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowIndicatorsMenu(!showIndicatorsMenu);
+              }}
+              style={{
+                padding: '0.375rem 0.75rem',
+                backgroundColor: showIndicatorsMenu || showMA || showRSI ? (darkMode ? '#1e293b' : '#e2e8f0') : 'transparent',
+                color: showMA || showRSI ? '#3b82f6' : colors.textMuted,
+                border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+                fontWeight: '500',
+                transition: 'all 0.15s'
+              }}
+            >
+              Indicators {(showMA || showRSI) && '✓'}
+            </button>
+
+            {/* Indicators Menu */}
+            {showIndicatorsMenu && (
+              <div
+                onClick={(e) => e.stopPropagation()}
                 style={{
-                  padding: '0.375rem 0.75rem',
-                  backgroundColor: 'transparent',
-                  color: colors.textMuted,
-                  border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
-                  borderRadius: '0.25rem',
-                  cursor: 'pointer',
-                  fontSize: '0.8125rem',
-                  fontWeight: '500',
-                  transition: 'all 0.15s'
+                  position: 'absolute',
+                  top: '100%',
+                  left: '0',
+                  marginTop: '0.5rem',
+                  backgroundColor: darkMode ? '#1e293b' : '#ffffff',
+                  border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+                  borderRadius: '0.375rem',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                  zIndex: 1000,
+                  minWidth: '200px',
+                  padding: '0.5rem'
                 }}
               >
-                {btn}
-              </button>
-            ))}
+                <div
+                  onClick={() => setShowMA(!showMA)}
+                  style={{
+                    padding: '0.625rem',
+                    cursor: 'pointer',
+                    borderRadius: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'background-color 0.15s',
+                    backgroundColor: 'transparent'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#f1f5f9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span style={{ fontSize: '0.875rem', color: colors.text }}>Moving Averages</span>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '0.25rem',
+                    border: `2px solid ${showMA ? '#3b82f6' : colors.textMuted}`,
+                    backgroundColor: showMA ? '#3b82f6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    color: '#ffffff',
+                    fontWeight: '700'
+                  }}>
+                    {showMA && '✓'}
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setShowRSI(!showRSI)}
+                  style={{
+                    padding: '0.625rem',
+                    cursor: 'pointer',
+                    borderRadius: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'background-color 0.15s',
+                    backgroundColor: 'transparent'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#f1f5f9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span style={{ fontSize: '0.875rem', color: colors.text }}>RSI (14)</span>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '0.25rem',
+                    border: `2px solid ${showRSI ? '#3b82f6' : colors.textMuted}`,
+                    backgroundColor: showRSI ? '#3b82f6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    color: '#ffffff',
+                    fontWeight: '700'
+                  }}>
+                    {showRSI && '✓'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              style={{
+                padding: '0.375rem 0.75rem',
+                backgroundColor: 'transparent',
+                color: colors.textMuted,
+                border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+                fontWeight: '500',
+                transition: 'all 0.15s',
+                opacity: 0.5
+              }}
+              title="Coming soon"
+            >
+              Compare
+            </button>
+            <button
+              style={{
+                padding: '0.375rem 0.75rem',
+                backgroundColor: 'transparent',
+                color: colors.textMuted,
+                border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+                fontWeight: '500',
+                transition: 'all 0.15s',
+                opacity: 0.5
+              }}
+              title="Coming soon"
+            >
+              Alerts
+            </button>
           </div>
         </div>
 
@@ -514,6 +916,9 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             </div>
           )}
         </div>
+
+        {/* RSI Chart - conditionally rendered */}
+        {showRSI && renderRSIChart()}
       </div>
     </div>
   );
