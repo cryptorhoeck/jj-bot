@@ -10,6 +10,7 @@ import subprocess
 import csv
 from io import StringIO
 from typing import List, Dict, Any
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
@@ -22,19 +23,7 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "psutil"])
     import psutil
 
-# Create FastAPI app
-app = FastAPI(title="JJ-Bot API v2.1")
-
-# Add CORS middleware for dashboard
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Import engine with proper path handling
+# Import engine and managers (need these before lifespan)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
 from service_endpoints import router as service_router, service_manager
@@ -46,20 +35,36 @@ from symbol_management_endpoints import router as symbol_management_router
 from learning_endpoints import router as learning_router
 from websocket_manager import ws_manager
 
-# Initialize database on startup
-engine.init_db()
-print("✅ Database initialized")
+# Lifespan context manager for startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("✅ Database initialized")
+    engine.init_db()
 
-# Startup event - auto-start services
-@app.on_event("startup")
-async def startup_event():
-    """Start auto-start services when API boots up"""
     print("🚀 Starting auto-start services...")
     started = service_manager.start_auto_services()
     if started:
         print(f"✅ Auto-started services: {', '.join(started)}")
     else:
         print("ℹ️  No auto-start services configured")
+
+    yield
+
+    # Shutdown (add cleanup here if needed)
+    print("👋 Shutting down API...")
+
+# Create FastAPI app with lifespan
+app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)
+
+# Add CORS middleware for dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global state
 simulator_process = None

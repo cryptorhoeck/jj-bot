@@ -196,7 +196,13 @@ async def get_backtest_summary():
 @router.post("/generate-sample-data")
 async def generate_sample_data(symbol: str = "BTC", days: int = 30):
     """
-    Generate sample historical data for testing backtester
+    Generate sample historical data for testing backtester with realistic patterns
+
+    Creates data with:
+    - Trending periods (bull/bear markets)
+    - Volatility clusters
+    - Occasional sharp moves
+    - Patterns that trigger technical indicators
 
     Args:
         symbol: Cryptocurrency symbol
@@ -208,24 +214,50 @@ async def generate_sample_data(symbol: str = "BTC", days: int = 30):
     import random
 
     try:
-        # Generate realistic-looking price data
+        # Generate realistic-looking price data with trends and volatility
         data = []
         base_price = 45000 if symbol == "BTC" else 2500
         current_price = base_price
 
         start_date = datetime.now() - timedelta(days=days)
 
+        # Create market regimes (trending vs ranging)
+        regime_length = 100  # Hours per regime
+        trend_direction = random.choice([1, -1])  # 1 for uptrend, -1 for downtrend
+        volatility = 0.03  # Base volatility
+
         for i in range(days * 24):  # Hourly data
             timestamp = start_date + timedelta(hours=i)
 
-            # Add some random walk
-            change = random.uniform(-0.02, 0.02)
+            # Change regime periodically
+            if i % regime_length == 0:
+                trend_direction = random.choice([1, -1, 0])  # 0 for ranging
+                volatility = random.uniform(0.02, 0.05)  # Variable volatility
+
+            # Generate price change
+            if trend_direction == 0:
+                # Ranging market - mean reversion
+                change = random.uniform(-volatility, volatility)
+            else:
+                # Trending market - directional bias
+                trend_strength = 0.003 * trend_direction
+                noise = random.uniform(-volatility, volatility)
+                change = trend_strength + noise
+
+            # Add occasional sharp moves (10% chance)
+            if random.random() < 0.10:
+                spike = random.uniform(-0.05, 0.05)
+                change += spike
+
             current_price *= (1 + change)
+
+            # Prevent extreme prices
+            current_price = max(base_price * 0.5, min(base_price * 2.0, current_price))
 
             data.append({
                 "price": current_price,
                 "timestamp": timestamp.isoformat(),
-                "volume": random.uniform(1000, 5000)
+                "volume": random.uniform(1000, 5000) * (1 + abs(change) * 10)  # Higher volume on big moves
             })
 
         # Load into backtester
@@ -240,7 +272,13 @@ async def generate_sample_data(symbol: str = "BTC", days: int = 30):
             "message": f"Generated {len(data)} sample data points for {symbol}",
             "data_points": len(data),
             "start_date": data[0]["timestamp"],
-            "end_date": data[-1]["timestamp"]
+            "end_date": data[-1]["timestamp"],
+            "price_range": {
+                "min": round(min(d["price"] for d in data), 2),
+                "max": round(max(d["price"] for d in data), 2),
+                "start": round(data[0]["price"], 2),
+                "end": round(data[-1]["price"], 2)
+            }
         }
 
     except Exception as e:
