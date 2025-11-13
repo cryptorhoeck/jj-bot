@@ -57,58 +57,75 @@ export function ChartsTab({ colors, darkMode, API_BASE }) {
     const range = maxCapital - minCapital || 1;
     const initialCapital = equityCurve.initial_capital;
 
+    // Need at least 2 points to draw a line
+    if (capitals.length < 2) {
+      return <div style={{ padding: '2rem', textAlign: 'center', color: colors.textMuted }}>
+        Need at least 2 trades to display equity curve
+      </div>;
+    }
+
+    // Use fixed dimensions for calculation
+    const width = 800;
+    const height = 250;
+    const padding = 20;
+    const chartWidth = width - (padding * 2);
+    const chartHeight = height - (padding * 2);
+
     return (
       <div style={{ height: '250px', position: 'relative' }}>
-        <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
           {/* Grid lines */}
-          {[0, 25, 50, 75, 100].map((percent) => (
+          {[0, 0.25, 0.5, 0.75, 1].map((percent, i) => (
             <line
-              key={percent}
-              x1="0%"
-              y1={`${percent}%`}
-              x2="100%"
-              y2={`${percent}%`}
+              key={i}
+              x1={padding}
+              y1={padding + (chartHeight * percent)}
+              x2={width - padding}
+              y2={padding + (chartHeight * percent)}
               stroke={colors.border}
               strokeWidth="1"
               strokeDasharray="4"
+              vectorEffect="non-scaling-stroke"
             />
           ))}
 
           {/* Initial capital line */}
           {range > 0 && (
             <line
-              x1="0%"
-              y1={`${100 - ((initialCapital - minCapital) / range) * 100}%`}
-              x2="100%"
-              y2={`${100 - ((initialCapital - minCapital) / range) * 100}%`}
+              x1={padding}
+              y1={padding + chartHeight - ((initialCapital - minCapital) / range) * chartHeight}
+              x2={width - padding}
+              y2={padding + chartHeight - ((initialCapital - minCapital) / range) * chartHeight}
               stroke="#6b7280"
               strokeWidth="1"
               strokeDasharray="8"
+              vectorEffect="non-scaling-stroke"
             />
           )}
 
           {/* Equity curve */}
           <polyline
             points={capitals.map((value, index) => {
-              const x = (index / (capitals.length - 1)) * 100;
-              const y = 100 - ((value - minCapital) / range) * 90;
-              return `${x}%,${y + 5}%`;
+              const x = padding + (index / (capitals.length - 1)) * chartWidth;
+              const y = padding + chartHeight - ((value - minCapital) / range) * chartHeight;
+              return `${x},${y}`;
             }).join(' ')}
             fill="none"
             stroke={equityCurve.total_return >= 0 ? '#10b981' : '#ef4444'}
-            strokeWidth="3"
+            strokeWidth="2"
             strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
           />
 
           {/* Data points */}
           {capitals.map((value, index) => {
-            const x = (index / (capitals.length - 1)) * 100;
-            const y = 100 - ((value - minCapital) / range) * 90 + 5;
+            const x = padding + (index / (capitals.length - 1)) * chartWidth;
+            const y = padding + chartHeight - ((value - minCapital) / range) * chartHeight;
             return (
               <circle
                 key={index}
-                cx={`${x}%`}
-                cy={`${y}%`}
+                cx={x}
+                cy={y}
                 r="3"
                 fill={equityCurve.total_return >= 0 ? '#10b981' : '#ef4444'}
               />
