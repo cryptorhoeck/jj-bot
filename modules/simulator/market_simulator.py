@@ -536,13 +536,29 @@ class MarketSimulator:
         """Get trading statistics"""
         win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
 
-        total_pnl = self.current_capital - self.initial_capital
+        # Calculate current value of all open positions
+        positions_value = 0.0
+        unrealized_pnl = 0.0
+        for position in self.open_positions.values():
+            # Position value is current quantity at entry price
+            positions_value += position.position_value
+            # Unrealized P&L is calculated in position.unrealized_pnl (updated by update_positions)
+            unrealized_pnl += position.unrealized_pnl
+
+        # Current capital = available cash + value of positions
+        current_capital = self.available_capital + positions_value
+
+        # Total P&L = realized (from closed trades) + unrealized (from open positions)
+        realized_pnl = current_capital - self.initial_capital
+        total_pnl = realized_pnl + unrealized_pnl
         total_return_pct = (total_pnl / self.initial_capital) * 100
 
         return {
             "initial_capital": self.initial_capital,
-            "current_capital": round(self.current_capital, 2),
+            "current_capital": round(current_capital, 2),
             "available_capital": round(self.available_capital, 2),
+            "positions_value": round(positions_value, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
             "total_pnl": round(total_pnl, 2),
             "total_return_pct": round(total_return_pct, 2),
             "total_trades": self.total_trades,
