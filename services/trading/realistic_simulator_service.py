@@ -518,10 +518,11 @@ class RealisticSimulatorService(BaseService):
                 if self.tick_count % 5 == 0:
                     print(
                         f"📊 Tick {self.tick_count} | "
-                        f"Capital: ${stats['current_capital']:,.2f} | "
+                        f"Cash: ${stats['available_capital']:,.2f} | "
+                        f"Positions: ${stats['positions_value']:,.2f} | "
+                        f"Total: ${stats['current_capital']:,.2f} | "
                         f"P&L: ${stats['total_pnl']:+,.2f} ({stats['total_return_pct']:+.2f}%) | "
                         f"Trades: {self.trades_generated} | "
-                        f"Win Rate: {stats['win_rate']:.1f}% | "
                         f"Regime: {self.price_generator.market_regime.value}"
                     )
 
