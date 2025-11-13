@@ -48,52 +48,49 @@ except ImportError:
     print("⚠️ Adaptive strategy selector not available - using fixed strategy")
 
 
-def fetch_real_prices() -> Dict[str, float]:
+def fetch_top_100_coins() -> Dict[str, float]:
     """
-    Fetch current real market prices from CoinGecko API.
+    Fetch top 100 cryptocurrencies by market cap from CoinGecko API.
 
     Returns:
         Dictionary mapping symbol -> current USD price
     """
-    # Symbol mapping from CoinGecko IDs to our symbols
-    coin_mapping = {
-        'bitcoin': 'BTC',
-        'ethereum': 'ETH',
-        'solana': 'SOL',
-        'binancecoin': 'BNB',
-        'cardano': 'ADA',
-        'polkadot': 'DOT',
-        'chainlink': 'LINK',
-        'polygon': 'MATIC',
-        'uniswap': 'UNI',
-        'avalanche-2': 'AVAX'
-    }
-
     try:
-        # Fetch prices from CoinGecko
-        coin_ids = ','.join(coin_mapping.keys())
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_ids}&vs_currencies=usd"
+        # Fetch top 100 coins sorted by market cap
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {
+            'vs_currency': 'usd',
+            'order': 'market_cap_desc',
+            'per_page': 100,
+            'page': 1,
+            'sparkline': False
+        }
 
-        print("🌐 Fetching real market prices from CoinGecko...")
-        response = requests.get(url, timeout=10)
+        print("🌐 Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
+        response = requests.get(url, params=params, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
             prices = {}
 
-            for coin_id, symbol in coin_mapping.items():
-                if coin_id in data and 'usd' in data[coin_id]:
-                    prices[symbol] = data[coin_id]['usd']
-                    print(f"   {symbol}: ${prices[symbol]:,.2f}")
+            for coin in data:
+                symbol = coin['symbol'].upper()
+                price = coin['current_price']
+                market_cap = coin['market_cap']
 
-            print(f"✅ Fetched {len(prices)} real prices")
+                prices[symbol] = price
+
+            print(f"✅ Fetched {len(prices)} cryptocurrencies")
+            print(f"   Top 5: {list(prices.keys())[:5]}")
+            print(f"   Price range: ${min(prices.values()):.6f} - ${max(prices.values()):,.2f}")
+
             return prices
         else:
             print(f"⚠️ CoinGecko API returned status {response.status_code}")
             return {}
 
     except Exception as e:
-        print(f"⚠️ Failed to fetch real prices: {e}")
+        print(f"⚠️ Failed to fetch top 100 coins: {e}")
         return {}
 
 
@@ -132,19 +129,8 @@ class RealisticSimulatorService(BaseService):
         self.tick_interval = tick_interval_seconds
         self.trade_frequency = trade_frequency_ticks
 
-        # Symbol configuration
-        self.symbols_config = {
-            'BTC': 45000,
-            'ETH': 2500,
-            'SOL': 100,
-            'BNB': 350,
-            'ADA': 0.50,
-            'DOT': 7,
-            'LINK': 15,
-            'MATIC': 0.80,
-            'UNI': 6,
-            'AVAX': 35
-        }
+        # Symbol configuration (will be populated from API)
+        self.symbols_config = {}
 
         # Components (initialized in start())
         self.price_generator: Optional[MultiSymbolPriceGenerator] = None
@@ -167,14 +153,19 @@ class RealisticSimulatorService(BaseService):
             print("📦 Initializing databases...")
             init_all_databases()
 
-            # Fetch REAL current market prices
-            real_prices = fetch_real_prices()
-            if real_prices:
-                # Update symbol config with real prices
-                self.symbols_config.update(real_prices)
-                print(f"✅ Using REAL market prices for {len(real_prices)} symbols")
+            # Fetch top 100 cryptocurrencies by market cap
+            top_100_prices = fetch_top_100_coins()
+            if top_100_prices:
+                # Use the fetched prices
+                self.symbols_config = top_100_prices
+                print(f"✅ Tracking {len(self.symbols_config)} cryptocurrencies")
             else:
-                print("⚠️ Using fallback prices (failed to fetch real data)")
+                # Fallback to top 10 if API fails
+                print("⚠️ API failed, using fallback top 10 symbols")
+                self.symbols_config = {
+                    'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
+                    'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35
+                }
 
             # Price generator
             self.price_generator = MultiSymbolPriceGenerator(
