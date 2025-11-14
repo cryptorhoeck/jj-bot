@@ -15,7 +15,15 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
   const [activeTab, setActiveTab] = useState('favorites');
   const [showMA, setShowMA] = useState(true);
   const [showRSI, setShowRSI] = useState(false);
-  const [indicators, setIndicators] = useState({ ma20: [], ma50: [], rsi: [] });
+  const [showMACD, setShowMACD] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(false);
+  const [indicators, setIndicators] = useState({
+    ma20: [],
+    ma50: [],
+    rsi: [],
+    macd: { macd_line: [], signal_line: [], histogram: [] },
+    bollinger: { upper_band: [], middle_band: [], lower_band: [] }
+  });
   const [showIndicatorsMenu, setShowIndicatorsMenu] = useState(false);
 
   const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
@@ -195,12 +203,36 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
 
             setPriceData(data);
 
-            // Calculate indicators
+            // Calculate local indicators
             const ma20 = calculateMA(data, 20);
             const ma50 = calculateMA(data, 50);
             const rsi = calculateRSI(data, 14);
 
-            setIndicators({ ma20, ma50, rsi });
+            // Fetch MACD and Bollinger Bands from API
+            let macd = { macd_line: [], signal_line: [], histogram: [] };
+            let bollinger = { upper_band: [], middle_band: [], lower_band: [] };
+
+            try {
+              const macdResponse = await fetch(`${API_BASE}/indicators/macd/${selectedSymbol}?timeframe=${timeframe}&num_candles=${config.points}&source=auto`);
+              if (macdResponse.ok) {
+                const macdResult = await macdResponse.json();
+                if (macdResult.success) {
+                  macd = macdResult.data;
+                }
+              }
+
+              const bbResponse = await fetch(`${API_BASE}/indicators/bollinger/${selectedSymbol}?timeframe=${timeframe}&num_candles=${config.points}&source=auto`);
+              if (bbResponse.ok) {
+                const bbResult = await bbResponse.json();
+                if (bbResult.success) {
+                  bollinger = bbResult.data;
+                }
+              }
+            } catch (indError) {
+              console.warn('Failed to fetch advanced indicators:', indError);
+            }
+
+            setIndicators({ ma20, ma50, rsi, macd, bollinger });
 
             console.log(`✅ Loaded ${data.length} real candles for ${selectedSymbol} (${timeframe}) from ${result.source}`);
             return;
@@ -220,7 +252,13 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
       const ma50 = calculateMA(data, 50);
       const rsi = calculateRSI(data, 14);
 
-      setIndicators({ ma20, ma50, rsi });
+      setIndicators({
+        ma20,
+        ma50,
+        rsi,
+        macd: { macd_line: [], signal_line: [], histogram: [] },
+        bollinger: { upper_band: [], middle_band: [], lower_band: [] }
+      });
     } catch (error) {
       console.error('Error fetching price data:', error);
     } finally {
@@ -801,8 +839,8 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
               }}
               style={{
                 padding: '0.375rem 0.75rem',
-                backgroundColor: showIndicatorsMenu || showMA || showRSI ? (darkMode ? '#1e293b' : '#e2e8f0') : 'transparent',
-                color: showMA || showRSI ? '#3b82f6' : colors.textMuted,
+                backgroundColor: showIndicatorsMenu || showMA || showRSI || showMACD || showBollinger ? (darkMode ? '#1e293b' : '#e2e8f0') : 'transparent',
+                color: showMA || showRSI || showMACD || showBollinger ? '#3b82f6' : colors.textMuted,
                 border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
                 borderRadius: '0.25rem',
                 cursor: 'pointer',
@@ -811,7 +849,7 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
                 transition: 'all 0.15s'
               }}
             >
-              Indicators {(showMA || showRSI) && '✓'}
+              Indicators {(showMA || showRSI || showMACD || showBollinger) && '✓'}
             </button>
 
             {/* Indicators Menu */}
@@ -895,6 +933,72 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
                     fontWeight: '700'
                   }}>
                     {showRSI && '✓'}
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setShowMACD(!showMACD)}
+                  style={{
+                    padding: '0.625rem',
+                    cursor: 'pointer',
+                    borderRadius: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'background-color 0.15s',
+                    backgroundColor: 'transparent'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#f1f5f9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span style={{ fontSize: '0.875rem', color: colors.text }}>MACD (12,26,9)</span>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '0.25rem',
+                    border: `2px solid ${showMACD ? '#3b82f6' : colors.textMuted}`,
+                    backgroundColor: showMACD ? '#3b82f6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    color: '#ffffff',
+                    fontWeight: '700'
+                  }}>
+                    {showMACD && '✓'}
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setShowBollinger(!showBollinger)}
+                  style={{
+                    padding: '0.625rem',
+                    cursor: 'pointer',
+                    borderRadius: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'background-color 0.15s',
+                    backgroundColor: 'transparent'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#f1f5f9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span style={{ fontSize: '0.875rem', color: colors.text }}>Bollinger Bands</span>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '0.25rem',
+                    border: `2px solid ${showBollinger ? '#3b82f6' : colors.textMuted}`,
+                    backgroundColor: showBollinger ? '#3b82f6' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    color: '#ffffff',
+                    fontWeight: '700'
+                  }}>
+                    {showBollinger && '✓'}
                   </div>
                 </div>
               </div>
