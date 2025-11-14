@@ -2,14 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learningData }) {
   const [botRunning, setBotRunning] = useState(false);
-  const [botSymbols, setBotSymbols] = useState(['BTC', 'ETH', 'SOL']);
+  const [botSymbols, setBotSymbols] = useState([]);
   const [newSymbol, setNewSymbol] = useState('');
   const [botConfig, setBotConfig] = useState({
-    tradeAmount: 100,
-    maxPositions: 3,
-    riskPerTrade: 2,
-    useMLPredictions: true,
-    useTechnicalIndicators: true
+    initial_capital: 10000,
+    max_open_positions: 5,
+    position_size_pct: 0.10,
+    stop_loss_pct: 0.02,
+    take_profit_pct: 0.05,
+    use_stop_loss: true,
+    use_take_profit: true
   });
   const [recentTrades, setRecentTrades] = useState([]);
   const [positions, setPositions] = useState([]);
@@ -17,6 +19,94 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
   const [startTime, setStartTime] = useState(null);
   const [botPid, setBotPid] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+
+  // Load bot configuration from backend
+  const loadBotConfig = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/config/`);
+      const data = await response.json();
+
+      if (data.success && data.config) {
+        const cfg = data.config;
+        setBotConfig({
+          initial_capital: cfg.initial_capital || 10000,
+          max_open_positions: cfg.trading_mechanics?.max_open_positions || 5,
+          position_size_pct: cfg.trading_mechanics?.position_size_pct || 0.10,
+          stop_loss_pct: cfg.risk_management?.stop_loss_pct || 0.02,
+          take_profit_pct: cfg.risk_management?.take_profit_pct || 0.05,
+          use_stop_loss: cfg.risk_management?.use_stop_loss !== false,
+          use_take_profit: cfg.risk_management?.use_take_profit !== false
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load bot config:', error);
+    }
+  }, [API_BASE]);
+
+  // Save bot configuration to backend
+  const saveBotConfig = useCallback(async (config) => {
+    setConfigLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/config/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initial_capital: config.initial_capital,
+          trade_frequency_ticks: 5,
+          price_generation: {
+            tick_interval_seconds: 60,
+            volatility_multiplier: 1.0,
+            trend_strength: 1.0,
+            regime_duration_multiplier: 1.0,
+            inter_symbol_correlation: 0.3,
+            spread_bps: 10.0
+          },
+          trading_mechanics: {
+            commission_rate: 0.001,
+            slippage_rate: 0.0005,
+            position_size_pct: config.position_size_pct,
+            max_open_positions: config.max_open_positions
+          },
+          risk_management: {
+            use_stop_loss: config.use_stop_loss,
+            stop_loss_pct: config.stop_loss_pct,
+            use_take_profit: config.use_take_profit,
+            take_profit_pct: config.take_profit_pct,
+            use_trailing_stop: false,
+            trailing_stop_pct: 0.03,
+            max_loss_per_trade_pct: 0.02,
+            max_daily_loss_pct: 0.10
+          }
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log('✅ Bot config saved');
+      }
+    } catch (error) {
+      console.error('Failed to save bot config:', error);
+    } finally {
+      setConfigLoading(false);
+    }
+  }, [API_BASE]);
+
+  // Load enabled symbols from backend
+  const loadBotSymbols = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/symbols/enabled`);
+      const data = await response.json();
+
+      if (data.success && data.symbols) {
+        setBotSymbols(Object.keys(data.symbols));
+      }
+    } catch (error) {
+      console.error('Failed to load symbols:', error);
+      // Fallback to default symbols
+      setBotSymbols(['BTC', 'ETH', 'SOL']);
+    }
+  }, [API_BASE]);
 
   // Fetch bot status from backend
   const fetchBotStatus = useCallback(async () => {
@@ -64,6 +154,12 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
       console.error('Failed to fetch positions:', error);
     }
   }, [API_BASE]);
+
+  // Load initial data on mount
+  useEffect(() => {
+    loadBotConfig();
+    loadBotSymbols();
+  }, [loadBotConfig, loadBotSymbols]);
 
   // Check bot status on mount and poll every 2 seconds
   useEffect(() => {
@@ -161,7 +257,7 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
   };
 
   // Add symbol to bot
-  const handleAddSymbol = () => {
+  const handleAddSymbol = async () => {
     if (!newSymbol) return;
 
     const symbol = newSymbol.toUpperCase().trim();
@@ -171,16 +267,65 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
       return;
     }
 
-    setBotSymbols([...botSymbols, symbol]);
-    setNewSymbol('');
+    try {
+      // Enable symbol in backend
+      const response = await fetch(`${API_BASE}/api/symbols/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, enabled: true })
+      });
 
-    // TODO: Auto-train ML model for new symbol
-    console.log(`✅ Added ${symbol} to bot trading list`);
+      const data = await response.json();
+
+      if (data.success || response.status === 404) {
+        // If symbol doesn't exist, try to add it (user might be adding custom symbol)
+        if (response.status === 404) {
+          const addResponse = await fetch(`${API_BASE}/api/symbols/add`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, coingecko_id: symbol.toLowerCase() })
+          });
+
+          if (!addResponse.ok) {
+            alert('Failed to add symbol. Please check the symbol name.');
+            return;
+          }
+        }
+
+        // Update local state
+        setBotSymbols([...botSymbols, symbol]);
+        setNewSymbol('');
+        console.log(`✅ Added ${symbol} to bot trading list`);
+      } else {
+        alert('Failed to enable symbol');
+      }
+    } catch (error) {
+      console.error('Error adding symbol:', error);
+      alert('Failed to add symbol');
+    }
   };
 
   // Remove symbol from bot
-  const handleRemoveSymbol = (symbol) => {
-    setBotSymbols(botSymbols.filter(s => s !== symbol));
+  const handleRemoveSymbol = async (symbol) => {
+    try {
+      // Disable symbol in backend
+      const response = await fetch(`${API_BASE}/api/symbols/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, enabled: false })
+      });
+
+      if (response.ok) {
+        // Update local state
+        setBotSymbols(botSymbols.filter(s => s !== symbol));
+        console.log(`✅ Removed ${symbol} from bot trading list`);
+      } else {
+        alert('Failed to disable symbol');
+      }
+    } catch (error) {
+      console.error('Error removing symbol:', error);
+      alert('Failed to remove symbol');
+    }
   };
 
   // Navigate to Charts tab with selected symbol
@@ -190,9 +335,15 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
     }
   };
 
-  // Update config
+  // Update config and save to backend
   const updateConfig = (key, value) => {
-    setBotConfig({ ...botConfig, [key]: value });
+    const newConfig = { ...botConfig, [key]: value };
+    setBotConfig(newConfig);
+    // Debounce save to avoid too many API calls
+    if (updateConfig.timeout) clearTimeout(updateConfig.timeout);
+    updateConfig.timeout = setTimeout(() => {
+      saveBotConfig(newConfig);
+    }, 1000);
   };
 
   return (
@@ -571,12 +722,12 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: colors.text, marginBottom: '0.25rem' }}>
-              Trade Amount ($)
+              Initial Capital ($)
             </label>
             <input
               type="number"
-              value={botConfig.tradeAmount}
-              onChange={(e) => updateConfig('tradeAmount', parseFloat(e.target.value))}
+              value={botConfig.initial_capital}
+              onChange={(e) => updateConfig('initial_capital', parseFloat(e.target.value))}
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -595,8 +746,8 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
             </label>
             <input
               type="number"
-              value={botConfig.maxPositions}
-              onChange={(e) => updateConfig('maxPositions', parseInt(e.target.value))}
+              value={botConfig.max_open_positions}
+              onChange={(e) => updateConfig('max_open_positions', parseInt(e.target.value))}
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -611,12 +762,13 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
 
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: colors.text, marginBottom: '0.25rem' }}>
-              Risk Per Trade (%)
+              Position Size (%)
             </label>
             <input
               type="number"
-              value={botConfig.riskPerTrade}
-              onChange={(e) => updateConfig('riskPerTrade', parseFloat(e.target.value))}
+              step="0.01"
+              value={(botConfig.position_size_pct * 100).toFixed(1)}
+              onChange={(e) => updateConfig('position_size_pct', parseFloat(e.target.value) / 100)}
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -630,14 +782,65 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
           </div>
 
           <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: colors.text, marginTop: '1.75rem', cursor: 'pointer' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: colors.text, marginBottom: '0.25rem' }}>
+              Stop Loss (%)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={(botConfig.stop_loss_pct * 100).toFixed(1)}
+              onChange={(e) => updateConfig('stop_loss_pct', parseFloat(e.target.value) / 100)}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                backgroundColor: darkMode ? '#1e293b' : '#f8fafc',
+                border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+                borderRadius: '0.25rem',
+                color: colors.text,
+                fontSize: '0.875rem'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: colors.text, marginBottom: '0.25rem' }}>
+              Take Profit (%)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={(botConfig.take_profit_pct * 100).toFixed(1)}
+              onChange={(e) => updateConfig('take_profit_pct', parseFloat(e.target.value) / 100)}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                backgroundColor: darkMode ? '#1e293b' : '#f8fafc',
+                border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+                borderRadius: '0.25rem',
+                color: colors.text,
+                fontSize: '0.875rem'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: colors.text, cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                checked={botConfig.useMLPredictions}
-                onChange={(e) => updateConfig('useMLPredictions', e.target.checked)}
+                checked={botConfig.use_stop_loss}
+                onChange={(e) => updateConfig('use_stop_loss', e.target.checked)}
                 style={{ width: '16px', height: '16px' }}
               />
-              Use ML Predictions
+              Use Stop Loss
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: colors.text, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={botConfig.use_take_profit}
+                onChange={(e) => updateConfig('use_take_profit', e.target.checked)}
+                style={{ width: '16px', height: '16px' }}
+              />
+              Use Take Profit
             </label>
           </div>
         </div>
