@@ -331,67 +331,75 @@ async def dashboard():
 # ===== REAL MARKET DATA FROM COINGECKO (FREE) =====
 @app.get("/api/market/live")
 async def get_market_live():
-    """Get live market data for top 20 cryptos"""
+    """Get live market data for top 250 cryptos from CoinGecko"""
     import requests
 
     try:
-        # Top 20 cryptos (excluding stablecoins)
-        coins = [
-            "bitcoin", "ethereum", "binancecoin", "solana", "ripple",
-            "cardano", "dogecoin", "avalanche-2", "tron", "chainlink",
-            "polkadot", "polygon", "wrapped-bitcoin", "shiba-inu",
-            "litecoin", "bitcoin-cash", "uniswap", "stellar", "cosmos",
-            "ethereum-classic"
-        ]
-
-        symbols = {
-            "bitcoin": "BTC", "ethereum": "ETH", "binancecoin": "BNB",
-            "solana": "SOL", "ripple": "XRP", "cardano": "ADA",
-            "dogecoin": "DOGE", "avalanche-2": "AVAX", "tron": "TRX",
-            "chainlink": "LINK", "polkadot": "DOT", "polygon": "MATIC",
-            "wrapped-bitcoin": "WBTC", "shiba-inu": "SHIB", "litecoin": "LTC",
-            "bitcoin-cash": "BCH", "uniswap": "UNI", "stellar": "XLM",
-            "cosmos": "ATOM", "ethereum-classic": "ETC"
-        }
-
-        # Fetch from CoinGecko
-        ids = ",".join(coins)
-        url = "https://api.coingecko.com/api/v3/simple/price"
+        # Use CoinGecko's /coins/markets endpoint to get top 250 coins by market cap
+        url = "https://api.coingecko.com/api/v3/coins/markets"
         params = {
-            "ids": ids,
-            "vs_currencies": "usd",
-            "include_24hr_change": "true",
-            "include_market_cap": "true",
-            "include_24hr_vol": "true"
+            "vs_currency": "usd",
+            "order": "market_cap_desc",
+            "per_page": 250,  # Free tier supports up to 250
+            "page": 1,
+            "sparkline": False,
+            "price_change_percentage": "24h"
         }
 
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
+
+        # Check response status
+        if response.status_code != 200:
+            print(f"CoinGecko API returned status {response.status_code}: {response.text[:200]}")
+            raise Exception(f"API returned status {response.status_code}")
+
+        # Check if response is empty
+        if not response.text:
+            raise Exception("Empty response from CoinGecko")
+
         data = response.json()
+
+        # Validate data is a list
+        if not isinstance(data, list):
+            print(f"Unexpected data type: {type(data)}, content: {str(data)[:200]}")
+            raise Exception("Invalid data format from CoinGecko")
 
         # Format for frontend - return as dict keyed by symbol
         result = {}
-        for coin_id in coins:
-            if coin_id in data:
-                symbol = symbols[coin_id]
+        for coin in data:
+            symbol = coin.get("symbol", "").upper()
+            if symbol:  # Only add if symbol exists
                 result[symbol.lower()] = {
                     "symbol": symbol,
-                    "usd": data[coin_id].get("usd", 0),
-                    "usd_24h_change": data[coin_id].get("usd_24h_change", 0),
-                    "usd_market_cap": data[coin_id].get("usd_market_cap", 0),
-                    "usd_24h_vol": data[coin_id].get("usd_24h_vol", 0),
+                    "name": coin.get("name", ""),
+                    "usd": coin.get("current_price", 0),
+                    "usd_24h_change": coin.get("price_change_percentage_24h", 0),
+                    "usd_market_cap": coin.get("market_cap", 0),
+                    "usd_24h_vol": coin.get("total_volume", 0),
+                    "image": coin.get("image", ""),
                     "timestamp": datetime.now().isoformat()
                 }
 
-        return {"status": "success", "data": result}
+        print(f"✅ Successfully fetched {len(result)} coins from CoinGecko")
+        return {"status": "success", "data": result, "count": len(result)}
 
     except Exception as e:
+        print(f"❌ CoinGecko API error: {e}")
         # Return placeholder data if API fails - as dict
         return {
             "status": "error",
+            "error": str(e),
             "data": {
-                "btc": {"symbol": "BTC", "usd": 45000, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
-                "eth": {"symbol": "ETH", "usd": 2500, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()},
-                "bnb": {"symbol": "BNB", "usd": 350, "usd_24h_change": 0, "timestamp": datetime.now().isoformat()}
+                "btc": {"symbol": "BTC", "name": "Bitcoin", "usd": 45000, "usd_24h_change": 2.5, "timestamp": datetime.now().isoformat()},
+                "eth": {"symbol": "ETH", "name": "Ethereum", "usd": 2500, "usd_24h_change": -1.2, "timestamp": datetime.now().isoformat()},
+                "bnb": {"symbol": "BNB", "name": "BNB", "usd": 350, "usd_24h_change": 1.8, "timestamp": datetime.now().isoformat()},
+                "sol": {"symbol": "SOL", "name": "Solana", "usd": 100, "usd_24h_change": 3.5, "timestamp": datetime.now().isoformat()},
+                "xrp": {"symbol": "XRP", "name": "XRP", "usd": 0.65, "usd_24h_change": -0.5, "timestamp": datetime.now().isoformat()},
+                "ada": {"symbol": "ADA", "name": "Cardano", "usd": 0.45, "usd_24h_change": 1.2, "timestamp": datetime.now().isoformat()},
+                "doge": {"symbol": "DOGE", "name": "Dogecoin", "usd": 0.08, "usd_24h_change": -2.1, "timestamp": datetime.now().isoformat()},
+                "avax": {"symbol": "AVAX", "name": "Avalanche", "usd": 35, "usd_24h_change": 4.2, "timestamp": datetime.now().isoformat()},
+                "dot": {"symbol": "DOT", "name": "Polkadot", "usd": 7.5, "usd_24h_change": 0.8, "timestamp": datetime.now().isoformat()},
+                "matic": {"symbol": "MATIC", "name": "Polygon", "usd": 0.85, "usd_24h_change": 2.3, "timestamp": datetime.now().isoformat()}
             }
         }
 
