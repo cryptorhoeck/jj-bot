@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learningData }) {
   const [botRunning, setBotRunning] = useState(false);
@@ -12,8 +12,75 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
     useTechnicalIndicators: true
   });
   const [recentTrades, setRecentTrades] = useState([]);
+  const [positions, setPositions] = useState([]);
   const [uptime, setUptime] = useState(0);
   const [startTime, setStartTime] = useState(null);
+  const [botPid, setBotPid] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch bot status from backend
+  const fetchBotStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/status`);
+      const data = await response.json();
+
+      if (data.running) {
+        setBotRunning(true);
+        setBotPid(data.pid);
+        if (!startTime) {
+          setStartTime(Date.now() - (uptime * 1000)); // Approximate start time
+        }
+      } else {
+        setBotRunning(false);
+        setBotPid(null);
+        setStartTime(null);
+        setUptime(0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch bot status:', error);
+    }
+  }, [API_BASE, startTime, uptime]);
+
+  // Fetch real trades from database
+  const fetchTrades = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/trades?limit=10`);
+      const data = await response.json();
+      setRecentTrades(data.trades || []);
+    } catch (error) {
+      console.error('Failed to fetch trades:', error);
+    }
+  }, [API_BASE]);
+
+  // Fetch positions from bot
+  const fetchPositions = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/services/realistic_simulator/positions`);
+      const data = await response.json();
+      if (data.positions) {
+        setPositions(data.positions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch positions:', error);
+    }
+  }, [API_BASE]);
+
+  // Check bot status on mount and poll every 2 seconds
+  useEffect(() => {
+    fetchBotStatus();
+    fetchTrades();
+    fetchPositions();
+
+    const interval = setInterval(() => {
+      fetchBotStatus();
+      if (botRunning) {
+        fetchTrades();
+        fetchPositions();
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [fetchBotStatus, fetchTrades, fetchPositions, botRunning]);
 
   // Update uptime counter
   useEffect(() => {
@@ -35,8 +102,10 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
     return `${h}h ${m}m ${s}s`;
   };
 
-  // Start bot
+  // Start bot - Call real backend API
   const handleStartBot = async () => {
+    if (loading) return;
+
     // Validate configuration
     if (botSymbols.length === 0) {
       alert('Please add at least one symbol to trade');
@@ -48,18 +117,47 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
       return;
     }
 
-    // Start bot
-    setBotRunning(true);
-    setStartTime(Date.now());
-    console.log('🤖 Bot started with symbols:', botSymbols);
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/start`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (data.status === 'started' || data.status === 'already_running') {
+        console.log('🤖 Bot started:', data.message);
+        setStartTime(Date.now());
+        await fetchBotStatus();
+      } else {
+        alert(`Failed to start bot: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Error starting bot:', error);
+      alert('Failed to start bot');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Stop bot
-  const handleStopBot = () => {
-    setBotRunning(false);
-    setStartTime(null);
-    setUptime(0);
-    console.log('🛑 Bot stopped');
+  // Stop bot - Call real backend API
+  const handleStopBot = async () => {
+    if (loading) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulator/stop`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      console.log('🛑 Bot stopped:', data.message);
+      await fetchBotStatus();
+    } catch (error) {
+      console.error('Error stopping bot:', error);
+      alert('Failed to stop bot');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Add symbol to bot
@@ -292,6 +390,103 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
               Add
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Live Positions & Recent Trades */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+        {/* Live Positions */}
+        <div style={{
+          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+          border: `1px solid ${darkMode ? '#1e293b' : '#e2e8f0'}`,
+          borderRadius: '0.5rem',
+          padding: '1.5rem'
+        }}>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', color: colors.text }}>
+            💼 Live Positions
+          </h3>
+
+          {positions.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: colors.textMuted, fontSize: '0.875rem' }}>
+              No open positions
+            </div>
+          ) : (
+            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {positions.map((pos, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '0.75rem',
+                    marginBottom: '0.5rem',
+                    backgroundColor: darkMode ? '#1e293b' : '#f8fafc',
+                    borderRadius: '0.25rem',
+                    borderLeft: `3px solid ${pos.side === 'LONG' ? '#10b981' : '#ef4444'}`
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                    <span style={{ fontWeight: '600', color: colors.text }}>{pos.symbol}</span>
+                    <span style={{ fontSize: '0.75rem', color: pos.side === 'LONG' ? '#10b981' : '#ef4444', fontWeight: '600' }}>
+                      {pos.side}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+                    Size: {pos.size} | Entry: ${pos.entry_price?.toFixed(2)}
+                  </div>
+                  {pos.unrealized_pnl !== undefined && (
+                    <div style={{ fontSize: '0.75rem', fontWeight: '600', color: pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444' }}>
+                      P&L: ${pos.unrealized_pnl.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Trades */}
+        <div style={{
+          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+          border: `1px solid ${darkMode ? '#1e293b' : '#e2e8f0'}`,
+          borderRadius: '0.5rem',
+          padding: '1.5rem'
+        }}>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', color: colors.text }}>
+            📜 Recent Trades
+          </h3>
+
+          {recentTrades.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: colors.textMuted, fontSize: '0.875rem' }}>
+              No trades yet
+            </div>
+          ) : (
+            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {recentTrades.map((trade, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '0.75rem',
+                    marginBottom: '0.5rem',
+                    backgroundColor: darkMode ? '#1e293b' : '#f8fafc',
+                    borderRadius: '0.25rem',
+                    borderLeft: `3px solid ${trade.pnl >= 0 ? '#10b981' : '#ef4444'}`
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                    <span style={{ fontWeight: '600', color: colors.text }}>{trade.symbol}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '600', color: trade.pnl >= 0 ? '#10b981' : '#ef4444' }}>
+                      ${trade.pnl?.toFixed(2)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+                    {trade.signal} @ ${trade.last_price?.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: colors.textMuted }}>
+                    {new Date(trade.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

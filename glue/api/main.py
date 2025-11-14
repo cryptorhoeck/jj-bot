@@ -115,10 +115,11 @@ async def get_market_prices():
 async def system_health():
     return {"status": "healthy", "timestamp": datetime.datetime.now().isoformat()}
 
-# ===== SIMULATOR ENDPOINTS - THESE WILL WORK =====
-@app.get("/api/simulator/status")
-async def simulator_status():
-    """Check if simulator is running"""
+# ===== BOT ENDPOINTS - Trading bot with learning =====
+@app.get("/api/bot/status")
+@app.get("/api/simulator/status")  # Keep old endpoint for compatibility
+async def bot_status():
+    """Check if trading bot is running"""
     for proc in psutil.process_iter(['pid', 'cmdline']):
         try:
             cmdline = proc.info.get('cmdline')
@@ -128,24 +129,25 @@ async def simulator_status():
             continue
     return {"running": False}
 
-@app.post("/api/simulator/start")
-async def start_simulator():
-    """Start the trade simulator"""
+@app.post("/api/bot/start")
+@app.post("/api/simulator/start")  # Keep old endpoint for compatibility
+async def start_bot():
+    """Start the trading bot (learns and trades automatically)"""
     global simulator_process
-    
+
     # Check if already running
-    status = await simulator_status()
+    status = await bot_status()
     if status["running"]:
-        return {"status": "already_running", "message": "Simulator is already running"}
-    
-    # Start the simulator
+        return {"status": "already_running", "message": "Bot is already running"}
+
+    # Start the bot
     try:
         # Use the project root directory (2 levels up from glue/api)
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         project_root = os.path.dirname(project_root)
         sim_trader_path = os.path.join(project_root, "glue", "api", "sim_trader.py")
 
-        # On Windows, open simulator in new console window so output is visible
+        # On Windows, open bot in new console window so output is visible
         # On Linux, output will go to current terminal
         import platform
         if platform.system() == 'Windows':
@@ -160,15 +162,16 @@ async def start_simulator():
                 cwd=project_root
             )
         await asyncio.sleep(1)
-        return {"status": "started", "message": "Trade simulator started successfully"}
+        return {"status": "started", "message": "Trading bot started successfully"}
     except Exception as e:
-        return {"status": "error", "message": f"Failed to start simulator: {str(e)}"}
+        return {"status": "error", "message": f"Failed to start bot: {str(e)}"}
 
-@app.post("/api/simulator/stop")
-async def stop_simulator():
-    """Stop the trade simulator"""
+@app.post("/api/bot/stop")
+@app.post("/api/simulator/stop")  # Keep old endpoint for compatibility
+async def stop_bot():
+    """Stop the trading bot"""
     stopped = False
-    
+
     for proc in psutil.process_iter(['pid', 'cmdline']):
         try:
             cmdline = proc.info.get('cmdline')
@@ -177,10 +180,10 @@ async def stop_simulator():
                 stopped = True
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    
+
     if stopped:
-        return {"status": "stopped", "message": "Trade simulator stopped"}
-    return {"status": "not_running", "message": "Simulator was not running"}
+        return {"status": "stopped", "message": "Trading bot stopped"}
+    return {"status": "not_running", "message": "Bot was not running"}
 
 # ===== DATA MANAGEMENT ENDPOINTS =====
 @app.get("/api/data/export")
