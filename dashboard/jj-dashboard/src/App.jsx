@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { ControlPanel } from "./ControlPanel.jsx";
-import { BacktestTab } from "./BacktestTab.jsx";
-import { ChartsTab } from "./ChartsTab.jsx";
+import { DashboardTab } from "./DashboardTab.jsx";
+import { TradingTab } from "./TradingTab.jsx";
+import { DataTab } from "./DataTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
-import { AnalyticsTab } from "./AnalyticsTab.jsx";
-import { BotControlTab } from "./BotControlTab.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [trades, setTrades] = useState([]);
   const [summary, setSummary] = useState({
     total_trades: 0,
@@ -453,292 +451,74 @@ function App() {
         {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'charts', 'backtest', 'analytics', 'bot', 'control', 'trades', 'data'].map((tab) => (
+            {[
+              { id: 'dashboard', label: '📊 Dashboard', icon: '📊' },
+              { id: 'trading', label: '🤖 Trading', icon: '🤖' },
+              { id: 'charts', label: '📈 Charts', icon: '📈' },
+              { id: 'data', label: '📁 Data', icon: '📁' }
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
                 style={{
-                  padding: '0.5rem 0',
-                  background: 'none',
+                  padding: '0.75rem 1.5rem',
+                  background: activeTab === tab.id ? colors.blue : 'none',
                   border: 'none',
-                  borderBottom: activeTab === tab ? `2px solid ${colors.blue}` : '2px solid transparent',
-                  color: activeTab === tab ? colors.blue : colors.textMuted,
-                  fontWeight: '500',
+                  borderRadius: '0.5rem 0.5rem 0 0',
+                  color: activeTab === tab.id ? 'white' : colors.textMuted,
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  textTransform: 'capitalize',
-                  transition: 'color 0.3s'
+                  fontSize: '1rem',
+                  transition: 'all 0.3s'
                 }}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* OVERVIEW TAB - YOUR ORIGINAL WITH DARK MODE SUPPORT */}
-        {activeTab === 'overview' && (
-          <div>
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total Trades</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.total_trades}</div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total P&L</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.total_pnl >= 0 ? colors.green : colors.red }}>
-                  ${summary.total_pnl?.toFixed(2)}
-                </div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Win Rate</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.win_rate?.toFixed(1)}%</div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Avg P&L</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.avg_pnl >= 0 ? colors.green : colors.red }}>
-                  ${summary.avg_pnl?.toFixed(2)}
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div style={{ 
-              backgroundColor: colors.card, 
-              borderRadius: '0.5rem', 
-              padding: '1.5rem', 
-              boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-            }}>
-              <h3 style={{ fontWeight: '600', marginBottom: '1rem', color: colors.text }}>Recent Activity</h3>
-              {trades.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {trades.slice(0, 5).map((trade, index) => (
-                    <div key={index} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '0.5rem',
-                      backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                      borderRadius: '0.25rem'
-                    }}>
-                      <span>{new Date(trade.timestamp).toLocaleTimeString()}</span>
-                      <span>{trade.symbol}</span>
-                      <span>{trade.signal}</span>
-                      <span>${parseFloat(trade.last_price).toFixed(2)}</span>
-                      <span style={{ color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
-                        ${trade.pnl?.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: colors.textMuted }}>No trades yet. Start the simulator to generate trades.</p>
-              )}
-            </div>
-
-            {/* Performance Analytics Section */}
-            <div style={{ marginTop: '2rem' }}>
-              <ChartsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
-            </div>
-          </div>
+        {/* DASHBOARD TAB */}
+        {activeTab === 'dashboard' && (
+          <DashboardTab
+            colors={colors}
+            darkMode={darkMode}
+            summary={summary}
+            trades={trades}
+            botRunning={simulatorRunning}
+            learningData={learningData}
+            onNavigate={setActiveTab}
+          />
         )}
 
-        {/* CHARTS TAB - TradingView Style */}
-        {activeTab === 'charts' && (
-          <MarketChart colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
-        )}
-
-        {/* BACKTEST TAB */}
-        {activeTab === 'backtest' && (
-          <BacktestTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
-        )}
-
-        {/* ANALYTICS TAB */}
-        {activeTab === 'analytics' && (
-          <AnalyticsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
-        )}
-
-        {/* BOT TAB */}
-        {activeTab === 'bot' && (
-          <BotControlTab
+        {/* TRADING TAB */}
+        {activeTab === 'trading' && (
+          <TradingTab
             colors={colors}
             darkMode={darkMode}
             API_BASE={API_BASE}
-            onNavigate={(tab, symbol) => {
-              setActiveTab(tab);
-              // TODO: If navigating to charts with a symbol, update selected symbol
-            }}
             learningData={learningData}
           />
         )}
 
-        {/* DATA MANAGEMENT TAB */}
+        {/* CHARTS TAB */}
+        {activeTab === 'charts' && (
+          <MarketChart
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+          />
+        )}
+
+        {/* DATA & ANALYTICS TAB */}
         {activeTab === 'data' && (
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.5rem',
-            padding: '1.5rem',
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              💾 Data Management
-            </h2>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-              {/* Export Data */}
-              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Export Data</h3>
-                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
-                  Download all trades as CSV file
-                </p>
-                <button
-                  onClick={exportCSV}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    backgroundColor: colors.blue,
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '0.375rem',
-                    cursor: 'pointer',
-                    fontWeight: '500'
-                  }}
-                >
-                  📥 Export to CSV
-                </button>
-              </div>
-
-              {/* Archive Data */}
-              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Archive Data</h3>
-                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
-                  Create timestamped backup archive
-                </p>
-                <button
-                  onClick={archiveData}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    backgroundColor: colors.yellow,
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '0.375rem',
-                    cursor: 'pointer',
-                    fontWeight: '500'
-                  }}
-                >
-                  📦 Archive Now
-                </button>
-              </div>
-
-              {/* Clear Database */}
-              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Clear Database</h3>
-                <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
-                  Clear all trades (creates backup first)
-                </p>
-                <button
-                  onClick={clearDatabase}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    backgroundColor: colors.red,
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '0.375rem',
-                    cursor: 'pointer',
-                    fontWeight: '500'
-                  }}
-                >
-                  🗑️ Clear Database
-                </button>
-              </div>
-
-              {/* Database Info */}
-              <div style={{ padding: '1rem', border: `1px solid ${colors.border}`, borderRadius: '0.5rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Database Info</h3>
-                <div style={{ fontSize: '0.875rem', color: colors.text }}>
-                  <p>Total Trades: {summary.total_trades}</p>
-                  <p>Total P&L: ${summary.total_pnl?.toFixed(2)}</p>
-                  <p>Win Rate: {summary.win_rate?.toFixed(1)}%</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CONTROL TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
-        {activeTab === 'control' && (
-          <ControlPanel colors={colors} API_BASE={API_BASE} />
-        )}
-        {/* TRADES TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
-        {activeTab === 'trades' && (
-          <div style={{ 
-            backgroundColor: colors.card, 
-            borderRadius: '0.5rem', 
-            padding: '1.5rem', 
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              Recent Trades ({trades.length})
-            </h2>
-            {trades.length > 0 ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Time</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Symbol</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Signal</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Price</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>VWAP</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trades.map((trade, index) => (
-                      <tr key={index} style={{ 
-                        borderBottom: `1px solid ${colors.border}`,
-                        backgroundColor: index % 2 === 0 ? 'transparent' : (darkMode ? '#1a1a1a' : '#f9fafb')
-                      }}>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{new Date(trade.timestamp).toLocaleTimeString()}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.symbol}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.signal}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.last_price}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.vwap}</td>
-                        <td style={{ padding: '0.5rem', color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
-                          ${trade.pnl?.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p style={{ color: colors.textMuted, textAlign: 'center', padding: '2rem' }}>
-                No trades yet. Go to Control tab and start the simulator.
-              </p>
-            )}
-          </div>
+          <DataTab
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+            trades={trades}
+            summary={summary}
+          />
         )}
       </div>
       </div>
