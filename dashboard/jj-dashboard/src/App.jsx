@@ -4,6 +4,7 @@ import { BacktestTab } from "./BacktestTab.jsx";
 import { ChartsTab } from "./ChartsTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
 import { AnalyticsTab } from "./AnalyticsTab.jsx";
+import { BotControlTab } from "./BotControlTab.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -388,10 +389,10 @@ function App() {
       fetchLearningData();
     }, 10000);
 
-    // Slow interval for market data only when on Market tab (120 seconds = 2 minutes)
+    // Slow interval for market data only when on Charts tab (120 seconds = 2 minutes)
     const marketInterval = setInterval(() => {
-      // Only fetch market data if on Market tab
-      if (activeTab === 'market') {
+      // Only fetch market data if on Charts tab
+      if (activeTab === 'charts') {
         fetchMarketData();
       }
     }, 120000);
@@ -452,7 +453,7 @@ function App() {
         {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'backtest', 'analytics', 'learning', 'control', 'trades', 'data'].map((tab) => (
+            {['overview', 'charts', 'backtest', 'analytics', 'bot', 'control', 'trades', 'data'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -561,8 +562,8 @@ function App() {
           </div>
         )}
 
-        {/* MARKET TAB - TradingView Style */}
-        {activeTab === 'market' && (
+        {/* CHARTS TAB - TradingView Style */}
+        {activeTab === 'charts' && (
           <MarketChart colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
         )}
 
@@ -576,124 +577,18 @@ function App() {
           <AnalyticsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
         )}
 
-        {/* LEARNING TAB */}
-        {activeTab === 'learning' && (
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.5rem',
-            padding: '1.5rem',
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              🧠 Learning System Insights
-            </h2>
-
-            {learningData ? (
-              <>
-                {/* Current State */}
-                <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Current State</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Recommended Strategy</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.blue }}>
-                        {learningData.current_state?.recommended_strategy || 'None'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Market Regime</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.yellow }}>
-                        {learningData.current_state?.market_regime || 'Unknown'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Confidence</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: colors.green }}>
-                        {((learningData.current_state?.regime_confidence || 0) * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Top Strategies */}
-                <div style={{ marginBottom: '2rem' }}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Top Performing Strategies</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {learningData.top_strategies?.map((strat, index) => (
-                      <div key={index} style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '0.75rem',
-                        backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                        borderRadius: '0.5rem'
-                      }}>
-                        <span style={{ color: colors.text, fontWeight: '600' }}>{index + 1}. {strat.name}</span>
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                          <span style={{ color: colors.text }}>Win Rate: {strat.win_rate?.toFixed(1)}%</span>
-                          <span style={{ color: strat.total_pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
-                            P&L: ${strat.total_pnl?.toFixed(2)}
-                          </span>
-                          <span style={{ color: colors.textMuted }}>Trades: {strat.trade_count}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Learning Stats */}
-                <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Learning Statistics</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Total Evaluations</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
-                        {learningData.learning_stats?.total_evaluations || 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Strategy Switches</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
-                        {learningData.learning_stats?.strategy_switches || 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>Regime Changes (24h)</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text }}>
-                        {learningData.learning_stats?.regime_changes || 0}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Insights */}
-                {learningData.insights && learningData.insights.length > 0 && (
-                  <div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.5rem', color: colors.text }}>Insights</h3>
-                    {learningData.insights.map((insight, index) => (
-                      <div key={index} style={{
-                        padding: '0.75rem',
-                        marginBottom: '0.5rem',
-                        backgroundColor: insight.type === 'warning' ? 'rgba(239, 68, 68, 0.1)' :
-                                       insight.type === 'suggestion' ? 'rgba(16, 185, 129, 0.1)' :
-                                       'rgba(96, 165, 250, 0.1)',
-                        border: `1px solid ${insight.type === 'warning' ? colors.red :
-                                            insight.type === 'suggestion' ? colors.green : colors.blue}`,
-                        borderRadius: '0.5rem',
-                        color: colors.text
-                      }}>
-                        {insight.type === 'warning' && '⚠️ '}
-                        {insight.type === 'suggestion' && '💡 '}
-                        {insight.type === 'info' && 'ℹ️ '}
-                        {insight.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p style={{ color: colors.textMuted }}>Loading learning data...</p>
-            )}
-          </div>
+        {/* BOT TAB */}
+        {activeTab === 'bot' && (
+          <BotControlTab
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+            onNavigate={(tab, symbol) => {
+              setActiveTab(tab);
+              // TODO: If navigating to charts with a symbol, update selected symbol
+            }}
+            learningData={learningData}
+          />
         )}
 
         {/* DATA MANAGEMENT TAB */}
