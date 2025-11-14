@@ -1,20 +1,31 @@
 import sqlite3
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
+from contextlib import contextmanager
 import datetime
 
 # Use project-relative database path (cross-platform compatible)
 # Path: glue/api/engine.py -> glue/api -> glue -> project root
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DB_PATH = PROJECT_ROOT / "data" / "trades.db"
+PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
+DB_PATH: Path = PROJECT_ROOT / "data" / "trades.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-def get_connection():
-    """Get a new database connection for each operation"""
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+@contextmanager
+def get_connection() -> sqlite3.Connection:
+    """
+    Get a database connection with context manager support
 
-def init_db():
+    Returns:
+        sqlite3.Connection: Database connection
+    """
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db() -> None:
     """Initialize database with proper schema including PnL column"""
     with get_connection() as conn:
         cur = conn.cursor()
@@ -39,8 +50,14 @@ def init_db():
         conn.commit()
     print("🦍 Database initialized for JJ Gorilla")
 
-def log_trade(trade):
-    """Log a trade to the database"""
+def log_trade(trade: Dict[str, Any]) -> None:
+    """
+    Log a trade to the database
+
+    Args:
+        trade: Dictionary containing trade data with keys:
+               timestamp, symbol, signal, last_price, vwap, pnl
+    """
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -56,8 +73,16 @@ def log_trade(trade):
         ))
         conn.commit()
 
-def get_trades(limit=50):
-    """Get recent trades from database"""
+def get_trades(limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Get recent trades from database
+
+    Args:
+        limit: Maximum number of trades to return
+
+    Returns:
+        List of trade dictionaries
+    """
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -80,8 +105,14 @@ def get_trades(limit=50):
             for row in rows
         ]
 
-def get_summary():
-    """Get trading summary statistics"""
+def get_summary() -> Dict[str, Any]:
+    """
+    Get trading summary statistics
+
+    Returns:
+        Dictionary containing summary statistics including:
+        total_trades, total_pnl, avg_pnl, winning_trades, win_rate
+    """
     with get_connection() as conn:
         cur = conn.cursor()
 
@@ -112,14 +143,14 @@ def get_summary():
             "win_rate": win_rate
         }
 
-def clear_all_trades():
+def clear_all_trades() -> None:
     """Clear all trades from database"""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM trades")
         conn.commit()
 
-def clear_trades():
+def clear_trades() -> None:
     """Clear all trades from the database"""
     with get_connection() as conn:
         cur = conn.cursor()
