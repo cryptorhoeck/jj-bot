@@ -403,6 +403,137 @@ async def get_market_live():
             }
         }
 
+# ===== HISTORICAL MARKET DATA ENDPOINTS =====
+
+# Import market data service
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+from modules.data import market_data_service
+
+@app.get("/api/market/ohlc/{symbol}")
+async def get_ohlc_data(symbol: str, timeframe: str = "1h", source: str = "auto"):
+    """
+    Get OHLC candlestick data for a symbol
+    Uses real APIs when available, falls back to realistic generated data
+
+    Args:
+        symbol: Crypto symbol (BTC, ETH) or stock ticker (AAPL, TSLA)
+        timeframe: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w
+        source: 'kraken', 'yahoo', or 'auto' (auto-detect based on symbol)
+    """
+    try:
+        # Auto-detect source
+        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+
+        if source == "auto":
+            source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
+
+        # Try to get real data first
+        result = None
+
+        if source == "kraken":
+            # Convert symbol to Kraken pair
+            pair = market_data_service.standardize_kraken_pair(symbol)
+            interval = market_data_service.convert_timeframe_to_kraken(timeframe)
+            result = market_data_service.get_kraken_ohlc(pair, interval)
+        else:
+            # Yahoo Finance
+            interval_str, range_str = market_data_service.convert_timeframe_to_yahoo(timeframe)
+            result = market_data_service.get_yahoo_ohlc(symbol, interval_str, range_str)
+
+        # If real data fails, generate realistic data based on current price
+        if not result or not result.get("success"):
+            # Use fallback prices directly (avoid circular dependency)
+            price_map = {
+                "BTC": 45000, "ETH": 2500, "SOL": 100, "BNB": 350,
+                "XRP": 0.65, "ADA": 0.45, "DOGE": 0.08, "AVAX": 35,
+                "DOT": 7.5, "MATIC": 0.85, "AAPL": 180, "TSLA": 250,
+                "GOOGL": 140, "MSFT": 380, "AMZN": 150, "SPY": 450,
+                "QQQ": 380, "DIA": 350
+            }
+            current_price = price_map.get(symbol.upper(), 100)
+
+            # Generate realistic OHLC data
+            num_candles_map = {
+                "1m": 60, "5m": 72, "15m": 96, "30m": 96,
+                "1h": 168, "4h": 180, "1d": 90, "1w": 52, "1M": 24
+            }
+            num_candles = num_candles_map.get(timeframe, 168)
+
+            candles = market_data_service.generate_realistic_ohlc(current_price, timeframe, num_candles)
+
+            return {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "candles": candles,
+                "count": len(candles),
+                "source": "generated",
+                "note": "Generated realistic data based on current market price"
+            }
+
+        return result
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/market/ticker/{symbol}")
+async def get_ticker_data(symbol: str, source: str = "auto"):
+    """
+    Get current ticker/quote data for a symbol
+
+    Args:
+        symbol: Crypto symbol or stock ticker
+        source: 'kraken', 'yahoo', or 'auto'
+    """
+    try:
+        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+
+        if source == "auto":
+            source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
+
+        if source == "kraken":
+            pair = market_data_service.standardize_kraken_pair(symbol)
+            result = market_data_service.get_kraken_ticker([pair])
+        else:
+            result = market_data_service.get_yahoo_quote([symbol])
+
+        return result
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/market/batch-ohlc")
+async def get_batch_ohlc(symbols: str, timeframe: str = "1h", source: str = "auto"):
+    """
+    Get OHLC data for multiple symbols at once
+
+    Args:
+        symbols: Comma-separated symbols (e.g., "BTC,ETH,AAPL,TSLA")
+        timeframe: Timeframe string
+        source: Data source
+    """
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(",")]
+        results = {}
+
+        for symbol in symbol_list:
+            # Determine source for each symbol
+            crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+            sym_source = "kraken" if symbol in crypto_symbols else "yahoo"
+
+            if sym_source == "kraken":
+                pair = market_data_service.standardize_kraken_pair(symbol)
+                interval = market_data_service.convert_timeframe_to_kraken(timeframe)
+                results[symbol] = market_data_service.get_kraken_ohlc(pair, interval)
+            else:
+                interval_str, range_str = market_data_service.convert_timeframe_to_yahoo(timeframe)
+                results[symbol] = market_data_service.get_yahoo_ohlc(symbol, interval_str, range_str)
+
+        return {"success": True, "data": results}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # Include service endpoints
 app.include_router(service_router)
 app.include_router(backtest_router)
