@@ -43,6 +43,19 @@ class MarketRegimeDetector:
         self.price_history = PriceHistory()
         self.learning_db = LEARNING_DB_PATH
 
+    def get_current_regime(self, symbol: str = "BTCUSDT", lookback_periods: int = 100) -> Dict:
+        """
+        Get current market regime (convenience method with default symbol).
+
+        Args:
+            symbol: Trading symbol (default: BTCUSDT)
+            lookback_periods: Number of price periods to analyze
+
+        Returns:
+            Dict with regime, confidence, and metrics
+        """
+        return self.detect_regime(symbol, lookback_periods)
+
     def detect_regime(
         self,
         symbol: str,
