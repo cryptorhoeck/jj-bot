@@ -16,6 +16,8 @@ sys.path.append(project_root)
 
 from modules.event_bus import event_bus
 from modules.strategy.strategy_engine import StrategyEngine
+from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
+from modules.database.connection import init_learning_db
 
 # Database paths
 DB_PATH = os.path.join(project_root, "data", "trades.db")
@@ -35,6 +37,10 @@ current_prices = {}
 
 # Strategy engine instance
 strategy_engine = None
+
+# Adaptive strategy selector
+adaptive_selector = None
+current_strategy = "rsi_strategy"  # Track active strategy (will be updated from selector)
 
 def get_enabled_symbols():
     """Get enabled symbols from the symbols database"""
@@ -121,7 +127,7 @@ def update_price(symbol):
         "volume_24h": random.uniform(1000000, 10000000)
     }
 
-    event_bus.publish("PRICE_UPDATE", {"data": price_data})
+    event_bus.publish("PRICE_UPDATE", price_data)
 
     return new_price
 
@@ -153,7 +159,7 @@ def generate_trade_from_signal(signal):
         "last_price": last_price,
         "vwap": vwap,
         "pnl": pnl,
-        "strategy": "momentum",  # Default strategy (will be dynamic later)
+        "strategy": current_strategy,  # Use active strategy from adaptive selector
         "strategy_reason": ", ".join(signal["reason"][:2]) if signal.get("reason") else "N/A"
     }
 
@@ -187,10 +193,11 @@ def publish_trade(trade):
 
 def run_simulator():
     """Main trading bot loop with strategy engine"""
-    global strategy_engine
+    global strategy_engine, adaptive_selector, current_strategy
 
     print("🦍 JJ Gorilla Trading Bot starting...")
     print("🧠 Strategy engine: Enabled (RSI, SMA, MACD, Bollinger Bands)")
+    print("🤖 Adaptive strategy: Enabled (switches to best performer)")
     print("⏰ Price updates every 5 seconds, trades based on signals")
     print()
 
@@ -202,6 +209,32 @@ def run_simulator():
     strategy_engine = StrategyEngine()
     strategy_engine.start()
     print("✅ Strategy engine started")
+
+    # Initialize learning database
+    print("🧠 Initializing learning database...")
+    try:
+        init_learning_db()
+    except Exception as e:
+        print(f"⚠️ Failed to initialize learning database: {e}")
+
+    # Initialize adaptive strategy selector
+    print("🧠 Initializing adaptive strategy selector...")
+    try:
+        adaptive_selector = AdaptiveStrategySelector(
+            reevaluation_interval=10,  # Re-evaluate every 10 trades
+            min_confidence=0.6,
+            lookback_hours=24
+        )
+        # Get initial strategy from selector
+        state = adaptive_selector.get_state()
+        if state:
+            current_strategy = state['current_strategy']
+            print(f"✅ Adaptive strategy selector started (using: {current_strategy})")
+        else:
+            print("✅ Adaptive strategy selector started")
+    except Exception as e:
+        print(f"⚠️ Could not initialize adaptive selector: {e}")
+        print("⚠️ Will use default 'momentum' strategy")
     print()
 
     # Load enabled symbols from database
@@ -254,7 +287,26 @@ def run_simulator():
                                 # Log trade with strategy reason
                                 pnl_symbol = "+" if trade["pnl"] >= 0 else ""
                                 reason = trade.get("strategy_reason", "N/A")
-                                print(f"✅ {trade['signal']:4s} {trade['symbol']:6s} @ ${trade['last_price']:,.2f} | P&L: {pnl_symbol}${trade['pnl']:.2f} | {reason} | Total: {trade_count}")
+                                print(f"✅ {trade['signal']:4s} {trade['symbol']:6s} @ ${trade['last_price']:,.2f} | P&L: {pnl_symbol}${trade['pnl']:.2f} | [{current_strategy}] {reason} | Total: {trade_count}")
+
+                                # Notify adaptive selector of new trade
+                                if adaptive_selector:
+                                    try:
+                                        adaptive_selector.notify_trade()
+                                    except Exception as e:
+                                        print(f"⚠️ Failed to notify adaptive selector: {e}")
+
+                                # Check if time to re-evaluate strategy
+                                if adaptive_selector:
+                                    try:
+                                        selection = adaptive_selector.select_best_strategy()
+                                        if selection and selection.get('switched'):
+                                            old_strategy = current_strategy
+                                            current_strategy = selection['strategy']
+                                            confidence = selection.get('confidence', 0.0)
+                                            print(f"\n🔄 STRATEGY SWITCHED: {old_strategy} → {current_strategy} (confidence: {confidence:.2%})\n")
+                                    except Exception as e:
+                                        print(f"⚠️ Strategy evaluation error: {e}")
 
                     last_signal_check[symbol] = time.time()
 
