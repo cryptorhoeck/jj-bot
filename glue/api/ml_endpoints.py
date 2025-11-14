@@ -13,7 +13,8 @@ import os
 # Add paths
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from modules.ml import feature_engineer
+from modules.ml import feature_engineer, model_trainer
+from modules.ml.training_pipeline import TrainingPipeline
 from modules.data import cached_market_data_service
 
 router = APIRouter(prefix="/api/ml", tags=["machine_learning"])
@@ -30,6 +31,29 @@ class FeatureExtractionRequest(BaseModel):
     include_labels: bool = False
     normalize: bool = False
     normalization_method: str = "standardize"  # or "minmax"
+
+
+class TrainModelRequest(BaseModel):
+    """Request model for training a model"""
+    symbol: str
+    model_type: str = "random_forest"  # or "xgboost"
+    timeframe: str = "1h"
+    num_candles: int = 5000
+    source: str = "auto"
+    test_size: float = 0.2
+    save_model: bool = True
+    n_estimators: int = 100
+    max_depth: int = 10
+    learning_rate: Optional[float] = 0.1  # For XGBoost
+
+
+class PredictionRequest(BaseModel):
+    """Request model for making predictions"""
+    symbol: str
+    timeframe: str = "1h"
+    num_candles: int = 200  # Need historical context
+    source: str = "auto"
+    return_probabilities: bool = True
 
 
 # === Endpoints ===
@@ -299,6 +323,14 @@ async def get_ml_status():
     Example:
     - GET /api/ml/status
     """
+    import glob
+
+    # Count available models
+    models_dir = "./data/ml_models"
+    model_files = []
+    if os.path.exists(models_dir):
+        model_files = glob.glob(os.path.join(models_dir, "*.pkl"))
+
     return {
         "success": True,
         "status": "operational",
@@ -306,17 +338,263 @@ async def get_ml_status():
             "feature_extraction": True,
             "feature_normalization": True,
             "label_generation": True,
-            "real_time_data_integration": True
+            "real_time_data_integration": True,
+            "model_training": True,
+            "price_prediction": True
         },
         "supported_markets": ["crypto", "stocks"],
         "supported_timeframes": ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
         "feature_count": 47,
+        "available_models": len(model_files),
         "endpoints": [
             "POST /api/ml/features/extract",
             "GET /api/ml/features/extract/{symbol}",
             "GET /api/ml/features/info",
             "GET /api/ml/features/sample",
             "POST /api/ml/features/normalize",
+            "POST /api/ml/train",
+            "POST /api/ml/predict",
+            "GET /api/ml/predict/{symbol}",
+            "GET /api/ml/models",
             "GET /api/ml/status"
         ]
     }
+
+
+# === Model Training Endpoints ===
+
+@router.post("/train")
+async def train_model_endpoint(request: TrainModelRequest):
+    """
+    Train a machine learning model for price prediction
+
+    Trains a Random Forest or XGBoost classifier using 47 engineered features.
+    The model predicts price direction: up, down, or neutral.
+
+    Request body:
+    {
+        "symbol": "BTC",
+        "model_type": "random_forest",
+        "timeframe": "1h",
+        "num_candles": 5000,
+        "source": "auto",
+        "test_size": 0.2,
+        "save_model": true,
+        "n_estimators": 100,
+        "max_depth": 10
+    }
+
+    Returns:
+        Training results with metrics and model info
+
+    Example:
+    - POST /api/ml/train
+    """
+    try:
+        # Create training pipeline
+        pipeline = TrainingPipeline()
+
+        # Model parameters
+        model_params = {
+            'n_estimators': request.n_estimators,
+            'max_depth': request.max_depth
+        }
+
+        if request.model_type == 'xgboost':
+            model_params['learning_rate'] = request.learning_rate
+
+        # Run training
+        result = pipeline.run_training(
+            symbol=request.symbol,
+            model_type=request.model_type,
+            timeframe=request.timeframe,
+            num_candles=request.num_candles,
+            source=request.source,
+            test_size=request.test_size,
+            save_model=request.save_model,
+            model_params=model_params
+        )
+
+        if not result['success']:
+            raise HTTPException(status_code=500, detail=result.get('error', 'Training failed'))
+
+        # Return results (exclude trainer object)
+        response = {
+            'success': True,
+            'symbol': result['symbol'],
+            'model_type': result['model_type'],
+            'timeframe': result['timeframe'],
+            'training': result['training'],
+            'evaluation': result['evaluation']
+        }
+
+        if result.get('save_result'):
+            response['model_saved'] = result['save_result']['success']
+            if result['save_result']['success']:
+                response['model_file'] = result['save_result']['model_file']
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# === Prediction Endpoints ===
+
+@router.post("/predict")
+async def predict_endpoint(request: PredictionRequest):
+    """
+    Make price predictions using trained model
+
+    Uses the latest trained model to predict price direction.
+    Requires historical candles for context.
+
+    Request body:
+    {
+        "symbol": "BTC",
+        "timeframe": "1h",
+        "num_candles": 200,
+        "source": "auto",
+        "return_probabilities": true
+    }
+
+    Returns:
+        Prediction with confidence scores
+
+    Example:
+    - POST /api/ml/predict
+    """
+    try:
+        # Fetch market data
+        data_result = cached_market_data_service.get_ohlcv(
+            symbol=request.symbol,
+            source=request.source,
+            timeframe=request.timeframe,
+            num_candles=request.num_candles
+        )
+
+        if not data_result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch market data: {data_result.get('error')}"
+            )
+
+        candles = data_result["candles"]
+
+        # Make prediction
+        result = model_trainer.get_latest_prediction(
+            candles=candles,
+            return_probability=request.return_probabilities
+        )
+
+        if not result.get('success'):
+            # Check if it's a "no model" error
+            if 'No model loaded' in result.get('error', ''):
+                return {
+                    'success': False,
+                    'error': 'No trained model available. Please train a model first using POST /api/ml/train',
+                    'symbol': request.symbol
+                }
+            raise HTTPException(status_code=500, detail=result.get('error', 'Prediction failed'))
+
+        # Add metadata
+        result['symbol'] = request.symbol
+        result['timeframe'] = request.timeframe
+        result['data_source'] = data_result.get('source')
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predict/{symbol}")
+async def predict_get(
+    symbol: str,
+    timeframe: str = Query("1h", description="Candle timeframe"),
+    num_candles: int = Query(200, description="Number of historical candles for context"),
+    source: str = Query("auto", description="Data source"),
+    return_probabilities: bool = Query(True, description="Return prediction probabilities")
+):
+    """
+    Get price prediction (GET version)
+
+    Simpler endpoint for quick predictions
+
+    Examples:
+    - /api/ml/predict/BTC
+    - /api/ml/predict/ETH?timeframe=4h&return_probabilities=true
+    """
+    request = PredictionRequest(
+        symbol=symbol,
+        timeframe=timeframe,
+        num_candles=num_candles,
+        source=source,
+        return_probabilities=return_probabilities
+    )
+
+    return await predict_endpoint(request)
+
+
+@router.get("/models")
+async def list_models():
+    """
+    List all available trained models
+
+    Returns information about all saved models
+
+    Example:
+    - GET /api/ml/models
+    """
+    try:
+        import glob
+        import json
+
+        models_dir = "./data/ml_models"
+        models = []
+
+        if os.path.exists(models_dir):
+            # Find all metadata files
+            metadata_files = glob.glob(os.path.join(models_dir, "*_metadata.json"))
+
+            for meta_file in metadata_files:
+                try:
+                    with open(meta_file, 'r') as f:
+                        metadata = json.load(f)
+
+                    # Get corresponding model file
+                    model_file = meta_file.replace('_metadata.json', '.pkl')
+
+                    if os.path.exists(model_file):
+                        model_info = {
+                            'model_name': metadata.get('model_name'),
+                            'model_type': metadata.get('model_type'),
+                            'timestamp': metadata.get('timestamp'),
+                            'symbol': metadata.get('custom_metadata', {}).get('symbol'),
+                            'timeframe': metadata.get('custom_metadata', {}).get('timeframe'),
+                            'accuracy': metadata.get('training_metrics', {}).get('accuracy'),
+                            'model_file': os.path.basename(model_file),
+                            'metadata_file': os.path.basename(meta_file)
+                        }
+                        models.append(model_info)
+
+                except Exception as e:
+                    print(f"Error reading metadata {meta_file}: {e}")
+                    continue
+
+        # Sort by timestamp (newest first)
+        models.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+
+        return {
+            'success': True,
+            'models': models,
+            'count': len(models),
+            'models_dir': models_dir
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

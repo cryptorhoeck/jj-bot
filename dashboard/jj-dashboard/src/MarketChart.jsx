@@ -468,6 +468,155 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     );
   };
 
+  // Render MACD chart
+  const renderMACDChart = () => {
+    if (!priceData || priceData.length === 0 || !indicators.macd.macd_line || indicators.macd.macd_line.length === 0) {
+      return null;
+    }
+
+    const width = 1000;
+    const height = 120;
+    const padding = 60;
+    const chartWidth = width - (padding * 2);
+    const chartHeight = height - 20;
+
+    // Find min/max for proper scaling
+    const allValues = [
+      ...indicators.macd.macd_line.filter(v => v !== null),
+      ...indicators.macd.signal_line.filter(v => v !== null),
+      ...indicators.macd.histogram.filter(v => v !== null)
+    ];
+
+    if (allValues.length === 0) return null;
+
+    const maxValue = Math.max(...allValues);
+    const minValue = Math.min(...allValues);
+    const range = maxValue - minValue || 1;
+
+    // Calculate zero line position
+    const zeroY = 10 + chartHeight - ((0 - minValue) / range) * chartHeight;
+
+    return (
+      <div style={{
+        height: '140px',
+        borderTop: `1px solid ${darkMode ? '#1e293b' : '#e2e8f0'}`,
+        backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+        position: 'relative'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '0.5rem',
+          left: '1rem',
+          fontSize: '0.75rem',
+          fontWeight: '600',
+          color: colors.textMuted
+        }}>
+          MACD(12,26,9)
+        </div>
+
+        {/* Legend */}
+        <div style={{
+          position: 'absolute',
+          top: '0.5rem',
+          left: '8rem',
+          display: 'flex',
+          gap: '1rem',
+          fontSize: '0.625rem',
+          fontWeight: '600'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <div style={{ width: '12px', height: '2px', backgroundColor: '#06b6d4' }} />
+            <span style={{ color: '#06b6d4' }}>MACD</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <div style={{ width: '12px', height: '2px', backgroundColor: '#f97316' }} />
+            <span style={{ color: '#f97316' }}>Signal</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', opacity: 0.5 }} />
+            <span style={{ color: colors.textMuted }}>Histogram</span>
+          </div>
+        </div>
+
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+          {/* Zero line */}
+          <line
+            x1={padding}
+            y1={zeroY}
+            x2={width - padding}
+            y2={zeroY}
+            stroke={darkMode ? '#475569' : '#cbd5e1'}
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {/* Histogram bars */}
+          {indicators.macd.histogram.map((value, index) => {
+            if (value === null || value === undefined) return null;
+            const x = padding + (index / (indicators.macd.histogram.length - 1)) * chartWidth;
+            const barHeight = Math.abs((value / range) * chartHeight);
+            const barY = value >= 0
+              ? zeroY - barHeight
+              : zeroY;
+
+            return (
+              <rect
+                key={`hist-${index}`}
+                x={x - 1}
+                y={barY}
+                width="2"
+                height={barHeight}
+                fill={value >= 0 ? '#10b981' : '#ef4444'}
+                opacity="0.5"
+              />
+            );
+          })}
+
+          {/* MACD line */}
+          <polyline
+            points={indicators.macd.macd_line.map((value, index) => {
+              if (value === null || value === undefined) return null;
+              const x = padding + (index / (indicators.macd.macd_line.length - 1)) * chartWidth;
+              const y = 10 + chartHeight - ((value - minValue) / range) * chartHeight;
+              return `${x},${y}`;
+            }).filter(p => p !== null).join(' ')}
+            fill="none"
+            stroke="#06b6d4"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {/* Signal line */}
+          <polyline
+            points={indicators.macd.signal_line.map((value, index) => {
+              if (value === null || value === undefined) return null;
+              const x = padding + (index / (indicators.macd.signal_line.length - 1)) * chartWidth;
+              const y = 10 + chartHeight - ((value - minValue) / range) * chartHeight;
+              return `${x},${y}`;
+            }).filter(p => p !== null).join(' ')}
+            fill="none"
+            stroke="#f97316"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {/* Y-axis labels */}
+          <text x={width - padding + 5} y={15} textAnchor="start" fill={colors.textMuted} fontSize="10">
+            {maxValue.toFixed(2)}
+          </text>
+          <text x={width - padding + 5} y={zeroY + 4} textAnchor="start" fill={colors.textMuted} fontSize="10">
+            0
+          </text>
+          <text x={width - padding + 5} y={height - 10} textAnchor="start" fill={colors.textMuted} fontSize="10">
+            {minValue.toFixed(2)}
+          </text>
+        </svg>
+      </div>
+    );
+  };
+
   // Render price chart
   const renderPriceChart = () => {
     if (!priceData || priceData.length === 0) {
@@ -599,6 +748,81 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             />
           )}
 
+          {/* Bollinger Bands overlay */}
+          {showBollinger && indicators.bollinger.upper_band && indicators.bollinger.upper_band.length > 0 && (
+            <>
+              {/* Upper band */}
+              <polyline
+                points={indicators.bollinger.upper_band.map((value, index) => {
+                  if (value === null || value === undefined) return null;
+                  const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                  const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                  return `${x},${y}`;
+                }).filter(p => p !== null).join(' ')}
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="1"
+                strokeDasharray="2,2"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.6"
+              />
+
+              {/* Middle band */}
+              <polyline
+                points={indicators.bollinger.middle_band.map((value, index) => {
+                  if (value === null || value === undefined) return null;
+                  const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                  const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                  return `${x},${y}`;
+                }).filter(p => p !== null).join(' ')}
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.8"
+              />
+
+              {/* Lower band */}
+              <polyline
+                points={indicators.bollinger.lower_band.map((value, index) => {
+                  if (value === null || value === undefined) return null;
+                  const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                  const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                  return `${x},${y}`;
+                }).filter(p => p !== null).join(' ')}
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="1"
+                strokeDasharray="2,2"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.6"
+              />
+
+              {/* Fill area between bands */}
+              <polygon
+                points={
+                  // Upper band points
+                  indicators.bollinger.upper_band.map((value, index) => {
+                    if (value === null || value === undefined) return null;
+                    const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                    const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                    return `${x},${y}`;
+                  }).filter(p => p !== null).join(' ') +
+                  ' ' +
+                  // Lower band points (reversed for polygon closure)
+                  indicators.bollinger.lower_band.map((value, index) => {
+                    if (value === null || value === undefined) return null;
+                    const x = padding + (index / (priceData.length - 1)) * chartWidth;
+                    const y = padding + chartHeight - ((value - minPrice) / priceRange) * chartHeight;
+                    return `${x},${y}`;
+                  }).filter(p => p !== null).reverse().join(' ')
+                }
+                fill="#8b5cf6"
+                opacity="0.1"
+              />
+            </>
+          )}
+
           {/* Gradient definitions */}
           <defs>
             <linearGradient id="priceGradientGreen" x1="0" y1="0" x2="0" y2="1">
@@ -613,7 +837,7 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
         </svg>
 
         {/* Indicator Legend */}
-        {showMA && (
+        {(showMA || showBollinger) && (
           <div style={{
             position: 'absolute',
             top: '1rem',
@@ -627,14 +851,24 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             fontSize: '0.75rem',
             fontWeight: '600'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <div style={{ width: '16px', height: '2px', backgroundColor: '#3b82f6', borderStyle: 'dashed' }} />
-              <span style={{ color: '#3b82f6' }}>MA20</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <div style={{ width: '16px', height: '2px', backgroundColor: '#f59e0b', borderStyle: 'dashed' }} />
-              <span style={{ color: '#f59e0b' }}>MA50</span>
-            </div>
+            {showMA && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <div style={{ width: '16px', height: '2px', backgroundColor: '#3b82f6', borderStyle: 'dashed' }} />
+                  <span style={{ color: '#3b82f6' }}>MA20</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <div style={{ width: '16px', height: '2px', backgroundColor: '#f59e0b', borderStyle: 'dashed' }} />
+                  <span style={{ color: '#f59e0b' }}>MA50</span>
+                </div>
+              </>
+            )}
+            {showBollinger && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <div style={{ width: '16px', height: '2px', backgroundColor: '#8b5cf6', borderStyle: 'dashed' }} />
+                <span style={{ color: '#8b5cf6' }}>BB(20,2)</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1078,6 +1312,9 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
 
         {/* RSI Chart - conditionally rendered */}
         {showRSI && renderRSIChart()}
+
+        {/* MACD Chart - conditionally rendered */}
+        {showMACD && renderMACDChart()}
       </div>
     </div>
   );
