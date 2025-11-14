@@ -19,9 +19,14 @@ from modules.event_bus import event_bus
 class WebSocketManager:
     """Manages WebSocket connections and broadcasts events to clients"""
 
-    def __init__(self):
+    def __init__(self, ping_interval: int = 30, ping_timeout: int = 10):
         # Active WebSocket connections
         self.active_connections: Set[WebSocket] = set()
+
+        # Heartbeat configuration
+        self.ping_interval = ping_interval  # seconds
+        self.ping_timeout = ping_timeout    # seconds
+        self.heartbeat_tasks: Dict[WebSocket, asyncio.Task] = {}
 
         # Event subscription setup
         self._setup_event_subscriptions()
@@ -31,7 +36,9 @@ class WebSocketManager:
             "total_connections": 0,
             "current_connections": 0,
             "messages_sent": 0,
-            "events_received": 0
+            "events_received": 0,
+            "heartbeats_sent": 0,
+            "heartbeats_failed": 0
         }
 
     def _setup_event_subscriptions(self):
@@ -64,13 +71,53 @@ class WebSocketManager:
             "timestamp": datetime.now().isoformat()
         })
 
+        # Start heartbeat for this connection
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket))
+        self.heartbeat_tasks[websocket] = heartbeat_task
+
         print(f"🔌 WebSocket client connected (total: {len(self.active_connections)})")
 
     def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection"""
         self.active_connections.discard(websocket)
         self.stats["current_connections"] = len(self.active_connections)
+
+        # Cancel heartbeat task if exists
+        if websocket in self.heartbeat_tasks:
+            task = self.heartbeat_tasks.pop(websocket)
+            if not task.done():
+                task.cancel()
+
         print(f"🔌 WebSocket client disconnected (total: {len(self.active_connections)})")
+
+    async def _heartbeat_loop(self, websocket: WebSocket):
+        """
+        Send periodic ping messages to keep connection alive
+        and detect dead connections
+        """
+        try:
+            while websocket in self.active_connections:
+                await asyncio.sleep(self.ping_interval)
+
+                # Send ping
+                try:
+                    await websocket.send_json({
+                        "type": "ping",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    self.stats["heartbeats_sent"] += 1
+                except Exception as e:
+                    print(f"⚠️ Heartbeat failed for client: {e}")
+                    self.stats["heartbeats_failed"] += 1
+                    self.disconnect(websocket)
+                    break
+
+        except asyncio.CancelledError:
+            # Task was cancelled (connection closed)
+            pass
+        except Exception as e:
+            print(f"⚠️ Error in heartbeat loop: {e}")
+            self.disconnect(websocket)
 
     async def _send_to_client(self, websocket: WebSocket, message: Dict[str, Any]):
         """Send message to a single client"""

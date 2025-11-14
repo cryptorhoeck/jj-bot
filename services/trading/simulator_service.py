@@ -1,8 +1,8 @@
-import time
 """
 Simulator Service - Wraps the existing simulator
 """
 
+import time
 import sys
 import os
 import json

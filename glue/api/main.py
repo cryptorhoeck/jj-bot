@@ -36,10 +36,27 @@ app.add_middleware(
 
 # Import engine with proper path handling
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 import engine
 from service_endpoints import router as service_router
 from backtest_endpoints import router as backtest_router
 from websocket_manager import ws_manager
+
+# Import rate limiter
+try:
+    from utils.rate_limiter import wait_for_rate_limit
+except ImportError:
+    # Fallback if utils not available
+    def wait_for_rate_limit(*args, **kwargs):
+        return True
+
+# Import advanced analytics
+try:
+    from modules.advanced_analytics import AdvancedAnalytics
+    import pandas as pd
+    analytics_available = True
+except ImportError:
+    analytics_available = False
 
 # Initialize database on startup
 engine.init_db()
@@ -63,6 +80,77 @@ async def get_trades(limit: int = 50):
 async def get_summary():
     return engine.get_summary()
 
+@app.get("/api/analytics/advanced")
+async def get_advanced_analytics():
+    """Get advanced performance analytics"""
+    if not analytics_available:
+        return {
+            "status": "unavailable",
+            "message": "Advanced analytics module not available"
+        }
+
+    try:
+        # Get trades
+        trades = engine.get_trades(limit=10000)
+
+        if not trades or len(trades) < 2:
+            return {
+                "status": "insufficient_data",
+                "message": "Not enough trade data for analytics"
+            }
+
+        # Build equity curve from trades
+        equity = [10000]  # Starting capital
+        for trade in sorted(trades, key=lambda x: x.get('timestamp', '')):
+            pnl = float(trade.get('pnl', 0))
+            equity.append(equity[-1] + pnl)
+
+        equity_curve = pd.Series(equity)
+
+        # Calculate metrics
+        analytics = AdvancedAnalytics(risk_free_rate=0.02)
+        metrics = analytics.calculate_all_metrics(equity_curve, trades, periods_per_year=252)
+
+        return {
+            "status": "success",
+            "metrics": {
+                "returns": {
+                    "total_return": metrics.total_return,
+                    "annualized_return": metrics.annualized_return,
+                    "average_return": metrics.average_return,
+                },
+                "risk": {
+                    "volatility": metrics.volatility,
+                    "sharpe_ratio": metrics.sharpe_ratio,
+                    "sortino_ratio": metrics.sortino_ratio,
+                    "calmar_ratio": metrics.calmar_ratio,
+                },
+                "drawdown": {
+                    "max_drawdown": metrics.max_drawdown,
+                    "max_drawdown_duration": metrics.max_drawdown_duration,
+                    "current_drawdown": metrics.current_drawdown,
+                },
+                "trades": {
+                    "total_trades": metrics.total_trades,
+                    "winning_trades": metrics.winning_trades,
+                    "losing_trades": metrics.losing_trades,
+                    "win_rate": metrics.win_rate,
+                    "profit_factor": metrics.profit_factor,
+                    "average_win": metrics.average_win,
+                    "average_loss": metrics.average_loss,
+                    "largest_win": metrics.largest_win,
+                    "largest_loss": metrics.largest_loss,
+                    "expectancy": metrics.expectancy,
+                }
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error calculating analytics: {str(e)}"
+        }
+
 # ===== CONFIG ENDPOINTS =====
 @app.get("/api/config")
 async def get_config():
@@ -85,7 +173,7 @@ async def get_market_prices():
 # ===== SYSTEM HEALTH =====
 @app.get("/api/system/health")
 async def system_health():
-    return {"status": "healthy", "timestamp": datetime.datetime.now().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 # ===== SIMULATOR ENDPOINTS - THESE WILL WORK =====
 @app.get("/api/simulator/status")
@@ -167,7 +255,7 @@ async def export_data():
         writer.writeheader()
         writer.writerows(trades)
     
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     response = StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
@@ -185,7 +273,7 @@ async def clear_data():
     # Backup database
     db_path = "data/jj_trades.db"
     if os.path.exists(db_path):
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_dir = "backups"
         os.makedirs(backup_dir, exist_ok=True)
         backup_path = f"{backup_dir}/jj_trades_backup_{timestamp}.db"
@@ -242,7 +330,7 @@ async def get_market_live():
             "cosmos": "ATOM", "ethereum-classic": "ETC"
         }
 
-        # Fetch from CoinGecko
+        # Fetch from CoinGecko with rate limiting
         ids = ",".join(coins)
         url = "https://api.coingecko.com/api/v3/simple/price"
         params = {
@@ -252,6 +340,13 @@ async def get_market_live():
             "include_market_cap": "true",
             "include_24hr_vol": "true"
         }
+
+        # Wait for rate limit before making request
+        if not wait_for_rate_limit("coingecko", timeout=5.0):
+            return {
+                "status": "rate_limited",
+                "message": "API rate limit reached, please try again shortly"
+            }
 
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
