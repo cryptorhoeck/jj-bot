@@ -25,6 +25,9 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     bollinger: { upper_band: [], middle_band: [], lower_band: [] }
   });
   const [showIndicatorsMenu, setShowIndicatorsMenu] = useState(false);
+  const [mlPrediction, setMlPrediction] = useState(null);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [showMLPanel, setShowMLPanel] = useState(false);
 
   const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 
@@ -266,6 +269,36 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     }
   }, [selectedSymbol, timeframe, marketData, generatePriceData, API_BASE]);
 
+  // Fetch ML prediction for selected symbol
+  const fetchMLPrediction = useCallback(async () => {
+    if (!selectedSymbol) return;
+
+    setMlLoading(true);
+    try {
+      const config = getTimeframeConfig(timeframe);
+      const response = await fetch(
+        `${API_BASE}/api/ml/predict/${selectedSymbol}?timeframe=${timeframe}&num_candles=${config.points}&return_probabilities=true`
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setMlPrediction(result);
+        } else {
+          // Model not available
+          setMlPrediction({ success: false, error: result.error });
+        }
+      } else {
+        setMlPrediction(null);
+      }
+    } catch (error) {
+      console.warn('ML prediction not available:', error);
+      setMlPrediction(null);
+    } finally {
+      setMlLoading(false);
+    }
+  }, [selectedSymbol, timeframe, API_BASE]);
+
   useEffect(() => {
     fetchMarketData();
     const interval = setInterval(fetchMarketData, 30000); // Update every 30s
@@ -277,6 +310,13 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
       fetchPriceData();
     }
   }, [selectedSymbol, timeframe, marketData, fetchPriceData]);
+
+  // Fetch ML prediction when panel is shown or symbol/timeframe changes
+  useEffect(() => {
+    if (showMLPanel && selectedSymbol) {
+      fetchMLPrediction();
+    }
+  }, [showMLPanel, selectedSymbol, timeframe, fetchMLPrediction]);
 
   // Auto-refresh price data every 30 seconds
   useEffect(() => {
@@ -613,6 +653,231 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             {minValue.toFixed(2)}
           </text>
         </svg>
+      </div>
+    );
+  };
+
+  // Render ML Prediction Panel
+  const renderMLPredictionPanel = () => {
+    if (!showMLPanel) return null;
+
+    return (
+      <div style={{
+        position: 'absolute',
+        top: '0.75rem',
+        right: '1rem',
+        width: '280px',
+        backgroundColor: darkMode ? '#1e293b' : '#ffffff',
+        border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+        borderRadius: '0.5rem',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+        zIndex: 100,
+        overflow: 'hidden'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '0.75rem 1rem',
+          borderBottom: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: darkMode ? '#0f172a' : '#f8fafc'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>🤖</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '700', color: colors.text }}>
+              AI Price Prediction
+            </span>
+          </div>
+          <button
+            onClick={() => setShowMLPanel(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: colors.textMuted,
+              cursor: 'pointer',
+              fontSize: '1.25rem',
+              padding: 0,
+              lineHeight: 1
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: '1rem' }}>
+          {mlLoading ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: colors.textMuted }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⏳</div>
+              <div style={{ fontSize: '0.875rem' }}>Loading prediction...</div>
+            </div>
+          ) : mlPrediction && mlPrediction.success ? (
+            <>
+              {/* Prediction */}
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: '600', color: colors.textMuted, marginBottom: '0.5rem' }}>
+                  NEXT MOVE PREDICTION
+                </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.75rem',
+                  borderRadius: '0.375rem',
+                  backgroundColor: mlPrediction.prediction_label === 'up' ? '#10b98115' :
+                                   mlPrediction.prediction_label === 'down' ? '#ef444415' : '#6b728015'
+                }}>
+                  <div style={{ fontSize: '2rem' }}>
+                    {mlPrediction.prediction_label === 'up' ? '📈' :
+                     mlPrediction.prediction_label === 'down' ? '📉' : '➡️'}
+                  </div>
+                  <div>
+                    <div style={{
+                      fontSize: '1.125rem',
+                      fontWeight: '700',
+                      color: mlPrediction.prediction_label === 'up' ? '#10b981' :
+                             mlPrediction.prediction_label === 'down' ? '#ef4444' : '#6b7280'
+                    }}>
+                      {mlPrediction.prediction_label.toUpperCase()}
+                    </div>
+                    {mlPrediction.confidence && (
+                      <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
+                        {(mlPrediction.confidence * 100).toFixed(1)}% confidence
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Probabilities */}
+              {mlPrediction.probabilities && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '600', color: colors.textMuted, marginBottom: '0.5rem' }}>
+                    PROBABILITY BREAKDOWN
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {/* Up */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#10b981' }}>📈 Up</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: colors.text }}>
+                          {(mlPrediction.probabilities.up * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '4px', backgroundColor: darkMode ? '#334155' : '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${mlPrediction.probabilities.up * 100}%`,
+                          backgroundColor: '#10b981',
+                          transition: 'width 0.3s'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Neutral */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>➡️ Neutral</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: colors.text }}>
+                          {(mlPrediction.probabilities.neutral * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '4px', backgroundColor: darkMode ? '#334155' : '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${mlPrediction.probabilities.neutral * 100}%`,
+                          backgroundColor: '#6b7280',
+                          transition: 'width 0.3s'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Down */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>📉 Down</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: colors.text }}>
+                          {(mlPrediction.probabilities.down * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '4px', backgroundColor: darkMode ? '#334155' : '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${mlPrediction.probabilities.down * 100}%`,
+                          backgroundColor: '#ef4444',
+                          transition: 'width 0.3s'
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Refresh Button */}
+              <button
+                onClick={fetchMLPrediction}
+                disabled={mlLoading}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  backgroundColor: darkMode ? '#334155' : '#e2e8f0',
+                  color: colors.text,
+                  border: 'none',
+                  borderRadius: '0.25rem',
+                  cursor: 'pointer',
+                  fontSize: '0.8125rem',
+                  fontWeight: '500',
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#475569' : '#cbd5e1'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#e2e8f0'}
+              >
+                🔄 Refresh Prediction
+              </button>
+
+              {/* Info */}
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.625rem',
+                backgroundColor: darkMode ? '#0f172a' : '#f8fafc',
+                borderRadius: '0.25rem',
+                fontSize: '0.6875rem',
+                color: colors.textMuted,
+                lineHeight: 1.4
+              }}>
+                Predictions based on 47 technical features using machine learning.
+                For {selectedSymbol}/USD on {timeframe} timeframe.
+              </div>
+            </>
+          ) : mlPrediction && !mlPrediction.success ? (
+            <div style={{ textAlign: 'center', padding: '1.5rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🤷</div>
+              <div style={{ fontSize: '0.875rem', fontWeight: '600', color: colors.text, marginBottom: '0.5rem' }}>
+                No Model Available
+              </div>
+              <div style={{ fontSize: '0.75rem', color: colors.textMuted, marginBottom: '1rem', lineHeight: 1.4 }}>
+                Train a machine learning model first to get price predictions.
+              </div>
+              <div style={{
+                padding: '0.625rem',
+                backgroundColor: darkMode ? '#0f172a' : '#f8fafc',
+                borderRadius: '0.25rem',
+                fontSize: '0.6875rem',
+                color: colors.textMuted,
+                textAlign: 'left',
+                lineHeight: 1.4
+              }}>
+                <strong>To train a model:</strong><br/>
+                Use POST /api/ml/train with symbol: {selectedSymbol}
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '2rem', color: colors.textMuted }}>
+              <div style={{ fontSize: '0.875rem' }}>Click refresh to get prediction</div>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -1272,12 +1537,30 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
             >
               Alerts
             </button>
+            <button
+              onClick={() => setShowMLPanel(!showMLPanel)}
+              style={{
+                padding: '0.375rem 0.75rem',
+                backgroundColor: showMLPanel ? (darkMode ? '#1e293b' : '#e2e8f0') : 'transparent',
+                color: showMLPanel ? '#8b5cf6' : colors.textMuted,
+                border: `1px solid ${darkMode ? '#334155' : '#cbd5e1'}`,
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+                fontWeight: '500',
+                transition: 'all 0.15s'
+              }}
+              title="ML Price Prediction"
+            >
+              🤖 AI Prediction
+            </button>
           </div>
         </div>
 
         {/* Chart */}
         <div style={{ flex: 1, position: 'relative' }}>
           {renderPriceChart()}
+          {renderMLPredictionPanel()}
         </div>
 
         {/* Volume Chart */}
