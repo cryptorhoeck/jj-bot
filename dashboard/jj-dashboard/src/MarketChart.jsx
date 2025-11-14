@@ -44,8 +44,22 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     try {
       const response = await fetch(`${API_BASE}/api/market/live`);
       if (response.ok) {
-        const data = await response.json();
-        setMarketData(data.prices || []);
+        const result = await response.json();
+
+        // Convert API format to component format
+        // API returns: { status: "success", data: { btc: { symbol: "BTC", usd: 45000, ... }, ... } }
+        // We need: [{ symbol: "BTC", name: "Bitcoin", price: 45000, change_24h: 2.5, ... }, ...]
+        if (result.data) {
+          const coins = Object.values(result.data).map(coin => ({
+            symbol: coin.symbol,
+            name: coin.symbol, // Use symbol as name for now
+            price: coin.usd || 0,
+            change_24h: coin.usd_24h_change || 0,
+            market_cap: coin.usd_market_cap || 0,
+            volume_24h: coin.usd_24h_vol || 0
+          }));
+          setMarketData(coins);
+        }
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
