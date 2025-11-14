@@ -340,3 +340,111 @@ async def upload_csv_data(symbol: str, csv_content: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-with-real-data")
+async def run_backtest_with_real_data(
+    symbol: str,
+    strategy: Optional[str] = "rsi_strategy",
+    timeframe: str = "1h",
+    num_candles: int = 1000,
+    source: str = "auto",
+    initial_capital: float = 10000.0,
+    commission: float = 0.001,
+    slippage: float = 0.0005,
+    position_size: float = 0.1,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """
+    Run a backtest with real market data
+
+    This endpoint automatically fetches historical data from the market data service
+    and runs a backtest with the specified strategy.
+
+    Args:
+        symbol: Trading symbol (e.g., 'BTC', 'ETH', 'AAPL')
+        strategy: Strategy to use (default: 'rsi_strategy')
+        timeframe: Candle timeframe (1m, 5m, 1h, 1d, etc.)
+        num_candles: Number of historical candles to fetch
+        source: Data source ('kraken', 'yahoo', 'auto')
+        initial_capital: Starting capital
+        commission: Commission rate (default 0.1%)
+        slippage: Slippage rate (default 0.05%)
+        position_size: Position size as fraction of capital (default 10%)
+        start_date: Optional start date filter (ISO format)
+        end_date: Optional end date filter (ISO format)
+
+    Returns:
+        Backtest results with performance metrics and trades
+
+    Example:
+        POST /api/backtest/run-with-real-data?symbol=BTC&strategy=rsi_strategy&timeframe=1h&num_candles=500
+    """
+    global backtester
+
+    try:
+        # Import data loader
+        from modules.backtesting import backtest_data_loader
+
+        # Fetch real market data
+        print(f"📊 Fetching real market data for {symbol} ({timeframe})...")
+        data_result = backtest_data_loader.load_data_for_backtest(
+            symbol=symbol,
+            timeframe=timeframe,
+            num_candles=num_candles,
+            source=source,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if not data_result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch market data: {data_result.get('error')}"
+            )
+
+        # Initialize backtester
+        backtester = Backtester(initial_capital=initial_capital)
+        backtester.config["commission"] = commission
+        backtester.config["slippage"] = slippage
+        backtester.config["position_size"] = position_size
+
+        # Load data
+        success = backtester.load_historical_data(symbol, data_result["data"])
+
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to load data into backtester"
+            )
+
+        print(f"✅ Loaded {len(data_result['data'])} candles from {data_result['metadata']['source']}")
+
+        # Run backtest
+        results = backtester.run_backtest(
+            symbol,
+            strategy=strategy,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if "error" in results:
+            raise HTTPException(status_code=400, detail=results["error"])
+
+        # Transform equity curve for frontend
+        if "equity_curve" in results:
+            results["equity_curve"] = [point["equity"] for point in results["equity_curve"]]
+
+        # Add metadata about data source
+        results["data_metadata"] = data_result["metadata"]
+
+        return {
+            "success": True,
+            "results": results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
