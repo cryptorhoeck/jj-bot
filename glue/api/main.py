@@ -335,64 +335,69 @@ async def dashboard():
 # ===== REAL MARKET DATA FROM COINGECKO (FREE) =====
 @app.get("/api/market/live")
 async def get_market_live():
-    """Get live market data for top 250 cryptos from CoinGecko"""
-    import requests
-
+    """Get live market data using our market data infrastructure"""
     try:
-        # Use CoinGecko's /coins/markets endpoint to get top 250 coins by market cap
-        url = "https://api.coingecko.com/api/v3/coins/markets"
-        params = {
-            "vs_currency": "usd",
-            "order": "market_cap_desc",
-            "per_page": 250,  # Free tier supports up to 250
-            "page": 1,
-            "sparkline": False,
-            "price_change_percentage": "24h"
-        }
+        from modules.data import cached_market_data_service
+        from services.streaming.market_stream_service import market_stream_service
 
-        response = requests.get(url, params=params, timeout=15)
+        # Define supported symbols (top cryptocurrencies)
+        symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"]
 
-        # Check response status
-        if response.status_code != 200:
-            print(f"CoinGecko API returned status {response.status_code}: {response.text[:200]}")
-            raise Exception(f"API returned status {response.status_code}")
-
-        # Check if response is empty
-        if not response.text:
-            raise Exception("Empty response from CoinGecko")
-
-        data = response.json()
-
-        # Validate data is a list
-        if not isinstance(data, list):
-            print(f"Unexpected data type: {type(data)}, content: {str(data)[:200]}")
-            raise Exception("Invalid data format from CoinGecko")
-
-        # Format for frontend - return as dict keyed by symbol
         result = {}
-        for coin in data:
-            symbol = coin.get("symbol", "").upper()
-            if symbol:  # Only add if symbol exists
-                result[symbol.lower()] = {
-                    "symbol": symbol,
-                    "name": coin.get("name", ""),
-                    "usd": coin.get("current_price", 0),
-                    "usd_24h_change": coin.get("price_change_percentage_24h", 0),
-                    "usd_market_cap": coin.get("market_cap", 0),
-                    "usd_24h_vol": coin.get("total_volume", 0),
-                    "image": coin.get("image", ""),
-                    "timestamp": datetime.now().isoformat()
-                }
 
-        print(f"✅ Successfully fetched {len(result)} coins from CoinGecko")
-        return {"status": "success", "data": result, "count": len(result)}
+        # First, try to get data from WebSocket stream if it's running
+        if market_stream_service.running:
+            stream_prices = market_stream_service.get_latest_prices()
+            for symbol in symbols:
+                if symbol in stream_prices and stream_prices[symbol]:
+                    price_data = stream_prices[symbol]
+                    result[symbol.lower()] = {
+                        "symbol": symbol,
+                        "name": symbol,  # Use symbol as name
+                        "usd": price_data.get("price", 0),
+                        "usd_24h_change": price_data.get("change_24h", 0),
+                        "usd_market_cap": 0,  # Not available from stream
+                        "usd_24h_vol": price_data.get("volume_24h", 0),
+                        "image": "",
+                        "timestamp": price_data.get("timestamp", datetime.now().isoformat())
+                    }
+
+            if result:
+                print(f"✅ Fetched {len(result)} prices from WebSocket stream")
+                return {"status": "success", "data": result, "count": len(result), "source": "websocket"}
+
+        # Fallback: Get current prices from our market data service
+        for symbol in symbols:
+            try:
+                price_result = cached_market_data_service.get_current_price(symbol, source='kraken')
+                if price_result.get("success"):
+                    result[symbol.lower()] = {
+                        "symbol": symbol,
+                        "name": symbol,
+                        "usd": price_result.get("price", 0),
+                        "usd_24h_change": 0,  # Calculate from recent data if needed
+                        "usd_market_cap": 0,
+                        "usd_24h_vol": price_result.get("volume", 0),
+                        "image": "",
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                print(f"⚠️  Failed to fetch {symbol}: {e}")
+                continue
+
+        if result:
+            print(f"✅ Fetched {len(result)} prices from market data service")
+            return {"status": "success", "data": result, "count": len(result), "source": "market_data_service"}
+
+        # Last resort: Return placeholder data
+        raise Exception("No price data available from any source")
 
     except Exception as e:
-        print(f"❌ CoinGecko API error: {e}")
-        # Return placeholder data if API fails - as dict
+        print(f"⚠️  Market data fetch failed: {e} - using placeholder data")
+        # Return placeholder data as fallback
         return {
-            "status": "error",
-            "error": str(e),
+            "status": "placeholder",
+            "message": "Using placeholder data - start WebSocket stream for real-time prices",
             "data": {
                 "btc": {"symbol": "BTC", "name": "Bitcoin", "usd": 45000, "usd_24h_change": 2.5, "timestamp": datetime.now().isoformat()},
                 "eth": {"symbol": "ETH", "name": "Ethereum", "usd": 2500, "usd_24h_change": -1.2, "timestamp": datetime.now().isoformat()},
@@ -404,7 +409,8 @@ async def get_market_live():
                 "avax": {"symbol": "AVAX", "name": "Avalanche", "usd": 35, "usd_24h_change": 4.2, "timestamp": datetime.now().isoformat()},
                 "dot": {"symbol": "DOT", "name": "Polkadot", "usd": 7.5, "usd_24h_change": 0.8, "timestamp": datetime.now().isoformat()},
                 "matic": {"symbol": "MATIC", "name": "Polygon", "usd": 0.85, "usd_24h_change": 2.3, "timestamp": datetime.now().isoformat()}
-            }
+            },
+            "count": 10
         }
 
 # ===== HISTORICAL MARKET DATA ENDPOINTS =====
