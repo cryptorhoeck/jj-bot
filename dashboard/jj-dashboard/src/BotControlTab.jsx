@@ -49,14 +49,14 @@ export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learning
     }
 
     // Start bot
-    setBot Running(true);
+    setBotRunning(true);
     setStartTime(Date.now());
     console.log('🤖 Bot started with symbols:', botSymbols);
   };
 
   // Stop bot
   const handleStopBot = () => {
-    setBot Running(false);
+    setBotRunning(false);
     setStartTime(null);
     setUptime(0);
     console.log('🛑 Bot stopped');
