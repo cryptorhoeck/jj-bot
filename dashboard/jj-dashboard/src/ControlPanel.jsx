@@ -6,6 +6,8 @@ export function ControlPanel({ colors, API_BASE }) {
   const [tradingMode, setTradingMode] = useState('paper');
   const [positions, setPositions] = useState([]);
   const [showBackgroundServices, setShowBackgroundServices] = useState(false);
+  const [streamStatus, setStreamStatus] = useState(null);
+  const [streamLoading, setStreamLoading] = useState(false);
 
   // Fetch service status
   const fetchServices = async () => {
@@ -67,12 +69,69 @@ export function ControlPanel({ colors, API_BASE }) {
     }
   };
 
+  // Fetch WebSocket stream status
+  const fetchStreamStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/stream/status`);
+      if (response.ok) {
+        const data = await response.json();
+        setStreamStatus(data.status);
+      }
+    } catch (error) {
+      console.error('Error fetching stream status:', error);
+    }
+  };
+
+  // Start WebSocket stream
+  const startStream = async () => {
+    setStreamLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/stream/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbols: ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC'],
+          exchange: 'kraken'
+        })
+      });
+      if (response.ok) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await fetchStreamStatus();
+      } else {
+        alert('Failed to start stream. Check console for details.');
+      }
+    } catch (error) {
+      console.error('Error starting stream:', error);
+      alert('Failed to start stream. Check console for details.');
+    } finally {
+      setStreamLoading(false);
+    }
+  };
+
+  // Stop WebSocket stream
+  const stopStream = async () => {
+    setStreamLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/stream/stop`, { method: 'POST' });
+      if (response.ok) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await fetchStreamStatus();
+      }
+    } catch (error) {
+      console.error('Error stopping stream:', error);
+    } finally {
+      setStreamLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchServices();
     fetchPositions();
+    fetchStreamStatus();
     const interval = setInterval(() => {
       fetchServices();
       fetchPositions();
+      fetchStreamStatus();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -222,6 +281,134 @@ export function ControlPanel({ colors, API_BASE }) {
           </div>
         </div>
       )}
+
+      {/* Real-Time Market Stream */}
+      <div style={{
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '0.5rem',
+        padding: '1rem',
+        marginBottom: '1.5rem'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>📡</span>
+            <h3 style={{ fontSize: '1rem', fontWeight: '600', color: colors.text, margin: 0 }}>
+              Real-Time Market Stream
+            </h3>
+          </div>
+          <div style={{
+            padding: '0.25rem 0.625rem',
+            borderRadius: '0.25rem',
+            fontSize: '0.75rem',
+            fontWeight: '600',
+            backgroundColor: streamStatus?.running ? 'rgba(16, 185, 129, 0.1)' : 'rgba(156, 163, 175, 0.1)',
+            color: streamStatus?.running ? '#10b981' : '#6b7280',
+            border: `1px solid ${streamStatus?.running ? '#10b981' : '#6b7280'}`
+          }}>
+            {streamStatus?.running ? '● STREAMING' : '○ OFFLINE'}
+          </div>
+        </div>
+
+        <div style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+          {streamStatus?.running ? (
+            <>
+              Live prices from <strong>{streamStatus.exchange || 'Kraken'}</strong> WebSocket
+              {streamStatus.stream_stats?.price_updates > 0 && (
+                <> • {streamStatus.stream_stats.price_updates.toLocaleString()} updates received</>
+              )}
+            </>
+          ) : (
+            'Connect to Kraken or Binance for real-time price updates'
+          )}
+        </div>
+
+        {streamStatus?.running && streamStatus.symbols && streamStatus.symbols.length > 0 && (
+          <div style={{
+            backgroundColor: colors.bg,
+            padding: '0.75rem',
+            borderRadius: '0.375rem',
+            marginBottom: '1rem',
+            fontSize: '0.75rem'
+          }}>
+            <div style={{ color: colors.textMuted, marginBottom: '0.25rem' }}>Subscribed Symbols:</div>
+            <div style={{ color: colors.text, fontWeight: '500' }}>
+              {streamStatus.symbols.join(', ')}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            onClick={streamStatus?.running ? stopStream : startStream}
+            disabled={streamLoading}
+            style={{
+              flex: 1,
+              padding: '0.625rem 1rem',
+              backgroundColor: streamStatus?.running ? '#ef4444' : '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.375rem',
+              cursor: streamLoading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              fontSize: '0.875rem',
+              opacity: streamLoading ? 0.5 : 1,
+              transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => {
+              if (!streamLoading) {
+                e.currentTarget.style.opacity = '0.9';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            {streamLoading ? 'Loading...' : (streamStatus?.running ? '⏹ Stop Stream' : '▶ Start Stream')}
+          </button>
+
+          {streamStatus?.running && (
+            <button
+              onClick={() => window.open(`${API_BASE}/api/stream/status`, '_blank')}
+              style={{
+                padding: '0.625rem 1rem',
+                backgroundColor: colors.bg,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '0.375rem',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '0.875rem',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = colors.border;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = colors.bg;
+              }}
+            >
+              📊 Stats
+            </button>
+          )}
+        </div>
+
+        {!streamStatus?.running && (
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.75rem',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderRadius: '0.375rem',
+            border: '1px solid #3b82f6',
+            fontSize: '0.75rem',
+            color: '#3b82f6'
+          }}>
+            💡 <strong>Tip:</strong> Enable real-time streaming for live price updates with zero API calls
+          </div>
+        )}
+      </div>
 
       {/* Collapsible Background Services */}
       {backgroundServices.length > 0 && (
