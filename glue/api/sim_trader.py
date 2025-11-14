@@ -79,9 +79,18 @@ def init_database():
             last_price REAL NOT NULL,
             vwap REAL NOT NULL,
             pnl REAL NOT NULL,
+            strategy TEXT DEFAULT 'momentum',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add strategy column if it doesn't exist (migration)
+    try:
+        cursor.execute("ALTER TABLE trades ADD COLUMN strategy TEXT DEFAULT 'momentum'")
+        print("✅ Added strategy column to trades table")
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
 
     conn.commit()
     conn.close()
@@ -144,6 +153,7 @@ def generate_trade_from_signal(signal):
         "last_price": last_price,
         "vwap": vwap,
         "pnl": pnl,
+        "strategy": "momentum",  # Default strategy (will be dynamic later)
         "strategy_reason": ", ".join(signal["reason"][:2]) if signal.get("reason") else "N/A"
     }
 
@@ -154,10 +164,10 @@ def save_trade(trade):
         cursor = conn.cursor()
 
         cursor.execute("""
-            INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl, strategy)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (trade["timestamp"], trade["symbol"], trade["signal"],
-              trade["last_price"], trade["vwap"], trade["pnl"]))
+              trade["last_price"], trade["vwap"], trade["pnl"], trade.get("strategy", "momentum")))
 
         conn.commit()
         conn.close()
