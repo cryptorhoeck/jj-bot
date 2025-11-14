@@ -12,8 +12,6 @@ from typing import Dict, Any, List, Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.trading.simulator_service import SimulatorService
-
 class ServiceManager:
     """Enhanced Service Manager with real services"""
     
@@ -52,7 +50,7 @@ class ServiceManager:
     def _init_services(self):
         """Initialize real service instances"""
         # Import all services
-        from services.trading.simulator_service import SimulatorService
+        from services.trading.realistic_simulator_service import RealisticSimulatorService
         from services.trading.market_feed_service import MarketFeedService
         from services.trading.analytics_service import AnalyticsService
         from services.trading.trading_bot_service import TradingBotService
@@ -60,7 +58,7 @@ class ServiceManager:
 
         # Create real service instances
         self.services = {
-            "simulator": SimulatorService(),
+            "realistic_simulator": RealisticSimulatorService(),
             "market_feed": MarketFeedService(),
             "strategy_engine": StrategyService(),
             "analytics": AnalyticsService(),

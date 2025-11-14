@@ -84,25 +84,30 @@ def get_summary():
     """Get trading summary statistics"""
     with get_connection() as conn:
         cur = conn.cursor()
-        
+
         # Total trades
         cur.execute("SELECT COUNT(*) FROM trades")
         total_trades = cur.fetchone()[0]
-        
+
         # Total PnL
         cur.execute("SELECT SUM(pnl) FROM trades")
         total_pnl = cur.fetchone()[0] or 0.0
-        
+
+        # Average PnL
+        cur.execute("SELECT AVG(pnl) FROM trades")
+        avg_pnl = cur.fetchone()[0] or 0.0
+
         # Winning trades
         cur.execute("SELECT COUNT(*) FROM trades WHERE pnl > 0")
         winning_trades = cur.fetchone()[0]
-        
+
         # Win rate
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-        
+
         return {
             "total_trades": total_trades,
             "total_pnl": total_pnl,
+            "avg_pnl": avg_pnl,
             "winning_trades": winning_trades,
             "win_rate": win_rate
         }

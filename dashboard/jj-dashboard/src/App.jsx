@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { ControlPanel } from "./ControlPanel.jsx";
+import { DashboardTab } from "./DashboardTab.jsx";
+import { TradingTab } from "./TradingTab.jsx";
+import { DataTab } from "./DataTab.jsx";
+import { MarketChart } from "./MarketChart.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [trades, setTrades] = useState([]);
   const [summary, setSummary] = useState({
     total_trades: 0,
@@ -15,11 +18,18 @@ function App() {
     avg_pnl: 0
   });
   const [marketData, setMarketData] = useState([]);
+  const [lastMarketUpdate, setLastMarketUpdate] = useState(null);
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [realtimeEvents, setRealtimeEvents] = useState([]);
+  const [symbols, setSymbols] = useState([]);
+  const [learningData, setLearningData] = useState(null);
+  const [marketDataError, setMarketDataError] = useState(null);
+  const [marketDataLoading, setMarketDataLoading] = useState(false);
+  const [lastMarketFetch, setLastMarketFetch] = useState(null);
+  const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000); // 2 minutes default
 
   // Dark mode colors
   const colors = {
@@ -56,14 +66,36 @@ function App() {
     }
   };
 
-  // NEW: Fetch real market data
-  const fetchMarketData = async () => {
+  // Fetch real market data with rate limiting and error handling
+  const fetchMarketData = async (force = false) => {
+    // Rate limit check - don't fetch more than once per interval (unless forced)
+    if (!force && lastMarketFetch) {
+      const timeSinceLastFetch = Date.now() - lastMarketFetch;
+      if (timeSinceLastFetch < marketRefreshInterval) {
+        console.log(`⏸️  Rate limit: ${Math.ceil((marketRefreshInterval - timeSinceLastFetch) / 1000)}s until next fetch`);
+        return;
+      }
+    }
+
+    setMarketDataLoading(true);
+    setMarketDataError(null);
+
     try {
-      // First try the live endpoint if it exists
       const response = await fetch(`${API_BASE}/api/market/live`);
+
+      // Handle 429 Too Many Requests
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : marketRefreshInterval * 2;
+
+        setMarketDataError(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
+        setMarketRefreshInterval(Math.min(waitTime, 300000)); // Cap at 5 minutes
+        console.warn(`⚠️  Rate limited! Increasing interval to ${waitTime / 1000}s`);
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
-        // Convert object to array
         if (data.data && typeof data.data === 'object') {
           const marketArray = Object.values(data.data).map(coin => ({
             symbol: coin.symbol,
@@ -73,16 +105,25 @@ function App() {
             volume_24h: coin.usd_24h_vol || 0
           }));
           setMarketData(marketArray);
+          setLastMarketUpdate(new Date());
+          setLastMarketFetch(Date.now());
+          setMarketDataError(null);
+
+          // Success - reset interval to default if it was increased
+          if (marketRefreshInterval > 120000) {
+            setMarketRefreshInterval(120000);
+          }
         } else {
           setMarketData([]);
         }
       } else {
-        // Fallback to mock data for now
-        setMarketData([]);
+        setMarketDataError(`Failed to fetch: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
-      setMarketData([]);
+      setMarketDataError(error.message);
+    } finally {
+      setMarketDataLoading(false);
     }
   };
 
@@ -172,6 +213,59 @@ function App() {
       } catch (error) {
         alert('Error clearing database: ' + error);
       }
+    }
+  };
+
+  const archiveData = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/data/archive`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      alert(data.message);
+    } catch (error) {
+      alert('Error archiving data: ' + error);
+    }
+  };
+
+  const fetchSymbols = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/symbols/list`);
+      const data = await response.json();
+      if (data.success) {
+        setSymbols(data.symbols);
+      }
+    } catch (error) {
+      console.error('Error fetching symbols:', error);
+    }
+  };
+
+  const toggleSymbol = async (symbol, enabled) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/symbols/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, enabled })
+      });
+      const data = await response.json();
+      if (data.success) {
+        fetchSymbols();
+        fetchMarketData();
+      }
+    } catch (error) {
+      console.error('Error toggling symbol:', error);
+    }
+  };
+
+  const fetchLearningData = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/learning/insights`);
+      const data = await response.json();
+      if (data.success) {
+        setLearningData(data.insights);
+      }
+    } catch (error) {
+      console.error('Error fetching learning data:', error);
     }
   };
 
@@ -276,22 +370,36 @@ function App() {
     setRealtimeEvents(prev => [event, ...prev].slice(0, 10)); // Keep last 10 events
   };
 
-  // Initial data fetch and periodic refresh (less frequent now with WebSocket)
+  // Initial data fetch and periodic refresh with smart rate limiting
   useEffect(() => {
     fetchTrades();
     fetchSummary();
     fetchMarketData();
     checkSimulatorStatus();
+    fetchSymbols();
+    fetchLearningData();
 
-    const interval = setInterval(() => {
-      fetchTrades();      // Refresh trades list
+    // Fast interval for trades/summary (10 seconds)
+    const fastInterval = setInterval(() => {
+      fetchTrades();
       fetchSummary();
-      fetchMarketData();  // Refresh market data
       checkSimulatorStatus();
-    }, 10000); // Reduced to every 10 seconds instead of 5
+      fetchLearningData();
+    }, 10000);
 
-    return () => clearInterval(interval);
-  }, []);
+    // Slow interval for market data only when on Charts tab (120 seconds = 2 minutes)
+    const marketInterval = setInterval(() => {
+      // Only fetch market data if on Charts tab
+      if (activeTab === 'charts') {
+        fetchMarketData();
+      }
+    }, 120000);
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(marketInterval);
+    };
+  }, [activeTab, marketRefreshInterval]); // Re-run if active tab or interval changes
 
   return (
     <div style={{ 
@@ -340,206 +448,77 @@ function App() {
       </div>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
-        {/* NAVIGATION TABS - NOW WITH MARKET TAB */}
+        {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'control', 'trades'].map((tab) => (
+            {[
+              { id: 'dashboard', label: '📊 Dashboard', icon: '📊' },
+              { id: 'trading', label: '🤖 Trading', icon: '🤖' },
+              { id: 'charts', label: '📈 Charts', icon: '📈' },
+              { id: 'data', label: '📁 Data', icon: '📁' }
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
                 style={{
-                  padding: '0.5rem 0',
-                  background: 'none',
+                  padding: '0.75rem 1.5rem',
+                  background: activeTab === tab.id ? colors.blue : 'none',
                   border: 'none',
-                  borderBottom: activeTab === tab ? `2px solid ${colors.blue}` : '2px solid transparent',
-                  color: activeTab === tab ? colors.blue : colors.textMuted,
-                  fontWeight: '500',
+                  borderRadius: '0.5rem 0.5rem 0 0',
+                  color: activeTab === tab.id ? 'white' : colors.textMuted,
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  textTransform: 'capitalize',
-                  transition: 'color 0.3s'
+                  fontSize: '1rem',
+                  transition: 'all 0.3s'
                 }}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* OVERVIEW TAB - YOUR ORIGINAL WITH DARK MODE SUPPORT */}
-        {activeTab === 'overview' && (
-          <div>
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total Trades</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.total_trades}</div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Total P&L</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.total_pnl >= 0 ? colors.green : colors.red }}>
-                  ${summary.total_pnl?.toFixed(2)}
-                </div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Win Rate</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: colors.text }}>{summary.win_rate?.toFixed(1)}%</div>
-              </div>
-              <div style={{ 
-                backgroundColor: colors.card, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Avg P&L</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: summary.avg_pnl >= 0 ? colors.green : colors.red }}>
-                  ${summary.avg_pnl?.toFixed(2)}
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div style={{ 
-              backgroundColor: colors.card, 
-              borderRadius: '0.5rem', 
-              padding: '1.5rem', 
-              boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-            }}>
-              <h3 style={{ fontWeight: '600', marginBottom: '1rem', color: colors.text }}>Recent Activity</h3>
-              {trades.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {trades.slice(0, 5).map((trade, index) => (
-                    <div key={index} style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      padding: '0.5rem', 
-                      backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                      borderRadius: '0.25rem'
-                    }}>
-                      <span>{new Date(trade.timestamp).toLocaleTimeString()}</span>
-                      <span>{trade.symbol}</span>
-                      <span>{trade.signal}</span>
-                      <span>${trade.last_price}</span>
-                      <span style={{ color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
-                        ${trade.pnl?.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: colors.textMuted }}>No trades yet. Start the simulator to generate trades.</p>
-              )}
-            </div>
-          </div>
+        {/* DASHBOARD TAB */}
+        {activeTab === 'dashboard' && (
+          <DashboardTab
+            colors={colors}
+            darkMode={darkMode}
+            summary={summary}
+            trades={trades}
+            botRunning={simulatorRunning}
+            learningData={learningData}
+            onNavigate={setActiveTab}
+          />
         )}
 
-        {/* NEW MARKET TAB WITH REAL DATA */}
-        {activeTab === 'market' && (
-          <div style={{ 
-            backgroundColor: colors.card, 
-            borderRadius: '0.5rem', 
-            padding: '1.5rem', 
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              🌐 Live Market Data
-            </h2>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
-              {marketData.map((coin, index) => (
-                <div key={index} style={{ 
-                  border: `1px solid ${colors.border}`, 
-                  borderRadius: '0.5rem', 
-                  padding: '0.75rem',
-                  backgroundColor: darkMode ? '#1a1a1a' : 'white'
-                }}>
-                  <h3 style={{ fontWeight: '600', marginBottom: '0.25rem', color: colors.text, fontSize: '0.875rem' }}>{coin.symbol}</h3>
-                  <p style={{ fontSize: '1.125rem', fontWeight: 'bold', color: colors.text, marginBottom: '0.25rem' }}>
-                    ${coin.price?.toLocaleString(undefined, { 
-                      minimumFractionDigits: coin.price < 1 ? 4 : 2,
-                      maximumFractionDigits: coin.price < 1 ? 4 : 2
-                    })}
-                  </p>
-                  <p style={{ 
-                    fontSize: '0.75rem', 
-                    color: coin.change_24h >= 0 ? colors.green : colors.red,
-                    fontWeight: 'bold'
-                  }}>
-                    {coin.change_24h >= 0 ? '↑' : '↓'} {Math.abs(coin.change_24h).toFixed(2)}%
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* TRADING TAB */}
+        {activeTab === 'trading' && (
+          <TradingTab
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+            learningData={learningData}
+          />
         )}
 
-        {/* CONTROL TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
-        {activeTab === 'control' && (
-          <ControlPanel colors={colors} API_BASE={API_BASE} />
+        {/* CHARTS TAB */}
+        {activeTab === 'charts' && (
+          <MarketChart
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+          />
         )}
-        {/* TRADES TAB - YOUR COMPLETE ORIGINAL WITH DARK MODE */}
-        {activeTab === 'trades' && (
-          <div style={{ 
-            backgroundColor: colors.card, 
-            borderRadius: '0.5rem', 
-            padding: '1.5rem', 
-            boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              Recent Trades ({trades.length})
-            </h2>
-            {trades.length > 0 ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Time</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Symbol</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Signal</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Price</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>VWAP</th>
-                      <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trades.map((trade, index) => (
-                      <tr key={index} style={{ 
-                        borderBottom: `1px solid ${colors.border}`,
-                        backgroundColor: index % 2 === 0 ? 'transparent' : (darkMode ? '#1a1a1a' : '#f9fafb')
-                      }}>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{new Date(trade.timestamp).toLocaleTimeString()}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.symbol}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>{trade.signal}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.last_price}</td>
-                        <td style={{ padding: '0.5rem', color: colors.text }}>${trade.vwap}</td>
-                        <td style={{ padding: '0.5rem', color: trade.pnl >= 0 ? colors.green : colors.red, fontWeight: 'bold' }}>
-                          ${trade.pnl?.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p style={{ color: colors.textMuted, textAlign: 'center', padding: '2rem' }}>
-                No trades yet. Go to Control tab and start the simulator.
-              </p>
-            )}
-          </div>
+
+        {/* DATA & ANALYTICS TAB */}
+        {activeTab === 'data' && (
+          <DataTab
+            colors={colors}
+            darkMode={darkMode}
+            API_BASE={API_BASE}
+            trades={trades}
+            summary={summary}
+          />
         )}
       </div>
       </div>

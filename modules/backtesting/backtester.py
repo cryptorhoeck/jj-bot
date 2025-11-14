@@ -48,6 +48,68 @@ class Backtester:
             "position_size": 0.1   # 10% of capital per position
         }
 
+        # Active strategy type
+        self.active_strategy = "combined"
+
+    def _configure_strategy(self, strategy: str):
+        """
+        Configure strategy engine based on selected strategy type
+
+        Args:
+            strategy: Strategy name from STRATEGY_METADATA
+        """
+        # Default parameters
+        if strategy == "rsi_strategy":
+            self.strategy.rsi_oversold = 30
+            self.strategy.rsi_overbought = 70
+            self.active_strategy = "rsi"
+        elif strategy == "sma_crossover":
+            self.strategy.sma_fast = 20
+            self.strategy.sma_slow = 50
+            self.active_strategy = "sma"
+        elif strategy == "macd":
+            self.active_strategy = "macd"
+        elif strategy == "bollinger_bands":
+            self.active_strategy = "bollinger"
+        elif strategy == "stochastic":
+            self.active_strategy = "stochastic"
+        elif strategy == "ichimoku":
+            self.active_strategy = "ichimoku"
+        elif strategy == "adx":
+            self.active_strategy = "adx"
+        elif strategy == "supertrend":
+            self.active_strategy = "supertrend"
+        elif strategy == "combined_indicators":
+            self.active_strategy = "combined"
+        else:
+            # Default to RSI
+            self.active_strategy = "rsi"
+
+    def _generate_strategy_signal(self, symbol: str, price: float) -> Optional[Dict]:
+        """
+        Generate trading signal based on active strategy
+
+        Args:
+            symbol: Symbol to analyze
+            price: Current price
+
+        Returns:
+            Signal dictionary with action, reason, and strength
+        """
+        # Use StrategyEngine's analysis but filter based on active strategy
+        self.strategy.analyze_symbol(symbol)
+        full_signal = self.strategy.current_signals.get(symbol)
+
+        if not full_signal:
+            return None
+
+        # For strategy-specific approaches, we'll use the full combined signal
+        # but adjust the naming/reasoning based on the active strategy
+        # In a full implementation, you'd have separate strategy classes
+
+        # Return the signal as-is for now (all strategies use combined indicators)
+        return full_signal
+
     def load_historical_data(self, symbol: str, data: List[Dict]) -> bool:
         """
         Load historical price data for a symbol
@@ -74,20 +136,25 @@ class Backtester:
             print(f"❌ Error loading data for {symbol}: {e}")
             return False
 
-    def run_backtest(self, symbol: str, start_date: Optional[str] = None,
+    def run_backtest(self, symbol: str, strategy: Optional[str] = None,
+                     start_date: Optional[str] = None,
                      end_date: Optional[str] = None) -> Dict[str, Any]:
         """
         Run backtest on historical data
 
         Args:
             symbol: Cryptocurrency symbol
+            strategy: Strategy to use (e.g., 'rsi_strategy', 'sma_crossover', etc.)
             start_date: Start date (ISO format)
             end_date: End date (ISO format)
 
         Returns:
             Dictionary of backtest results
         """
-        print(f"🔄 Running backtest for {symbol}...")
+        print(f"🔄 Running backtest for {symbol} with strategy: {strategy or 'combined'}...")
+
+        # Configure strategy parameters based on selected strategy
+        self._configure_strategy(strategy or "rsi_strategy")
 
         if symbol not in self.strategy.price_history:
             return {"error": f"No historical data for {symbol}"}
@@ -122,9 +189,8 @@ class Backtester:
             timestamp = current["timestamp"]
             price = current["price"]
 
-            # Analyze and get signal
-            self.strategy.analyze_symbol(symbol)
-            signal = self.strategy.current_signals.get(symbol)
+            # Generate signal using active strategy
+            signal = self._generate_strategy_signal(symbol, price)
 
             if signal:
                 # Execute trade based on signal

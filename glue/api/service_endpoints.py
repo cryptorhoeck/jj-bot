@@ -115,3 +115,44 @@ async def generate_trades(num_trades: int = 50):
         }
     else:
         raise HTTPException(status_code=400, detail="Simulator does not support trade generation")
+
+@router.get("/realistic_simulator/positions")
+async def get_open_positions():
+    """Get currently open positions from realistic simulator"""
+    if "realistic_simulator" not in service_manager.services:
+        raise HTTPException(status_code=404, detail="Realistic simulator service not found")
+
+    service = service_manager.services["realistic_simulator"]
+
+    # Check if simulator is running and has market_simulator
+    if not hasattr(service, 'market_simulator') or service.market_simulator is None:
+        return {
+            "positions": [],
+            "count": 0,
+            "message": "Simulator not initialized",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    # Get open positions
+    open_positions = service.market_simulator.open_positions
+    positions_list = []
+
+    for symbol, position in open_positions.items():
+        positions_list.append({
+            "symbol": symbol,
+            "side": position.side.value,
+            "entry_price": position.entry_price,
+            "quantity": position.quantity,
+            "entry_time": position.entry_time.isoformat() if hasattr(position.entry_time, 'isoformat') else str(position.entry_time),
+            "strategy": position.strategy,
+            "unrealized_pnl": position.unrealized_pnl,
+            "stop_loss": position.stop_loss,
+            "take_profit": position.take_profit,
+            "position_value": position.position_value
+        })
+
+    return {
+        "positions": positions_list,
+        "count": len(positions_list),
+        "timestamp": datetime.now().isoformat()
+    }
