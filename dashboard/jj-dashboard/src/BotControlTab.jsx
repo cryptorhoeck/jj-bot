@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 export function BotControlTab({ colors, darkMode, API_BASE, onNavigate, learningData }) {
-  const [botRunning, setBot Running] = useState(false);
+  const [botRunning, setBotRunning] = useState(false);
   const [botSymbols, setBotSymbols] = useState(['BTC', 'ETH', 'SOL']);
   const [newSymbol, setNewSymbol] = useState('');
   const [botConfig, setBotConfig] = useState({
