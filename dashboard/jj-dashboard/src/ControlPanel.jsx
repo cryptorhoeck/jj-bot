@@ -196,91 +196,43 @@ export function ControlPanel({ colors, API_BASE }) {
         </div>
       </div>
 
-      {/* Featured Trading Simulator Card */}
-      {simulator && (
-        <div style={{
-          border: `2px solid ${simulator.status === 'running' ? '#10b981' : colors.border}`,
-          borderRadius: '0.75rem',
-          padding: '1.5rem',
-          backgroundColor: colors.bg,
-          marginBottom: '1.5rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: colors.text, margin: 0, marginBottom: '0.25rem' }}>
-                🚀 Trading Simulator
-              </h3>
-              <p style={{ fontSize: '0.875rem', color: colors.textMuted, margin: 0 }}>
-                Realistic paper trading with real-time market data, strategy execution, and position management
-              </p>
-            </div>
-            <div style={{
-              width: '1rem',
-              height: '1rem',
-              borderRadius: '50%',
-              backgroundColor: simulator.status === 'running' ? '#10b981' : '#6b7280',
-              boxShadow: simulator.status === 'running' ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none'
-            }} />
+      {/* Bot Control Link */}
+      <div style={{
+        border: `2px solid ${colors.border}`,
+        borderRadius: '0.75rem',
+        padding: '1.5rem',
+        backgroundColor: colors.card,
+        marginBottom: '1.5rem'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: colors.text, margin: 0, marginBottom: '0.25rem' }}>
+              🤖 Trading Bot
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: colors.textMuted, margin: 0 }}>
+              Control bot trading, configure settings, and monitor performance
+            </p>
           </div>
-
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            {simulator.status !== 'running' ? (
-              <button
-                onClick={() => startService('realistic_simulator')}
-                disabled={loading['realistic_simulator']}
-                style={{
-                  flex: 1,
-                  padding: '1rem',
-                  backgroundColor: loading['realistic_simulator'] ? '#6b7280' : '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: loading['realistic_simulator'] ? 'not-allowed' : 'pointer',
-                  fontSize: '1.125rem',
-                  fontWeight: '700',
-                  transition: 'all 0.2s',
-                  boxShadow: loading['realistic_simulator'] ? 'none' : '0 2px 4px rgba(16, 185, 129, 0.2)'
-                }}
-              >
-                {loading['realistic_simulator'] ? '⏳ Starting...' : '▶ START SIMULATOR'}
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => stopService('realistic_simulator')}
-                  disabled={loading['realistic_simulator']}
-                  style={{
-                    flex: 1,
-                    padding: '1rem',
-                    backgroundColor: loading['realistic_simulator'] ? '#6b7280' : '#dc2626',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '0.5rem',
-                    cursor: loading['realistic_simulator'] ? 'not-allowed' : 'pointer',
-                    fontSize: '1.125rem',
-                    fontWeight: '700',
-                    transition: 'all 0.2s',
-                    boxShadow: loading['realistic_simulator'] ? 'none' : '0 2px 4px rgba(220, 38, 38, 0.2)'
-                  }}
-                >
-                  {loading['realistic_simulator'] ? '⏳ Stopping...' : '⏹ STOP SIMULATOR'}
-                </button>
-                <div style={{
-                  padding: '1rem',
-                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid #10b981'
-                }}>
-                  <div style={{ fontSize: '0.875rem', color: colors.textMuted }}>Open Positions</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#10b981' }}>
-                    {positions.length}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={() => window.location.href = '#'}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              fontWeight: '600',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+          >
+            Go to Bot Tab →
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Real-Time Market Stream */}
       <div style={{

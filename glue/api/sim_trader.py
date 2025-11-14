@@ -16,17 +16,43 @@ sys.path.append(project_root)
 
 from modules.event_bus import event_bus
 
-# Database path
+# Database paths
 DB_PATH = os.path.join(project_root, "data", "trades.db")
+SYMBOLS_DB_PATH = os.path.join(project_root, "data", "symbols.db")
 
-# Symbols to trade
-SYMBOLS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'DOT', 'LINK', 'MATIC', 'UNI', 'AVAX']
-
-# Base prices
+# Default base prices (will be updated from market data)
 BASE_PRICES = {
     'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
-    'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35
+    'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35,
+    'XRP': 0.65, 'DOGE': 0.08, 'AVAX': 35, 'TRX': 0.10, 'ATOM': 10,
+    'LTC': 70, 'BCH': 250, 'UNI': 6, 'XLM': 0.12, 'ETC': 20,
+    'WBTC': 45000, 'SHIB': 0.00001
 }
+
+def get_enabled_symbols():
+    """Get enabled symbols from the symbols database"""
+    try:
+        if not os.path.exists(SYMBOLS_DB_PATH):
+            print("⚠️ Symbols database not found, using defaults")
+            return ['BTC', 'ETH', 'SOL']
+
+        conn = sqlite3.connect(SYMBOLS_DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT symbol FROM symbols WHERE enabled = 1 ORDER BY symbol")
+        symbols = [row[0] for row in cursor.fetchall()]
+
+        conn.close()
+
+        if not symbols:
+            print("⚠️ No enabled symbols found, using defaults")
+            return ['BTC', 'ETH', 'SOL']
+
+        print(f"✅ Loaded {len(symbols)} enabled symbols from database")
+        return symbols
+    except Exception as e:
+        print(f"⚠️ Error loading symbols from database: {e}")
+        return ['BTC', 'ETH', 'SOL']
 
 def init_database():
     """Initialize the trades database"""
@@ -54,11 +80,11 @@ def init_database():
     conn.close()
     print("✅ Database initialized")
 
-def generate_trade():
+def generate_trade(symbols):
     """Generate a single simulated trade"""
-    # Random symbol
-    symbol = random.choice(SYMBOLS)
-    base_price = BASE_PRICES[symbol]
+    # Random symbol from enabled symbols
+    symbol = random.choice(symbols)
+    base_price = BASE_PRICES.get(symbol, 100)  # Default to 100 if not in BASE_PRICES
 
     # Random price variation (±5%)
     last_price = base_price * (1 + random.uniform(-0.05, 0.05))
@@ -112,20 +138,34 @@ def publish_trade(trade):
 
 def run_simulator():
     """Main simulator loop"""
-    print("🦍 JJ Gorilla Trade Simulator starting...")
-    print(f"📊 Simulating trades for: {', '.join(SYMBOLS)}")
-    print(f"⏰ Trade interval: 10-30 seconds")
+    print("🦍 JJ Gorilla Trading Bot starting...")
+    print("⏰ Trade interval: 10-30 seconds")
     print()
 
     # Initialize database
     init_database()
 
+    # Load enabled symbols from database
+    symbols = get_enabled_symbols()
+    print(f"📊 Trading symbols: {', '.join(symbols)}")
+    print()
+
     trade_count = 0
+    last_symbol_refresh = time.time()
+    SYMBOL_REFRESH_INTERVAL = 60  # Refresh symbols every 60 seconds
 
     try:
         while True:
-            # Generate trade
-            trade = generate_trade()
+            # Refresh symbols periodically
+            if time.time() - last_symbol_refresh > SYMBOL_REFRESH_INTERVAL:
+                new_symbols = get_enabled_symbols()
+                if new_symbols != symbols:
+                    symbols = new_symbols
+                    print(f"\n🔄 Symbols updated: {', '.join(symbols)}\n")
+                last_symbol_refresh = time.time()
+
+            # Generate trade using current enabled symbols
+            trade = generate_trade(symbols)
 
             # Save to database
             if save_trade(trade):
@@ -136,16 +176,16 @@ def run_simulator():
 
                 # Log trade
                 pnl_symbol = "+" if trade["pnl"] >= 0 else ""
-                print(f"✅ Simulated {trade['signal']:4s} {trade['symbol']:6s} @ ${trade['last_price']:,.2f} | P&L: {pnl_symbol}${trade['pnl']:.2f} | Total: {trade_count}")
+                print(f"✅ {trade['signal']:4s} {trade['symbol']:6s} @ ${trade['last_price']:,.2f} | P&L: {pnl_symbol}${trade['pnl']:.2f} | Total: {trade_count}")
 
             # Random wait between 10-30 seconds
             wait_time = random.randint(10, 30)
             time.sleep(wait_time)
 
     except KeyboardInterrupt:
-        print(f"\n🛑 Simulator stopped. Generated {trade_count} trades.")
+        print(f"\n🛑 Bot stopped. Generated {trade_count} trades.")
     except Exception as e:
-        print(f"\n❌ Simulator error: {e}")
+        print(f"\n❌ Bot error: {e}")
 
 if __name__ == "__main__":
     run_simulator()
