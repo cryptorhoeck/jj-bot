@@ -17,9 +17,47 @@ import sqlite3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Import learning modules
+from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
+from modules.learning.strategy_performance_tracker import StrategyPerformanceTracker
+from modules.learning.market_regime_detector import MarketRegimeDetector
+
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
-# Learning components will be initialized on-demand to avoid startup errors
+# Learning component singletons
+_adaptive_selector = None
+_performance_tracker = None
+_regime_detector = None
+
+def get_adaptive_selector():
+    """Get or create adaptive strategy selector"""
+    global _adaptive_selector
+    if _adaptive_selector is None:
+        try:
+            _adaptive_selector = AdaptiveStrategySelector()
+        except Exception as e:
+            print(f"Warning: Could not initialize adaptive selector: {e}")
+    return _adaptive_selector
+
+def get_performance_tracker():
+    """Get or create performance tracker"""
+    global _performance_tracker
+    if _performance_tracker is None:
+        try:
+            _performance_tracker = StrategyPerformanceTracker()
+        except Exception as e:
+            print(f"Warning: Could not initialize performance tracker: {e}")
+    return _performance_tracker
+
+def get_regime_detector():
+    """Get or create regime detector"""
+    global _regime_detector
+    if _regime_detector is None:
+        try:
+            _regime_detector = MarketRegimeDetector()
+        except Exception as e:
+            print(f"Warning: Could not initialize regime detector: {e}")
+    return _regime_detector
 
 
 @router.get("/status", summary="Get Learning System Status")
@@ -234,31 +272,116 @@ async def get_learning_insights() -> Dict[str, Any]:
         Summary of what the system has learned
     """
     try:
-        insights = {
-            "current_state": {
-                "recommended_strategy": "momentum",
-                "market_regime": "sideways",
-                "regime_confidence": 0.70,
-                "timestamp": datetime.now().isoformat()
-            },
-            "top_strategies": [
-                {"name": "momentum", "win_rate": 55.0, "total_pnl": 0.0, "trade_count": 0},
-                {"name": "trend_following", "win_rate": 58.0, "total_pnl": 0.0, "trade_count": 0},
-                {"name": "volatility", "win_rate": 53.0, "total_pnl": 0.0, "trade_count": 0},
-                {"name": "mean_reversion", "win_rate": 52.0, "total_pnl": 0.0, "trade_count": 0},
-                {"name": "breakout", "win_rate": 50.0, "total_pnl": 0.0, "trade_count": 0}
-            ],
-            "learning_stats": {
-                "total_evaluations": 0,
-                "strategy_switches": 0,
-                "regime_changes": 0
-            },
-            "insights": [
-                {
-                    "type": "info",
-                    "message": "Learning system is initializing. Start trading to begin collecting performance data."
-                }
+        # Get real data from learning modules
+        adaptive_selector = get_adaptive_selector()
+        performance_tracker = get_performance_tracker()
+        regime_detector = get_regime_detector()
+
+        # Get current state
+        current_state = {
+            "recommended_strategy": "momentum",
+            "market_regime": "sideways",
+            "regime_confidence": 0.70,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        if adaptive_selector:
+            try:
+                state = adaptive_selector.get_state()
+                if state:
+                    current_state["recommended_strategy"] = state.get("current_strategy", "momentum")
+                    current_state["confidence"] = state.get("confidence", 0.70)
+            except Exception as e:
+                print(f"Error getting adaptive selector state: {e}")
+
+        if regime_detector:
+            try:
+                regime_info = regime_detector.get_current_regime()
+                if regime_info:
+                    current_state["market_regime"] = regime_info.get("regime", "sideways")
+                    current_state["regime_confidence"] = regime_info.get("confidence", 0.70)
+            except Exception as e:
+                print(f"Error getting regime: {e}")
+
+        # Get top performing strategies
+        top_strategies = []
+        strategy_names = ["momentum", "trend_following", "volatility", "mean_reversion", "breakout"]
+
+        if performance_tracker:
+            try:
+                for strategy in strategy_names:
+                    metrics = performance_tracker.get_strategy_metrics(strategy, period_hours=24)
+                    if metrics:
+                        top_strategies.append({
+                            "name": strategy,
+                            "win_rate": metrics.get("win_rate", 0.0),
+                            "total_pnl": metrics.get("total_pnl", 0.0),
+                            "trade_count": metrics.get("total_trades", 0)
+                        })
+            except Exception as e:
+                print(f"Error getting strategy metrics: {e}")
+
+        # Fallback to default if no data
+        if not top_strategies:
+            top_strategies = [
+                {"name": "momentum", "win_rate": 0.0, "total_pnl": 0.0, "trade_count": 0},
+                {"name": "trend_following", "win_rate": 0.0, "total_pnl": 0.0, "trade_count": 0},
+                {"name": "volatility", "win_rate": 0.0, "total_pnl": 0.0, "trade_count": 0},
+                {"name": "mean_reversion", "win_rate": 0.0, "total_pnl": 0.0, "trade_count": 0},
+                {"name": "breakout", "win_rate": 0.0, "total_pnl": 0.0, "trade_count": 0}
             ]
+
+        # Sort by total P&L
+        top_strategies.sort(key=lambda x: x["total_pnl"], reverse=True)
+
+        # Get learning stats
+        learning_stats = {
+            "total_evaluations": 0,
+            "strategy_switches": 0,
+            "regime_changes": 0
+        }
+
+        if adaptive_selector:
+            try:
+                state = adaptive_selector.get_state()
+                if state:
+                    learning_stats["total_evaluations"] = state.get("total_evaluations", 0)
+                    learning_stats["strategy_switches"] = state.get("total_switches", 0)
+            except Exception as e:
+                print(f"Error getting learning stats: {e}")
+
+        # Generate insights
+        insights_list = []
+
+        # Check if we have any trade data
+        total_trades = sum(s["trade_count"] for s in top_strategies)
+
+        if total_trades == 0:
+            insights_list.append({
+                "type": "info",
+                "message": "Learning system initialized. Start trading to collect performance data."
+            })
+        else:
+            # Best performing strategy
+            if top_strategies and top_strategies[0]["total_pnl"] > 0:
+                insights_list.append({
+                    "type": "suggestion",
+                    "message": f"{top_strategies[0]['name'].title()} strategy performing best with ${top_strategies[0]['total_pnl']:.2f} P&L"
+                })
+
+            # Warning for losing strategies
+            losing_strategies = [s for s in top_strategies if s["total_pnl"] < -50]
+            if losing_strategies:
+                insights_list.append({
+                    "type": "warning",
+                    "message": f"{len(losing_strategies)} strategies underperforming. Consider switching."
+                })
+
+        insights = {
+            "current_state": current_state,
+            "top_strategies": top_strategies,
+            "learning_stats": learning_stats,
+            "insights": insights_list
         }
 
         return {
