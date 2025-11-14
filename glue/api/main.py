@@ -37,6 +37,7 @@ from market_data_endpoints import router as market_data_router
 from indicators_endpoints import router as indicators_router
 from streaming_endpoints import router as streaming_router
 from ml_endpoints import router as ml_router
+from analytics_endpoints import router as analytics_router
 from websocket_manager import ws_manager
 
 # Lifespan context manager for startup/shutdown
@@ -556,6 +557,7 @@ app.include_router(market_data_router)
 app.include_router(indicators_router)
 app.include_router(streaming_router)
 app.include_router(ml_router)
+app.include_router(analytics_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")

@@ -3,6 +3,7 @@ import { ControlPanel } from "./ControlPanel.jsx";
 import { BacktestTab } from "./BacktestTab.jsx";
 import { ChartsTab } from "./ChartsTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
+import { AnalyticsTab } from "./AnalyticsTab.jsx";
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -451,7 +452,7 @@ function App() {
         {/* NAVIGATION TABS */}
         <div style={{ borderBottom: `2px solid ${colors.border}`, marginBottom: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            {['overview', 'market', 'backtest', 'learning', 'control', 'trades', 'data'].map((tab) => (
+            {['overview', 'market', 'backtest', 'analytics', 'learning', 'control', 'trades', 'data'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -568,6 +569,11 @@ function App() {
         {/* BACKTEST TAB */}
         {activeTab === 'backtest' && (
           <BacktestTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
+        )}
+
+        {/* ANALYTICS TAB */}
+        {activeTab === 'analytics' && (
+          <AnalyticsTab colors={colors} darkMode={darkMode} API_BASE={API_BASE} />
         )}
 
         {/* LEARNING TAB */}
