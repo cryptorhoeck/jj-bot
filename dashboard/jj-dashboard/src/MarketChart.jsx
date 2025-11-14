@@ -171,6 +171,47 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
       }
 
       const config = getTimeframeConfig(timeframe);
+
+      // Fetch real OHLCV data from API
+      try {
+        const response = await fetch(
+          `${API_BASE}/market-data/ohlcv/${selectedSymbol}?timeframe=${timeframe}&num_candles=${config.points}&source=auto`
+        );
+
+        if (response.ok) {
+          const result = await response.json();
+
+          if (result.success && result.candles && result.candles.length > 0) {
+            // Convert API candles to chart format
+            const data = result.candles.map(candle => ({
+              timestamp: candle.time * 1000, // Convert to milliseconds
+              price: candle.close,
+              high: candle.high,
+              low: candle.low,
+              open: candle.open,
+              close: candle.close,
+              volume: candle.volume || 0
+            }));
+
+            setPriceData(data);
+
+            // Calculate indicators
+            const ma20 = calculateMA(data, 20);
+            const ma50 = calculateMA(data, 50);
+            const rsi = calculateRSI(data, 14);
+
+            setIndicators({ ma20, ma50, rsi });
+
+            console.log(`✅ Loaded ${data.length} real candles for ${selectedSymbol} (${timeframe}) from ${result.source}`);
+            return;
+          }
+        }
+      } catch (apiError) {
+        console.warn('API fetch failed, falling back to generated data:', apiError);
+      }
+
+      // Fallback to generated data if API fails
+      console.log(`⚠️ Using generated data for ${selectedSymbol} (${timeframe})`);
       const data = generatePriceData(coin.price, config);
       setPriceData(data);
 
@@ -185,7 +226,7 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedSymbol, timeframe, marketData, generatePriceData]);
+  }, [selectedSymbol, timeframe, marketData, generatePriceData, API_BASE]);
 
   useEffect(() => {
     fetchMarketData();

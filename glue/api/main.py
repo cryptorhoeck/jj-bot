@@ -33,6 +33,7 @@ from strategy_config_endpoints import router as strategy_config_router
 from enhanced_analytics_endpoints import router as enhanced_analytics_router
 from symbol_management_endpoints import router as symbol_management_router
 from learning_endpoints import router as learning_router
+from market_data_endpoints import router as market_data_router
 from websocket_manager import ws_manager
 
 # Lifespan context manager for startup/shutdown
@@ -542,6 +543,7 @@ app.include_router(strategy_config_router)
 app.include_router(enhanced_analytics_router)
 app.include_router(symbol_management_router)
 app.include_router(learning_router)
+app.include_router(market_data_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")
