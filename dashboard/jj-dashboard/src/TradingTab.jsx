@@ -77,22 +77,26 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     try {
       const response = await fetch(`${API_BASE}/api/symbols/enabled`);
       const data = await response.json();
-      if (data.success) {
-        setBotSymbols(data.symbols || []);
+      if (data.success && Array.isArray(data.symbols)) {
+        setBotSymbols(data.symbols);
+      } else {
+        setBotSymbols([]);
       }
     } catch (error) {
       console.error('Failed to load symbols:', error);
+      setBotSymbols([]);
     }
   }, [API_BASE]);
 
-  // Load positions
+  // Load positions (placeholder - positions feature not implemented yet)
   const loadPositions = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/positions`);
-      const data = await response.json();
-      setPositions(data.positions || []);
+      // For now, just set empty array since positions endpoint doesn't exist yet
+      // TODO: Implement /api/positions endpoint
+      setPositions([]);
     } catch (error) {
       console.error('Failed to load positions:', error);
+      setPositions([]);
     }
   }, [API_BASE]);
 
