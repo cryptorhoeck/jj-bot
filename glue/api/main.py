@@ -38,6 +38,8 @@ from indicators_endpoints import router as indicators_router
 from streaming_endpoints import router as streaming_router
 from ml_endpoints import router as ml_router
 from analytics_endpoints import router as analytics_router
+from alerts_endpoints import router as alerts_router
+from execution_endpoints import router as execution_router
 from websocket_manager import ws_manager
 
 # Lifespan context manager for startup/shutdown
@@ -558,6 +560,8 @@ app.include_router(indicators_router)
 app.include_router(streaming_router)
 app.include_router(ml_router)
 app.include_router(analytics_router)
+app.include_router(alerts_router)
+app.include_router(execution_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")
