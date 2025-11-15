@@ -35,3 +35,6 @@ Thumbs.db
 *-backup-*
 *.tar.gz
 backups/
+
+# Git bundles (temporary transfer files)
+*.bundle
