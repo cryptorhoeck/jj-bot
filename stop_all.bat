@@ -21,16 +21,18 @@ REM Small delay to ensure processes are terminated
 timeout /t 1 /nobreak >nul
 
 echo [4/5] Closing API Server window...
-REM Close windows by window title using nircmd alternative
-powershell -Command "Get-Process | Where-Object {$_.MainWindowTitle -like '*JJ-Bot API Server*'} | Stop-Process -Force" >nul 2>&1
+REM Use tasklist with window title filter to find and kill cmd windows
+taskkill /F /FI "WINDOWTITLE eq JJ-Bot API Server" >nul 2>&1
+REM Fallback with wildcard
+taskkill /F /FI "WINDOWTITLE eq JJ-Bot API Server*" >nul 2>&1
 
 echo [5/5] Closing Dashboard window...
-powershell -Command "Get-Process | Where-Object {$_.MainWindowTitle -like '*JJ-Bot Dashboard*'} | Stop-Process -Force" >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq JJ-Bot Dashboard" >nul 2>&1
+REM Fallback with wildcard
+taskkill /F /FI "WINDOWTITLE eq JJ-Bot Dashboard*" >nul 2>&1
 
-REM Backup method: Kill any remaining cmd.exe windows running our scripts
-for /f "tokens=2" %%a in ('tasklist /v /fi "IMAGENAME eq cmd.exe" ^| findstr /I "JJ-Bot"') do (
-    taskkill /F /PID %%a >nul 2>&1
-)
+REM Additional cleanup: PowerShell method as final backup
+powershell -WindowStyle Hidden -Command "Get-Process | Where-Object {$_.MainWindowTitle -like '*JJ-Bot*'} | Stop-Process -Force" >nul 2>&1
 
 echo.
 echo ========================================
