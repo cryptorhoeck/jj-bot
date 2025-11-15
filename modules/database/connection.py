@@ -131,6 +131,12 @@ def init_trades_db():
         ON trades(strategy)
         """)
 
+        # Composite index for strategy performance queries (strategy + timestamp range)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_trades_strategy_timestamp
+        ON trades(strategy, timestamp)
+        """)
+
         conn.commit()
 
         if migrations:

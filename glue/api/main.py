@@ -483,28 +483,18 @@ async def get_market_live():
             print(f"✅ Fetched {len(result)} prices from market data service")
             return {"status": "success", "data": result, "count": len(result), "source": "market_data_service"}
 
-        # Last resort: Return placeholder data
+        # Last resort: Return error instead of misleading placeholder data
         raise Exception("No price data available from any source")
 
     except Exception as e:
-        print(f"⚠️  Market data fetch failed: {e} - using placeholder data")
-        # Return placeholder data as fallback
+        print(f"⚠️  Market data fetch failed: {e}")
+        # Return error with clear message instead of fake prices
         return {
-            "status": "placeholder",
-            "message": "Using placeholder data - start WebSocket stream for real-time prices",
-            "data": {
-                "btc": {"symbol": "BTC", "name": "Bitcoin", "usd": 45000, "usd_24h_change": 2.5, "timestamp": datetime.now().isoformat()},
-                "eth": {"symbol": "ETH", "name": "Ethereum", "usd": 2500, "usd_24h_change": -1.2, "timestamp": datetime.now().isoformat()},
-                "bnb": {"symbol": "BNB", "name": "BNB", "usd": 350, "usd_24h_change": 1.8, "timestamp": datetime.now().isoformat()},
-                "sol": {"symbol": "SOL", "name": "Solana", "usd": 100, "usd_24h_change": 3.5, "timestamp": datetime.now().isoformat()},
-                "xrp": {"symbol": "XRP", "name": "XRP", "usd": 0.65, "usd_24h_change": -0.5, "timestamp": datetime.now().isoformat()},
-                "ada": {"symbol": "ADA", "name": "Cardano", "usd": 0.45, "usd_24h_change": 1.2, "timestamp": datetime.now().isoformat()},
-                "doge": {"symbol": "DOGE", "name": "Dogecoin", "usd": 0.08, "usd_24h_change": -2.1, "timestamp": datetime.now().isoformat()},
-                "avax": {"symbol": "AVAX", "name": "Avalanche", "usd": 35, "usd_24h_change": 4.2, "timestamp": datetime.now().isoformat()},
-                "dot": {"symbol": "DOT", "name": "Polkadot", "usd": 7.5, "usd_24h_change": 0.8, "timestamp": datetime.now().isoformat()},
-                "matic": {"symbol": "MATIC", "name": "Polygon", "usd": 0.85, "usd_24h_change": 2.3, "timestamp": datetime.now().isoformat()}
-            },
-            "count": 10
+            "status": "error",
+            "message": "Market data unavailable. Start WebSocket stream or check market data service.",
+            "data": {},
+            "count": 0,
+            "error": str(e)
         }
 
 # ===== HISTORICAL MARKET DATA ENDPOINTS =====

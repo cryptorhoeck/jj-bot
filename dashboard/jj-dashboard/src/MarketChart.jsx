@@ -242,32 +242,39 @@ export function MarketChart({ colors, darkMode, API_BASE }) {
           }
         }
       } catch (apiError) {
-        console.warn('API fetch failed, falling back to generated data:', apiError);
+        console.error('API fetch failed:', apiError);
+        // Show error message instead of generating fake data
+        setPriceData([]);
+        setIndicators({
+          ma20: [], ma50: [], rsi: [],
+          macd: { macd_line: [], signal_line: [], histogram: [] },
+          bollinger: { upper_band: [], middle_band: [], lower_band: [] }
+        });
+        setLoading(false);
+        return;
       }
 
-      // Fallback to generated data if API fails
-      console.log(`⚠️ Using generated data for ${selectedSymbol} (${timeframe})`);
-      const data = generatePriceData(coin.price, config);
-      setPriceData(data);
-
-      // Calculate indicators
-      const ma20 = calculateMA(data, 20);
-      const ma50 = calculateMA(data, 50);
-      const rsi = calculateRSI(data, 14);
-
+      // If we reach here, API returned unsuccessful response
+      console.warn(`⚠️ No price data available for ${selectedSymbol} (${timeframe})`);
+      setPriceData([]);
       setIndicators({
-        ma20,
-        ma50,
-        rsi,
+        ma20: [], ma50: [], rsi: [],
         macd: { macd_line: [], signal_line: [], histogram: [] },
         bollinger: { upper_band: [], middle_band: [], lower_band: [] }
       });
+
     } catch (error) {
       console.error('Error fetching price data:', error);
+      setPriceData([]);
+      setIndicators({
+        ma20: [], ma50: [], rsi: [],
+        macd: { macd_line: [], signal_line: [], histogram: [] },
+        bollinger: { upper_band: [], middle_band: [], lower_band: [] }
+      });
     } finally {
       setLoading(false);
     }
-  }, [selectedSymbol, timeframe, marketData, generatePriceData, API_BASE]);
+  }, [selectedSymbol, timeframe, marketData, API_BASE]);
 
   // Fetch ML prediction for selected symbol
   const fetchMLPrediction = useCallback(async () => {

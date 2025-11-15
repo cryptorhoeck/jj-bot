@@ -21,6 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from modules.learning.adaptive_strategy_selector import AdaptiveStrategySelector
 from modules.learning.strategy_performance_tracker import StrategyPerformanceTracker
 from modules.learning.market_regime_detector import MarketRegimeDetector
+from modules.learning.price_history import PriceHistory
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/learning", tags=["learning"])
 _adaptive_selector = None
 _performance_tracker = None
 _regime_detector = None
+_price_history = None
 
 def get_adaptive_selector():
     """Get or create adaptive strategy selector"""
@@ -58,6 +60,16 @@ def get_regime_detector():
         except Exception as e:
             print(f"Warning: Could not initialize regime detector: {e}")
     return _regime_detector
+
+def get_price_history():
+    """Get or create price history tracker"""
+    global _price_history
+    if _price_history is None:
+        try:
+            _price_history = PriceHistory()
+        except Exception as e:
+            print(f"Warning: Could not initialize price history: {e}")
+    return _price_history
 
 
 @router.get("/status", summary="Get Learning System Status")
@@ -136,25 +148,48 @@ async def get_strategy_performance(
         Performance metrics
     """
     try:
-        # Return mock data for now - will be populated with real data as trades occur
-        strategies = {
-            "momentum": {"win_rate": 55, "total_pnl": 0, "trade_count": 0},
-            "mean_reversion": {"win_rate": 52, "total_pnl": 0, "trade_count": 0},
-            "trend_following": {"win_rate": 58, "total_pnl": 0, "trade_count": 0},
-            "breakout": {"win_rate": 50, "total_pnl": 0, "trade_count": 0},
-            "volatility": {"win_rate": 53, "total_pnl": 0, "trade_count": 0}
-        }
+        performance_tracker = get_performance_tracker()
+
+        if not performance_tracker:
+            raise HTTPException(status_code=503, detail="Performance tracker not available")
 
         if strategy:
+            # Get metrics for specific strategy from real database
+            metrics = performance_tracker.get_strategy_metrics(strategy, period_hours=hours)
             return {
                 "success": True,
                 "strategy": strategy,
-                "performance": strategies.get(strategy, {"win_rate": 0, "total_pnl": 0, "trade_count": 0})
+                "performance": {
+                    "win_rate": metrics.get("win_rate", 0),
+                    "total_pnl": metrics.get("total_pnl", 0),
+                    "trade_count": metrics.get("total_trades", 0),
+                    "profit_factor": metrics.get("profit_factor", 0),
+                    "sharpe_ratio": metrics.get("sharpe_ratio", 0),
+                    "winning_trades": metrics.get("winning_trades", 0),
+                    "losing_trades": metrics.get("losing_trades", 0),
+                    "avg_win": metrics.get("avg_win", 0),
+                    "avg_loss": metrics.get("avg_loss", 0)
+                }
             }
         else:
+            # Get metrics for all strategies from real database
+            all_performance = performance_tracker.get_all_strategies_performance(period_hours=hours)
+
+            # Format for API response
+            strategies_dict = {}
+            for perf in all_performance:
+                strategies_dict[perf["strategy_name"]] = {
+                    "win_rate": perf.get("win_rate", 0),
+                    "total_pnl": perf.get("total_pnl", 0),
+                    "trade_count": perf.get("total_trades", 0),
+                    "profit_factor": perf.get("profit_factor", 0),
+                    "sharpe_ratio": perf.get("sharpe_ratio", 0)
+                }
+
             return {
                 "success": True,
-                "strategies": strategies
+                "strategies": strategies_dict,
+                "count": len(strategies_dict)
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -216,22 +251,34 @@ async def get_symbol_price_history(
     hours: int = Query(24, ge=1, le=168, description="Time period in hours")
 ) -> Dict[str, Any]:
     """
-    Get price history for a specific symbol
+    Get price history for a specific symbol from database
 
     Args:
         symbol: Cryptocurrency symbol
         hours: Time period
 
     Returns:
-        Price history with timestamps
+        Price history with timestamps from actual database
     """
     try:
-        # Return empty history for now
+        price_history = get_price_history()
+
+        if not price_history:
+            raise HTTPException(status_code=503, detail="Price history service not available")
+
+        # Get price data from database
+        start_time = datetime.now() - timedelta(hours=hours)
+        history_data = price_history.get_price_range(symbol.upper(), start_time)
+
+        # Also get statistics for this period
+        stats = price_history.get_statistics(symbol.upper(), hours=hours)
+
         return {
             "success": True,
-            "symbol": symbol,
-            "history": [],
-            "datapoints": 0
+            "symbol": symbol.upper(),
+            "history": history_data,
+            "datapoints": len(history_data),
+            "stats": stats
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
