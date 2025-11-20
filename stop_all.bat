@@ -20,19 +20,15 @@ taskkill /F /T /IM npm.exe >nul 2>&1
 REM Small delay to ensure processes are terminated
 timeout /t 1 /nobreak >nul
 
-echo [4/5] Closing API Server window...
-REM Use tasklist with window title filter to find and kill cmd windows
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot API Server" >nul 2>&1
-REM Fallback with wildcard
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot API Server*" >nul 2>&1
+echo [4/5] Closing terminal windows...
+REM Use PowerShell script for reliable window closing
+powershell -ExecutionPolicy Bypass -File "%~dp0close_windows.ps1"
 
-echo [5/5] Closing Dashboard window...
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot Dashboard" >nul 2>&1
-REM Fallback with wildcard
-taskkill /F /FI "WINDOWTITLE eq JJ-Bot Dashboard*" >nul 2>&1
-
-REM Additional cleanup: PowerShell method as final backup
-powershell -WindowStyle Hidden -Command "Get-Process | Where-Object {$_.MainWindowTitle -like '*JJ-Bot*'} | Stop-Process -Force" >nul 2>&1
+echo [5/5] Final cleanup...
+REM Kill any remaining cmd.exe that might be hanging
+for /f "tokens=2" %%a in ('tasklist /v /fi "IMAGENAME eq cmd.exe" 2^>nul ^| findstr /I "JJ-Bot"') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
 
 echo.
 echo ========================================
