@@ -20,7 +20,7 @@ class TradingBotService(BaseService):
     """Automated trading bot service"""
 
     def __init__(self):
-        super().__init__(name="trading_bot", auto_start=True)
+        super().__init__(name="trading_bot", auto_start=False)  # Disable auto-start to prevent API startup hang
 
         # Configuration
         self.config = {
