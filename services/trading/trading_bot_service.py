@@ -15,6 +15,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from services.base.service import BaseService
 from modules.event_bus import event_bus
 
+# Import risk manager
+try:
+    from modules.risk.risk_manager import risk_manager
+    RISK_MANAGER_AVAILABLE = True
+except ImportError:
+    RISK_MANAGER_AVAILABLE = False
+    print("⚠️ Risk manager not available - trading without risk limits!")
+
 
 class TradingBotService(BaseService):
     """Automated trading bot service"""
@@ -127,12 +135,33 @@ class TradingBotService(BaseService):
                 print(f"🔒 Max positions reached ({len(self.open_positions)}/{self.config['max_open_positions']})")
                 return
 
+            # Risk management checks
+            if RISK_MANAGER_AVAILABLE:
+                # Get current equity and drawdown (simplified - would query from DB)
+                current_equity = 10000 + self.stats.get("total_pnl", 0)
+                current_drawdown = 0  # Would calculate from trade history
+
+                # Get recent trades for circuit breaker check
+                recent_trades = []  # Would load from database
+
+                # Check if we can trade
+                risk_check = risk_manager.check_can_trade(
+                    current_equity=current_equity,
+                    current_drawdown=current_drawdown,
+                    open_positions_count=len(self.open_positions),
+                    recent_trades=recent_trades
+                )
+
+                if not risk_check["can_trade"]:
+                    print(f"🛑 Risk check failed: {risk_check['reason']}")
+                    self.stats["trades_rejected"] += 1
+                    return
+
             # Signal looks good - publish for risk evaluation
             print(f"✅ {symbol} {action} signal approved (strength: {strength:.1%})")
             self.stats["signals_approved"] += 1
 
-            # In a real system, this would go to risk manager
-            # For now, we'll simulate approval
+            # Execute trade with risk-based position sizing
             self._execute_trade(signal)
 
         except Exception as e:

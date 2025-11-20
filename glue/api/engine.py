@@ -107,11 +107,12 @@ def get_trades(limit: int = 50) -> List[Dict[str, Any]]:
 
 def get_summary() -> Dict[str, Any]:
     """
-    Get trading summary statistics
+    Get comprehensive trading summary statistics with real-time position tracking
 
     Returns:
         Dictionary containing summary statistics including:
-        total_trades, total_pnl, avg_pnl, winning_trades, win_rate
+        total_trades, total_pnl, avg_pnl, winning_trades, win_rate,
+        open_positions, current_equity, max_drawdown, profit_factor
     """
     with get_connection() as conn:
         cur = conn.cursor()
@@ -121,26 +122,104 @@ def get_summary() -> Dict[str, Any]:
         total_trades = cur.fetchone()[0]
 
         # Total PnL
-        cur.execute("SELECT SUM(pnl) FROM trades")
+        cur.execute("SELECT SUM(pnl) FROM trades WHERE pnl IS NOT NULL")
         total_pnl = cur.fetchone()[0] or 0.0
 
-        # Average PnL
-        cur.execute("SELECT AVG(pnl) FROM trades")
+        # Average PnL per trade
+        cur.execute("SELECT AVG(pnl) FROM trades WHERE pnl IS NOT NULL")
         avg_pnl = cur.fetchone()[0] or 0.0
 
         # Winning trades
         cur.execute("SELECT COUNT(*) FROM trades WHERE pnl > 0")
         winning_trades = cur.fetchone()[0]
 
+        # Losing trades
+        cur.execute("SELECT COUNT(*) FROM trades WHERE pnl < 0")
+        losing_trades = cur.fetchone()[0]
+
         # Win rate
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
 
+        # Average win
+        cur.execute("SELECT AVG(pnl) FROM trades WHERE pnl > 0")
+        avg_win = cur.fetchone()[0] or 0.0
+
+        # Average loss
+        cur.execute("SELECT AVG(pnl) FROM trades WHERE pnl < 0")
+        avg_loss = cur.fetchone()[0] or 0.0
+
+        # Profit factor (total wins / abs(total losses))
+        cur.execute("SELECT SUM(pnl) FROM trades WHERE pnl > 0")
+        total_wins = cur.fetchone()[0] or 0.0
+        cur.execute("SELECT SUM(pnl) FROM trades WHERE pnl < 0")
+        total_losses = abs(cur.fetchone()[0] or 0.0)
+        profit_factor = (total_wins / total_losses) if total_losses > 0 else 0.0
+
+        # Max drawdown calculation (cumulative PnL approach)
+        cur.execute("SELECT pnl FROM trades ORDER BY id ASC")
+        pnls = [row[0] for row in cur.fetchall() if row[0] is not None]
+
+        max_drawdown = 0.0
+        if pnls:
+            cumulative = []
+            total = 0
+            for pnl in pnls:
+                total += pnl
+                cumulative.append(total)
+
+            peak = cumulative[0]
+            for value in cumulative:
+                if value > peak:
+                    peak = value
+                dd = peak - value
+                if dd > max_drawdown:
+                    max_drawdown = dd
+
+        # Get open positions (trades without matching exit)
+        # This assumes trades come in pairs: entry (BUY) and exit (SELL) for each symbol
+        cur.execute("""
+            SELECT symbol, COUNT(*) as trade_count, SUM(pnl) as position_pnl
+            FROM trades
+            WHERE signal IN ('BUY', 'SELL')
+            GROUP BY symbol
+            HAVING trade_count % 2 = 1
+        """)
+        open_positions_rows = cur.fetchall()
+        open_positions = {
+            row[0]: {
+                "symbol": row[0],
+                "trades": row[1],
+                "unrealized_pnl": row[2] or 0.0
+            }
+            for row in open_positions_rows
+        }
+
+        # Calculate current equity (starting capital + total PnL)
+        # Assume starting capital of 10,000 (should be configurable)
+        starting_capital = 10000.0
+        current_equity = starting_capital + total_pnl
+
+        # Get latest trade timestamp
+        cur.execute("SELECT MAX(timestamp) FROM trades")
+        latest_trade = cur.fetchone()[0]
+
         return {
             "total_trades": total_trades,
-            "total_pnl": total_pnl,
-            "avg_pnl": avg_pnl,
+            "total_pnl": round(total_pnl, 2),
+            "avg_pnl": round(avg_pnl, 2),
             "winning_trades": winning_trades,
-            "win_rate": win_rate
+            "losing_trades": losing_trades,
+            "win_rate": round(win_rate, 2),
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2),
+            "profit_factor": round(profit_factor, 2),
+            "max_drawdown": round(max_drawdown, 2),
+            "open_positions": open_positions,
+            "open_positions_count": len(open_positions),
+            "starting_capital": starting_capital,
+            "current_equity": round(current_equity, 2),
+            "return_pct": round((total_pnl / starting_capital * 100), 2) if starting_capital > 0 else 0.0,
+            "latest_trade": latest_trade
         }
 
 def clear_all_trades() -> None:
@@ -157,3 +236,96 @@ def clear_trades() -> None:
         cur.execute("DELETE FROM trades")
         conn.commit()
         return True
+
+def get_equity_curve(starting_capital: float = 10000.0) -> List[Dict[str, Any]]:
+    """
+    Calculate equity curve over time
+
+    Args:
+        starting_capital: Initial capital amount
+
+    Returns:
+        List of equity points with timestamp and equity value
+    """
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT timestamp, pnl
+            FROM trades
+            WHERE pnl IS NOT NULL
+            ORDER BY timestamp ASC
+        """)
+
+        rows = cur.fetchall()
+        equity_curve = []
+        current_equity = starting_capital
+
+        for row in rows:
+            current_equity += row[1]  # Add PnL
+            equity_curve.append({
+                "timestamp": row[0],
+                "equity": round(current_equity, 2),
+                "pnl": round(row[1], 2)
+            })
+
+        return equity_curve
+
+def get_open_positions() -> List[Dict[str, Any]]:
+    """
+    Get detailed information about currently open positions
+
+    Returns:
+        List of open position details
+    """
+    with get_connection() as conn:
+        cur = conn.cursor()
+
+        # Get all trades and track which positions are open
+        cur.execute("""
+            SELECT id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at
+            FROM trades
+            ORDER BY timestamp ASC
+        """)
+
+        all_trades = cur.fetchall()
+
+        # Track positions per symbol
+        positions = {}
+
+        for trade in all_trades:
+            trade_id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at = trade
+
+            if symbol not in positions:
+                positions[symbol] = {
+                    "symbol": symbol,
+                    "entry_time": timestamp,
+                    "entry_price": entry_price or last_price,
+                    "current_price": last_price,
+                    "unrealized_pnl": pnl or 0.0,
+                    "trade_count": 0,
+                    "is_open": False,
+                    "created_at": created_at
+                }
+
+            positions[symbol]["trade_count"] += 1
+            positions[symbol]["current_price"] = last_price
+
+            # Simple logic: odd number of trades means position is open
+            positions[symbol]["is_open"] = (positions[symbol]["trade_count"] % 2 == 1)
+
+        # Return only open positions
+        open_positions = [
+            {
+                **pos,
+                "unrealized_pnl": round(pos["unrealized_pnl"], 2),
+                "entry_price": round(pos["entry_price"], 2),
+                "current_price": round(pos["current_price"], 2),
+                "pnl_pct": round(
+                    ((pos["current_price"] - pos["entry_price"]) / pos["entry_price"] * 100), 2
+                ) if pos["entry_price"] > 0 else 0.0
+            }
+            for pos in positions.values()
+            if pos["is_open"]
+        ]
+
+        return open_positions

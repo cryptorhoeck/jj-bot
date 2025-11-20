@@ -108,6 +108,53 @@ async def get_trades(limit: int = 50):
 async def get_summary():
     return engine.get_summary()
 
+@app.get("/api/equity-curve")
+async def get_equity_curve(starting_capital: float = 10000.0):
+    """Get equity curve over time for portfolio visualization"""
+    return {
+        "equity_curve": engine.get_equity_curve(starting_capital),
+        "starting_capital": starting_capital
+    }
+
+@app.get("/api/positions/open")
+async def get_open_positions():
+    """Get currently open trading positions with unrealized PnL"""
+    return {
+        "open_positions": engine.get_open_positions(),
+        "count": len(engine.get_open_positions())
+    }
+
+@app.get("/api/risk/status")
+async def get_risk_status():
+    """Get current risk management status and limits"""
+    try:
+        # Import risk manager
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from modules.risk.risk_manager import risk_manager
+
+        # Get current summary for equity and drawdown
+        summary = engine.get_summary()
+
+        return {
+            "status": "success",
+            "risk_status": risk_manager.get_risk_status(
+                current_equity=summary.get("current_equity", 10000),
+                current_drawdown=summary.get("max_drawdown", 0)
+            ),
+            "limits": {
+                "max_risk_per_trade_pct": risk_manager.config.max_risk_per_trade * 100,
+                "max_drawdown_pct": risk_manager.config.max_drawdown_pct * 100,
+                "max_daily_loss": risk_manager.config.max_daily_loss,
+                "max_open_positions": risk_manager.config.max_open_positions,
+                "min_risk_reward_ratio": risk_manager.config.min_risk_reward_ratio
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @app.get("/api/analytics/advanced")
 async def get_advanced_analytics():
     """Get advanced performance analytics"""
