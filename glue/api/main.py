@@ -155,6 +155,37 @@ async def get_risk_status():
             "message": str(e)
         }
 
+@app.get("/api/performance/stats")
+async def get_performance_stats():
+    """Get performance profiling statistics"""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from modules.performance_profiler import profiler
+
+        return profiler.get_stats(limit=30)
+    except Exception as e:
+        return {
+            "error": str(e),
+            "stats": []
+        }
+
+@app.get("/api/errors/recent")
+async def get_recent_errors(limit: int = 50):
+    """Get recent errors from error log"""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from modules.error_recovery import get_recent_errors
+
+        return {
+            "errors": get_recent_errors(limit=limit),
+            "count": len(get_recent_errors(limit=limit))
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "errors": []
+        }
+
 @app.get("/api/analytics/advanced")
 async def get_advanced_analytics():
     """Get advanced performance analytics"""
