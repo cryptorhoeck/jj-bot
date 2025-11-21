@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DashboardTab } from "./DashboardTab.jsx";
+import { DashboardTab } from "./ImprovedDashboard.jsx";
 import { TradingTab } from "./TradingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
@@ -485,9 +485,7 @@ function App() {
             darkMode={darkMode}
             summary={summary}
             trades={trades}
-            botRunning={simulatorRunning}
-            learningData={learningData}
-            onNavigate={setActiveTab}
+            API_BASE={API_BASE}
           />
         )}
 

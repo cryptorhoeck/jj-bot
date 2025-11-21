@@ -60,11 +60,13 @@ class TradingBotService(BaseService):
         # Internal state
         self.open_positions = {}
         self.last_trade_times = {}
+        self.current_prices = {}  # Cache of real-time market prices
 
         # Subscribe to trading signals and approvals
         event_bus.subscribe("TRADING_SIGNAL", self._on_trading_signal)
         event_bus.subscribe("TRADE_APPROVED", self._on_trade_approved)
         event_bus.subscribe("TRADE_REJECTED", self._on_trade_rejected)
+        event_bus.subscribe("PRICE_UPDATE", self._on_price_update)
 
     def _run(self):
         """Run the trading bot"""
@@ -98,6 +100,23 @@ class TradingBotService(BaseService):
             except Exception as e:
                 print(f"❌ Trading Bot error: {e}")
                 time.sleep(10)
+
+    def _on_price_update(self, event: Dict):
+        """Handle real-time price updates from market feed"""
+        try:
+            price_data = event["data"]
+            symbol = price_data.get("symbol")
+            price = price_data.get("price")
+
+            if symbol and price:
+                self.current_prices[symbol] = {
+                    "price": price,
+                    "change_24h": price_data.get("change_24h", 0),
+                    "timestamp": price_data.get("timestamp"),
+                    "volume_24h": price_data.get("volume_24h", 0)
+                }
+        except Exception as e:
+            print(f"❌ Price update error: {e}")
 
     def _on_trading_signal(self, event: Dict):
         """Handle incoming trading signals"""
@@ -193,7 +212,7 @@ class TradingBotService(BaseService):
 
     def _execute_trade(self, signal: Dict):
         """
-        Execute a trade (paper trading)
+        Execute a trade (paper trading) using real market prices
 
         Args:
             signal: Trading signal dictionary
@@ -201,15 +220,38 @@ class TradingBotService(BaseService):
         try:
             symbol = signal.get("symbol")
             action = signal.get("action")
-            price = signal.get("price")
             strength = signal.get("strength", 0)
 
-            # Simulated execution
+            # Get current market price from real-time feed
+            if symbol in self.current_prices:
+                price = self.current_prices[symbol]["price"]
+                print(f"📊 Using real market price for {symbol}: ${price:.2f}")
+            else:
+                # Fallback to signal price if no market data available yet
+                price = signal.get("price")
+                print(f"⚠️  No market data for {symbol}, using signal price: ${price:.2f}")
+
+            # Calculate position size based on risk management
+            if RISK_MANAGER_AVAILABLE:
+                current_equity = 10000 + self.stats.get("total_pnl", 0)
+                stop_loss_price = price * 0.98 if action == "BUY" else price * 1.02  # 2% stop loss
+
+                position_calc = risk_manager.calculate_position_size(
+                    current_equity=current_equity,
+                    entry_price=price,
+                    stop_loss_price=stop_loss_price
+                )
+                trade_size = position_calc["position_size"]
+                print(f"💼 Position size: {trade_size} shares (${position_calc['position_value']:.2f})")
+            else:
+                trade_size = 1.0  # Default size
+
+            # Execute trade
             trade = {
                 "symbol": symbol,
                 "action": action,
                 "price": price,
-                "size": 1.0,  # Simplified - would calculate based on risk
+                "size": trade_size,
                 "timestamp": datetime.now().isoformat(),
                 "signal_strength": strength,
                 "status": "executed"
@@ -276,6 +318,7 @@ class TradingBotService(BaseService):
         event_bus.unsubscribe("TRADING_SIGNAL", self._on_trading_signal)
         event_bus.unsubscribe("TRADE_APPROVED", self._on_trade_approved)
         event_bus.unsubscribe("TRADE_REJECTED", self._on_trade_rejected)
+        event_bus.unsubscribe("PRICE_UPDATE", self._on_price_update)
 
         print("🛑 Trading Bot Service stopped")
 
