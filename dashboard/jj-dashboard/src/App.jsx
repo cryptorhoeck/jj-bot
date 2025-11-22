@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { DashboardTab } from "./ImprovedDashboard.jsx";
 import { TradingTab } from "./TradingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
+import { ConfirmModal, useConfirmModal } from './components';
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -30,6 +32,7 @@ function App() {
   const [marketDataLoading, setMarketDataLoading] = useState(false);
   const [lastMarketFetch, setLastMarketFetch] = useState(null);
   const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000); // 2 minutes default
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
   // Dark mode colors
   const colors = {
@@ -147,16 +150,16 @@ function App() {
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setSimulatorRunning(true);
-        alert('Trade simulator started! Trades will appear in a few seconds.');
+        toast.success('Trade simulator started! Trades will appear in a few seconds.');
         setTimeout(() => {
           fetchTrades();
           fetchSummary();
         }, 3000);
       } else {
-        alert('Error: ' + data.message);
+        toast.error('Error: ' + data.message);
       }
     } catch (error) {
-      alert('Error starting simulator: ' + error);
+      toast.error('Error starting simulator: ' + error);
     }
     setLoading(false);
   };
@@ -169,9 +172,9 @@ function App() {
       });
       const data = await response.json();
       setSimulatorRunning(false);
-      alert('Simulator stopped');
+      toast.success('Simulator stopped');
     } catch (error) {
-      alert('Error stopping simulator: ' + error);
+      toast.error('Error stopping simulator: ' + error);
     }
     setLoading(false);
   };
@@ -188,31 +191,34 @@ function App() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully!');
     } catch (error) {
-      alert('Error exporting data: ' + error);
+      toast.error('Error exporting data: ' + error);
     }
   };
 
   const clearDatabase = async () => {
-    if (confirm('Are you sure you want to clear all trade data? This will backup first.')) {
-      try {
-        const response = await fetch(`${API_BASE}/api/data/clear`, {
-          method: 'POST'
-        });
-        const data = await response.json();
-        alert('Database cleared and backed up!');
-        setTrades([]);
-        setSummary({
-          total_trades: 0,
-          total_pnl: 0,
-          win_rate: 0,
-          avg_pnl: 0
-        });
-        fetchTrades();
-        fetchSummary();
-      } catch (error) {
-        alert('Error clearing database: ' + error);
-      }
+    setConfirmModalOpen(true);
+  };
+
+  const handleClearDatabaseConfirm = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/data/clear`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      toast.success('Database cleared and backed up!');
+      setTrades([]);
+      setSummary({
+        total_trades: 0,
+        total_pnl: 0,
+        win_rate: 0,
+        avg_pnl: 0
+      });
+      fetchTrades();
+      fetchSummary();
+    } catch (error) {
+      toast.error('Error clearing database: ' + error);
     }
   };
 
@@ -222,9 +228,9 @@ function App() {
         method: 'POST'
       });
       const data = await response.json();
-      alert(data.message);
+      toast.success(data.message || 'Data archived successfully!');
     } catch (error) {
-      alert('Error archiving data: ' + error);
+      toast.error('Error archiving data: ' + error);
     }
   };
 
@@ -519,6 +525,19 @@ function App() {
           />
         )}
       </div>
+
+      {/* Confirm Modal for destructive actions */}
+      <ConfirmModal
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleClearDatabaseConfirm}
+        title="Clear Database"
+        message="Are you sure you want to clear all trade data? This action will create a backup first, but the current data will be removed from the dashboard."
+        confirmText="Clear Database"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        darkMode={darkMode}
+      />
       </div>
   );
 }

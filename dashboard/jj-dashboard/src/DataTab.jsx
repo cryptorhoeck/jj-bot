@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import toast from 'react-hot-toast';
+import { ConfirmModal } from './components';
 
 export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState('trades'); // 'trades' or 'analytics'
 
   // Calculate real analytics from trades
@@ -113,20 +116,23 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully!');
     } catch (error) {
-      alert('Error exporting data: ' + error);
+      toast.error('Error exporting data: ' + error);
     }
   };
 
-  const clearDatabase = async () => {
-    if (confirm('Are you sure you want to clear all trade data? This will backup first.')) {
-      try {
-        await fetch(`${API_BASE}/api/data/clear`, { method: 'POST' });
-        alert('Database cleared and backed up!');
-        window.location.reload();
-      } catch (error) {
-        alert('Error clearing database: ' + error);
-      }
+  const clearDatabase = () => {
+    setConfirmModalOpen(true);
+  };
+
+  const handleClearDatabaseConfirm = async () => {
+    try {
+      await fetch(`${API_BASE}/api/data/clear`, { method: 'POST' });
+      toast.success('Database cleared and backed up!');
+      window.location.reload();
+    } catch (error) {
+      toast.error('Error clearing database: ' + error);
     }
   };
 
@@ -134,9 +140,9 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
     try {
       const response = await fetch(`${API_BASE}/api/data/archive`, { method: 'POST' });
       const data = await response.json();
-      alert(data.message);
+      toast.success(data.message || 'Data archived successfully!');
     } catch (error) {
-      alert('Error archiving data: ' + error);
+      toast.error('Error archiving data: ' + error);
     }
   };
 
@@ -564,6 +570,19 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
           </p>
         </div>
       )}
+
+      {/* Confirm Modal for Clear Database */}
+      <ConfirmModal
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleClearDatabaseConfirm}
+        title="Clear Database"
+        message="Are you sure you want to clear all trade data? This action will create a backup first, but the current data will be removed."
+        confirmText="Clear Database"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        darkMode={darkMode}
+      />
     </div>
   );
 }

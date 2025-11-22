@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { StatsGridSkeleton, ChartSkeleton, TableSkeleton, NoTrades, NoPositions, ErrorState } from './components';
 
 export function DashboardTab({ colors, darkMode, summary, trades, API_BASE }) {
   const [equityCurve, setEquityCurve] = useState([]);
   const [openPositions, setOpenPositions] = useState([]);
   const [riskStatus, setRiskStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Fetch all dashboard data
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        setError(null);
+
         // Fetch equity curve
         const equityRes = await fetch(`${API_BASE}/api/equity-curve`);
         if (equityRes.ok) {
@@ -33,8 +37,9 @@ export function DashboardTab({ colors, darkMode, summary, trades, API_BASE }) {
         }
 
         setLoading(false);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+        setError(err.message);
         setLoading(false);
       }
     };
@@ -45,11 +50,36 @@ export function DashboardTab({ colors, darkMode, summary, trades, API_BASE }) {
     return () => clearInterval(interval);
   }, [API_BASE]);
 
+  // Show loading skeletons
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-        <p style={{ color: colors.textMuted }}>Loading dashboard...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+            📊 Performance Overview
+          </h2>
+          <StatsGridSkeleton count={6} darkMode={darkMode} />
+        </div>
+        <ChartSkeleton darkMode={darkMode} height="300px" />
+        <TableSkeleton rows={5} cols={5} darkMode={darkMode} />
       </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ErrorState
+        icon="📡"
+        title="Connection Error"
+        description="Unable to load dashboard data. The server may be offline or unreachable."
+        error={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+        }}
+        darkMode={darkMode}
+      />
     );
   }
 
@@ -302,16 +332,16 @@ export function DashboardTab({ colors, darkMode, summary, trades, API_BASE }) {
       )}
 
       {/* Recent Trades */}
-      {recentTrades.length > 0 && (
-        <div style={{
-          backgroundColor: colors.card,
-          padding: '1.5rem',
-          borderRadius: '0.75rem',
-          border: `1px solid ${colors.border}`
-        }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-            📋 Recent Trades
-          </h3>
+      <div style={{
+        backgroundColor: colors.card,
+        padding: '1.5rem',
+        borderRadius: '0.75rem',
+        border: `1px solid ${colors.border}`
+      }}>
+        <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
+          📋 Recent Trades
+        </h3>
+        {recentTrades.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -353,8 +383,10 @@ export function DashboardTab({ colors, darkMode, summary, trades, API_BASE }) {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <NoTrades darkMode={darkMode} />
+        )}
+      </div>
     </div>
   );
 }

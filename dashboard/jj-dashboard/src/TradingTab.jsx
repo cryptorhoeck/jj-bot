@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
 
 export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
   // Bot state
@@ -160,9 +161,10 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
+        toast.success('Trading bot started successfully!');
       }
     } catch (error) {
-      alert('Error starting bot: ' + error);
+      toast.error('Error starting bot: ' + error);
     }
     setLoading(false);
   };
@@ -172,8 +174,9 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     try {
       await fetch(`${API_BASE}/api/simulator/stop`, { method: 'POST' });
       setBotRunning(false);
+      toast.success('Trading bot stopped');
     } catch (error) {
-      alert('Error stopping bot: ' + error);
+      toast.error('Error stopping bot: ' + error);
     }
     setLoading(false);
   };
@@ -200,8 +203,9 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
 
       setBotSymbols([...botSymbols, symbol]);
       setNewSymbol('');
+      toast.success(`${symbol} added to trading list`);
     } catch (error) {
-      alert('Failed to add symbol');
+      toast.error('Failed to add symbol');
     }
   };
 
@@ -229,8 +233,9 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
       });
       const data = await response.json();
       setBacktestResults(data);
+      toast.success('Backtest completed successfully!');
     } catch (error) {
-      alert('Backtest failed: ' + error);
+      toast.error('Backtest failed: ' + error);
     }
     setBacktestRunning(false);
   };

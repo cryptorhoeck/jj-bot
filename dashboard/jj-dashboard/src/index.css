@@ -10,3 +10,355 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Loading Skeleton Animation */
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Spinner Animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Modal Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Pulse Animation for Live Indicators */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Focus styles for accessibility */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Transition utilities */
+.transition-smooth {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Number input arrows removal */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ==========================================
+   RESPONSIVE DESIGN - Mobile First
+   ========================================== */
+
+/* Base mobile styles */
+@media (max-width: 640px) {
+  /* Stack navigation tabs */
+  .nav-tabs {
+    flex-wrap: wrap;
+    gap: 0.5rem !important;
+  }
+
+  /* Make cards full width on mobile */
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Reduce padding on mobile */
+  .container {
+    padding: 1rem !important;
+  }
+
+  /* Make tables scrollable */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Adjust font sizes */
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+
+  /* Stack buttons */
+  .button-group {
+    flex-direction: column;
+  }
+
+  /* Full width inputs */
+  input, select {
+    width: 100% !important;
+  }
+}
+
+/* Tablet breakpoint */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .container {
+    padding: 1.5rem !important;
+  }
+}
+
+/* Desktop breakpoint */
+@media (min-width: 1025px) {
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem !important;
+  }
+}
+
+/* Large desktop */
+@media (min-width: 1440px) {
+  .container {
+    max-width: 1400px;
+  }
+}
+
+/* ==========================================
+   UTILITY CLASSES FOR RESPONSIVE DESIGN
+   ========================================== */
+
+/* Hide on mobile */
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* Hide on tablet */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .hide-tablet {
+    display: none !important;
+  }
+}
+
+/* Hide on desktop */
+@media (min-width: 1025px) {
+  .hide-desktop {
+    display: none !important;
+  }
+}
+
+/* Show only on mobile */
+.show-mobile {
+  display: none !important;
+}
+@media (max-width: 640px) {
+  .show-mobile {
+    display: block !important;
+  }
+}
+
+/* Flex utilities */
+.flex-col-mobile {
+  display: flex;
+}
+@media (max-width: 640px) {
+  .flex-col-mobile {
+    flex-direction: column;
+  }
+}
+
+/* Gap utilities responsive */
+.gap-responsive {
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .gap-responsive {
+    gap: 0.75rem;
+  }
+}
+
+/* Text size responsive */
+.text-responsive-lg {
+  font-size: 2rem;
+}
+@media (max-width: 640px) {
+  .text-responsive-lg {
+    font-size: 1.5rem;
+  }
+}
+
+.text-responsive-md {
+  font-size: 1.25rem;
+}
+@media (max-width: 640px) {
+  .text-responsive-md {
+    font-size: 1rem;
+  }
+}
+
+/* Card padding responsive */
+.card-padding-responsive {
+  padding: 1.5rem;
+}
+@media (max-width: 640px) {
+  .card-padding-responsive {
+    padding: 1rem;
+  }
+}
+
+/* Table responsive wrapper */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+@media (min-width: 641px) {
+  .table-responsive {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Chart responsive height */
+.chart-container {
+  min-height: 300px;
+}
+@media (max-width: 640px) {
+  .chart-container {
+    min-height: 200px;
+  }
+}
+
+/* ==========================================
+   ADDITIONAL UI POLISH
+   ========================================== */
+
+/* Smooth hover transitions for buttons */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: all 0.2s ease-in-out;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Status indicator pulse */
+.status-live {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Smooth color transitions */
+.theme-transition {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Touch-friendly tap targets */
+@media (max-width: 1024px) {
+  button, a, input[type="checkbox"], input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
