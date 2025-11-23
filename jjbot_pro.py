@@ -1,0 +1,799 @@
+"""
+JJ-Bot Pro - Unified Autonomous Trading System
+One-click setup, fully autonomous operation
+
+This is the main entry point that integrates:
+- Real exchange data via CCXT
+- Reinforcement Learning for decision making
+- Alternative data (sentiment, funding, order flow)
+- Edge-focused strategies
+- Risk management
+"""
+
+import asyncio
+import logging
+import json
+import os
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
+from enum import Enum
+from pathlib import Path
+import signal
+
+# Internal modules
+from modules.exchange import create_connector, create_live_feed, CCXTConnector, LiveDataFeed
+from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
+from modules.rl import TradingEnvironment, create_agent, PPOAgent
+from modules.data_feeds import create_alternative_feed, AlternativeDataFeed, EdgeDetector
+from modules.strategy.edge_strategies import create_edge_manager, EdgeStrategyManager, TradeSignal
+
+
+logger = logging.getLogger(__name__)
+
+
+class BotMode(Enum):
+    """Operating modes"""
+    PAPER = "paper"      # Paper trading with real prices
+    LIVE = "live"        # Real money trading
+    BACKTEST = "backtest"  # Historical backtesting
+    TRAINING = "training"  # RL agent training
+
+
+@dataclass
+class BotConfig:
+    """Bot configuration - edit this to customize"""
+    # Mode
+    mode: str = "paper"  # paper, live, backtest, training
+
+    # Exchange settings
+    exchange: str = "binance"
+    api_key: str = ""
+    api_secret: str = ""
+    sandbox: bool = True  # ALWAYS True unless explicitly going live
+
+    # Trading symbols
+    symbols: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT"])
+
+    # Capital and position sizing
+    initial_capital: float = 10000.0
+    max_position_pct: float = 0.10  # 10% per position
+    max_positions: int = 3
+
+    # Risk management
+    stop_loss_pct: float = 0.02  # 2% stop loss
+    take_profit_pct: float = 0.04  # 4% take profit
+    max_daily_loss_pct: float = 0.05  # 5% daily loss limit
+    max_drawdown_pct: float = 0.10  # 10% max drawdown
+
+    # Strategy settings
+    use_rl_agent: bool = True
+    use_edge_strategies: bool = True
+    use_alternative_data: bool = True
+    min_signal_confidence: float = 0.6  # Minimum confidence to trade
+
+    # RL settings
+    rl_model_path: str = "models/ppo_agent.pt"
+    train_episodes: int = 100
+
+    # Timing
+    analysis_interval_seconds: int = 60  # How often to analyze
+
+    # Logging
+    log_level: str = "INFO"
+    log_trades: bool = True
+
+    @classmethod
+    def load(cls, path: str = "config/bot_config.json") -> "BotConfig":
+        """Load config from file"""
+        if os.path.exists(path):
+            with open(path) as f:
+                data = json.load(f)
+                return cls(**data)
+        return cls()
+
+    def save(self, path: str = "config/bot_config.json"):
+        """Save config to file"""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(asdict(self), f, indent=2)
+
+
+@dataclass
+class Position:
+    """Active trading position"""
+    symbol: str
+    side: str  # "long" or "short"
+    entry_price: float
+    size: float
+    stop_loss: float
+    take_profit: float
+    entry_time: datetime
+    signal_source: str
+    unrealized_pnl: float = 0.0
+
+
+@dataclass
+class TradeRecord:
+    """Completed trade record"""
+    symbol: str
+    side: str
+    entry_price: float
+    exit_price: float
+    size: float
+    pnl: float
+    pnl_pct: float
+    entry_time: datetime
+    exit_time: datetime
+    signal_source: str
+    exit_reason: str
+
+
+class JJBotPro:
+    """
+    Main Trading Bot - Integrates all components
+
+    Usage:
+        bot = JJBotPro()
+        await bot.start()  # Runs forever
+        # or
+        bot.run()  # Blocking call
+    """
+
+    def __init__(self, config: Optional[BotConfig] = None):
+        self.config = config or BotConfig.load()
+        self._setup_logging()
+
+        # State
+        self.running = False
+        self.equity = self.config.initial_capital
+        self.peak_equity = self.config.initial_capital
+        self.daily_pnl = 0.0
+        self.daily_start_equity = self.config.initial_capital
+
+        # Positions and history
+        self.positions: Dict[str, Position] = {}
+        self.trade_history: List[TradeRecord] = []
+
+        # Components (initialized in start())
+        self.exchange: Optional[CCXTConnector] = None
+        self.data_feed: Optional[LiveDataFeed] = None
+        self.alt_data: Optional[AlternativeDataFeed] = None
+        self.edge_detector: Optional[EdgeDetector] = None
+        self.edge_manager: Optional[EdgeStrategyManager] = None
+        self.rl_agent: Optional[PPOAgent] = None
+        self.rl_env: Optional[TradingEnvironment] = None
+
+        # Price cache
+        self.prices: Dict[str, float] = {}
+
+        # Statistics
+        self.stats = {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "total_pnl": 0.0,
+            "signals_analyzed": 0,
+            "start_time": None,
+        }
+
+        logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
+
+    def _setup_logging(self):
+        """Configure logging"""
+        log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler("logs/jjbot.log", mode="a")
+            ]
+        )
+        os.makedirs("logs", exist_ok=True)
+
+    async def start(self):
+        """Start the trading bot"""
+        logger.info("=" * 50)
+        logger.info("JJ-Bot Pro Starting...")
+        logger.info(f"Mode: {self.config.mode}")
+        logger.info(f"Symbols: {self.config.symbols}")
+        logger.info(f"Capital: ${self.config.initial_capital:,.2f}")
+        logger.info("=" * 50)
+
+        self.running = True
+        self.stats["start_time"] = datetime.now()
+
+        # Initialize components
+        await self._initialize_components()
+
+        # Main loop
+        try:
+            if self.config.mode == "training":
+                await self._training_loop()
+            else:
+                await self._trading_loop()
+        except Exception as e:
+            logger.error(f"Bot error: {e}", exc_info=True)
+        finally:
+            await self.stop()
+
+    async def _initialize_components(self):
+        """Initialize all trading components"""
+        logger.info("Initializing components...")
+
+        # 1. Exchange connector
+        self.exchange = create_connector(
+            self.config.exchange,
+            self.config.api_key,
+            self.config.api_secret,
+            sandbox=self.config.sandbox
+        )
+
+        if self.config.mode != "training":
+            connected = await self.exchange.connect()
+            if not connected:
+                raise RuntimeError("Failed to connect to exchange")
+            logger.info(f"Connected to {self.config.exchange}")
+
+        # 2. Live data feed
+        self.data_feed = create_live_feed(
+            self.config.exchange,
+            self.config.api_key,
+            self.config.api_secret,
+            sandbox=self.config.sandbox
+        )
+
+        if self.config.mode != "training":
+            # Register price update callback
+            self.data_feed.on_price(self._on_price_update)
+
+            await self.data_feed.start(
+                symbols=self.config.symbols,
+                timeframes=["1m", "5m", "1h"]
+            )
+            logger.info("Live data feed started")
+
+        # 3. Alternative data
+        if self.config.use_alternative_data:
+            self.alt_data = create_alternative_feed()
+            self.edge_detector = EdgeDetector(self.alt_data)
+            logger.info("Alternative data feed initialized")
+
+        # 4. Edge strategies
+        if self.config.use_edge_strategies:
+            base_symbols = [s.split("/")[0] for s in self.config.symbols]
+            self.edge_manager = create_edge_manager(base_symbols)
+            logger.info("Edge strategies initialized")
+
+        # 5. RL Agent
+        if self.config.use_rl_agent:
+            self.rl_env = TradingEnvironment(
+                initial_balance=self.config.initial_capital,
+                max_position_size=self.config.max_position_pct
+            )
+
+            self.rl_agent = create_agent(
+                "ppo",
+                state_dim=self.rl_env.observation_space_dim,
+                action_dim=self.rl_env.action_space_dim
+            )
+
+            # Load existing model if available
+            if os.path.exists(self.config.rl_model_path):
+                self.rl_agent.load(self.config.rl_model_path)
+                logger.info(f"Loaded RL model from {self.config.rl_model_path}")
+            else:
+                logger.info("No existing RL model found - starting fresh")
+
+        logger.info("All components initialized")
+
+    def _on_price_update(self, update):
+        """Handle real-time price updates"""
+        self.prices[update.symbol] = update.price
+
+        # Update position P&L
+        if update.symbol in self.positions:
+            pos = self.positions[update.symbol]
+            if pos.side == "long":
+                pos.unrealized_pnl = (update.price - pos.entry_price) / pos.entry_price * pos.size
+            else:
+                pos.unrealized_pnl = (pos.entry_price - update.price) / pos.entry_price * pos.size
+
+    async def _trading_loop(self):
+        """Main trading loop"""
+        logger.info("Entering main trading loop...")
+
+        while self.running:
+            try:
+                # Reset daily stats at midnight
+                await self._check_daily_reset()
+
+                # Check risk limits
+                if not self._check_risk_limits():
+                    logger.warning("Risk limits exceeded - pausing trading")
+                    await asyncio.sleep(60)
+                    continue
+
+                # Analyze each symbol
+                for symbol in self.config.symbols:
+                    await self._analyze_symbol(symbol)
+
+                # Check open positions for exits
+                await self._check_exits()
+
+                # Update equity
+                self._update_equity()
+
+                # Log status
+                self._log_status()
+
+                # Wait for next cycle
+                await asyncio.sleep(self.config.analysis_interval_seconds)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Trading loop error: {e}", exc_info=True)
+                await asyncio.sleep(10)
+
+    async def _analyze_symbol(self, symbol: str):
+        """Analyze a symbol for trading opportunities"""
+        self.stats["signals_analyzed"] += 1
+
+        base_symbol = symbol.split("/")[0]
+        price = self.prices.get(symbol, 0)
+
+        if price <= 0:
+            return
+
+        signals: List[TradeSignal] = []
+
+        # 1. Get edge strategy signals
+        if self.edge_manager:
+            try:
+                # Build data dict for edge analysis
+                alt_signals = {}
+                if self.alt_data:
+                    alt_signals = await self.alt_data.get_alternative_signals(base_symbol)
+
+                edge_data = {
+                    "symbol": base_symbol,
+                    "price": price,
+                    "funding_rate": alt_signals.get("funding", {}).get("rate", 0),
+                    "fear_greed_index": alt_signals.get("sentiment", {}).get("fear_greed", 50),
+                    "long_short_ratio": alt_signals.get("funding", {}).get("long_short_ratio", 1.0),
+                }
+
+                edge_signals = await self.edge_manager.analyze_all(edge_data)
+                signals.extend(edge_signals)
+
+            except Exception as e:
+                logger.debug(f"Edge analysis error for {symbol}: {e}")
+
+        # 2. Get alternative data edge signals
+        if self.edge_detector:
+            try:
+                recommendation = await self.edge_detector.get_trade_recommendation(base_symbol)
+                if recommendation["action"] != "hold" and recommendation["confidence"] > 0.5:
+                    signals.append(TradeSignal(
+                        symbol=symbol,
+                        direction="long" if recommendation["action"] == "buy" else "short",
+                        strength=2,  # MODERATE
+                        confidence=recommendation["confidence"],
+                        edge_type="alternative_data",
+                        entry_price=price,
+                        reason=recommendation.get("reason", "Alternative data signal")
+                    ))
+            except Exception as e:
+                logger.debug(f"Alt data error for {symbol}: {e}")
+
+        # 3. Get RL agent signal (if no position)
+        if self.rl_agent and symbol not in self.positions:
+            try:
+                # Build state for RL
+                candles = self.data_feed.get_candles(symbol, "1h", 50) if self.data_feed else []
+                if len(candles) >= 20:
+                    # Simple state: returns and volatility
+                    closes = [c.close for c in candles[-50:]]
+                    returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes))]
+
+                    state = list(returns[-20:]) + [0] * (self.rl_env.observation_space_dim - 20)
+                    state = state[:self.rl_env.observation_space_dim]
+
+                    import numpy as np
+                    action, _, _ = self.rl_agent.select_action(np.array(state), training=False)
+
+                    if action == 1:  # BUY
+                        signals.append(TradeSignal(
+                            symbol=symbol,
+                            direction="long",
+                            strength=2,
+                            confidence=0.6,
+                            edge_type="rl_agent",
+                            entry_price=price,
+                            reason="RL agent buy signal"
+                        ))
+                    elif action == 2:  # SELL
+                        signals.append(TradeSignal(
+                            symbol=symbol,
+                            direction="short",
+                            strength=2,
+                            confidence=0.6,
+                            edge_type="rl_agent",
+                            entry_price=price,
+                            reason="RL agent sell signal"
+                        ))
+            except Exception as e:
+                logger.debug(f"RL signal error for {symbol}: {e}")
+
+        # 4. Combine signals and decide
+        if signals:
+            combined = self.edge_manager.get_combined_signal(signals) if self.edge_manager else signals[0]
+
+            if combined and combined.confidence >= self.config.min_signal_confidence:
+                await self._handle_signal(symbol, combined)
+
+    async def _handle_signal(self, symbol: str, signal: TradeSignal):
+        """Handle a trading signal"""
+        # Skip if already have position in this symbol
+        if symbol in self.positions:
+            return
+
+        # Skip if max positions reached
+        if len(self.positions) >= self.config.max_positions:
+            return
+
+        price = self.prices.get(symbol, signal.entry_price or 0)
+        if price <= 0:
+            return
+
+        # Calculate position size
+        position_value = self.equity * self.config.max_position_pct
+
+        # Calculate stops
+        if signal.direction == "long":
+            stop_loss = price * (1 - self.config.stop_loss_pct)
+            take_profit = price * (1 + self.config.take_profit_pct)
+        else:
+            stop_loss = price * (1 + self.config.stop_loss_pct)
+            take_profit = price * (1 - self.config.take_profit_pct)
+
+        logger.info(f"SIGNAL: {signal.direction.upper()} {symbol} @ ${price:.2f}")
+        logger.info(f"  Confidence: {signal.confidence:.1%}, Edge: {signal.edge_type}")
+        logger.info(f"  Reason: {signal.reason}")
+
+        # Execute based on mode
+        if self.config.mode == "live":
+            # Real order execution
+            side = OrderSide.BUY if signal.direction == "long" else OrderSide.SELL
+            order = OrderRequest(
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                amount=position_value / price,
+            )
+
+            result = await self.exchange.create_order(order)
+            if result:
+                entry_price = result.price
+                logger.info(f"ORDER FILLED: {result.order_id} @ ${entry_price:.2f}")
+            else:
+                logger.error("Order failed")
+                return
+        else:
+            # Paper trading
+            entry_price = price
+            logger.info(f"PAPER TRADE: {signal.direction.upper()} {symbol} @ ${entry_price:.2f}")
+
+        # Record position
+        self.positions[symbol] = Position(
+            symbol=symbol,
+            side=signal.direction,
+            entry_price=entry_price,
+            size=position_value,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            entry_time=datetime.now(),
+            signal_source=signal.edge_type
+        )
+
+        self.stats["total_trades"] += 1
+
+    async def _check_exits(self):
+        """Check positions for exit conditions"""
+        positions_to_close = []
+
+        for symbol, pos in self.positions.items():
+            price = self.prices.get(symbol, 0)
+            if price <= 0:
+                continue
+
+            exit_reason = None
+
+            # Check stop loss
+            if pos.side == "long" and price <= pos.stop_loss:
+                exit_reason = "stop_loss"
+            elif pos.side == "short" and price >= pos.stop_loss:
+                exit_reason = "stop_loss"
+
+            # Check take profit
+            if pos.side == "long" and price >= pos.take_profit:
+                exit_reason = "take_profit"
+            elif pos.side == "short" and price <= pos.take_profit:
+                exit_reason = "take_profit"
+
+            if exit_reason:
+                positions_to_close.append((symbol, price, exit_reason))
+
+        # Close positions
+        for symbol, exit_price, reason in positions_to_close:
+            await self._close_position(symbol, exit_price, reason)
+
+    async def _close_position(self, symbol: str, exit_price: float, reason: str):
+        """Close a position"""
+        if symbol not in self.positions:
+            return
+
+        pos = self.positions[symbol]
+
+        # Calculate P&L
+        if pos.side == "long":
+            pnl_pct = (exit_price - pos.entry_price) / pos.entry_price
+        else:
+            pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
+
+        pnl = pnl_pct * pos.size
+
+        logger.info(f"CLOSE: {pos.side.upper()} {symbol}")
+        logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${exit_price:.2f}")
+        logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
+
+        # Execute close order in live mode
+        if self.config.mode == "live":
+            side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
+            order = OrderRequest(
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                amount=pos.size / exit_price,
+            )
+            await self.exchange.create_order(order)
+
+        # Record trade
+        trade = TradeRecord(
+            symbol=symbol,
+            side=pos.side,
+            entry_price=pos.entry_price,
+            exit_price=exit_price,
+            size=pos.size,
+            pnl=pnl,
+            pnl_pct=pnl_pct,
+            entry_time=pos.entry_time,
+            exit_time=datetime.now(),
+            signal_source=pos.signal_source,
+            exit_reason=reason
+        )
+        self.trade_history.append(trade)
+
+        # Update stats
+        self.stats["total_pnl"] += pnl
+        self.daily_pnl += pnl
+        if pnl > 0:
+            self.stats["winning_trades"] += 1
+
+        # Update equity
+        self.equity += pnl
+        self.peak_equity = max(self.peak_equity, self.equity)
+
+        # Remove position
+        del self.positions[symbol]
+
+    def _check_risk_limits(self) -> bool:
+        """Check if risk limits allow trading"""
+        # Daily loss limit
+        if self.daily_pnl < -self.config.max_daily_loss_pct * self.daily_start_equity:
+            logger.warning(f"Daily loss limit hit: ${self.daily_pnl:.2f}")
+            return False
+
+        # Max drawdown
+        drawdown = (self.peak_equity - self.equity) / self.peak_equity
+        if drawdown > self.config.max_drawdown_pct:
+            logger.warning(f"Max drawdown hit: {drawdown:.2%}")
+            return False
+
+        return True
+
+    async def _check_daily_reset(self):
+        """Reset daily stats at midnight"""
+        now = datetime.now()
+        if hasattr(self, "_last_reset_date"):
+            if now.date() > self._last_reset_date:
+                self.daily_pnl = 0.0
+                self.daily_start_equity = self.equity
+                self._last_reset_date = now.date()
+                logger.info("Daily stats reset")
+        else:
+            self._last_reset_date = now.date()
+
+    def _update_equity(self):
+        """Update equity with unrealized P&L"""
+        unrealized = sum(pos.unrealized_pnl for pos in self.positions.values())
+        # Note: equity already includes realized P&L, add unrealized
+        total_equity = self.equity + unrealized
+        self.peak_equity = max(self.peak_equity, total_equity)
+
+    def _log_status(self):
+        """Log current status"""
+        unrealized = sum(pos.unrealized_pnl for pos in self.positions.values())
+        total_equity = self.equity + unrealized
+
+        win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
+
+        logger.info(
+            f"STATUS | Equity: ${total_equity:,.2f} | "
+            f"Positions: {len(self.positions)} | "
+            f"Trades: {self.stats['total_trades']} | "
+            f"Win Rate: {win_rate:.1f}% | "
+            f"P&L: ${self.stats['total_pnl']:,.2f}"
+        )
+
+    async def _training_loop(self):
+        """Training loop for RL agent"""
+        logger.info("Starting RL training...")
+
+        if not self.rl_agent or not self.rl_env:
+            logger.error("RL components not initialized")
+            return
+
+        for episode in range(self.config.train_episodes):
+            if not self.running:
+                break
+
+            metrics = self.rl_agent.train_episode(self.rl_env)
+
+            if episode % 10 == 0:
+                logger.info(
+                    f"Episode {episode}/{self.config.train_episodes} | "
+                    f"Reward: {metrics.get('episode_reward', 0):.2f} | "
+                    f"P&L: ${metrics.get('total_pnl', 0):.2f} | "
+                    f"Win Rate: {metrics.get('win_rate', 0):.1%}"
+                )
+
+            # Save periodically
+            if episode % 50 == 0 and episode > 0:
+                os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
+                self.rl_agent.save(self.config.rl_model_path)
+
+        # Final save
+        self.rl_agent.save(self.config.rl_model_path)
+        logger.info(f"Training complete. Model saved to {self.config.rl_model_path}")
+
+    async def stop(self):
+        """Stop the bot gracefully"""
+        logger.info("Stopping JJ-Bot Pro...")
+        self.running = False
+
+        # Close all positions (paper mode only - in live, user decides)
+        if self.config.mode == "paper":
+            for symbol in list(self.positions.keys()):
+                price = self.prices.get(symbol, self.positions[symbol].entry_price)
+                await self._close_position(symbol, price, "shutdown")
+
+        # Cleanup
+        if self.data_feed:
+            await self.data_feed.stop()
+
+        if self.exchange:
+            await self.exchange.disconnect()
+
+        if self.alt_data:
+            await self.alt_data.close()
+
+        # Log final stats
+        self._log_final_stats()
+
+        logger.info("JJ-Bot Pro stopped")
+
+    def _log_final_stats(self):
+        """Log final performance statistics"""
+        runtime = datetime.now() - self.stats["start_time"] if self.stats["start_time"] else timedelta(0)
+        win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
+        return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
+
+        logger.info("=" * 50)
+        logger.info("FINAL STATISTICS")
+        logger.info("=" * 50)
+        logger.info(f"Runtime: {runtime}")
+        logger.info(f"Initial Capital: ${self.config.initial_capital:,.2f}")
+        logger.info(f"Final Equity: ${self.equity:,.2f}")
+        logger.info(f"Total Return: {return_pct:.2f}%")
+        logger.info(f"Total Trades: {self.stats['total_trades']}")
+        logger.info(f"Winning Trades: {self.stats['winning_trades']}")
+        logger.info(f"Win Rate: {win_rate:.1f}%")
+        logger.info(f"Total P&L: ${self.stats['total_pnl']:,.2f}")
+        logger.info(f"Signals Analyzed: {self.stats['signals_analyzed']}")
+        logger.info("=" * 50)
+
+    def run(self):
+        """Run the bot (blocking)"""
+        # Handle shutdown signals
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, lambda: asyncio.create_task(self.stop()))
+            except NotImplementedError:
+                pass  # Windows doesn't support this
+
+        try:
+            loop.run_until_complete(self.start())
+        finally:
+            loop.close()
+
+    def get_status(self) -> Dict:
+        """Get current bot status (for API)"""
+        unrealized = sum(pos.unrealized_pnl for pos in self.positions.values())
+
+        return {
+            "running": self.running,
+            "mode": self.config.mode,
+            "equity": self.equity,
+            "unrealized_pnl": unrealized,
+            "total_equity": self.equity + unrealized,
+            "positions": len(self.positions),
+            "total_trades": self.stats["total_trades"],
+            "winning_trades": self.stats["winning_trades"],
+            "total_pnl": self.stats["total_pnl"],
+            "daily_pnl": self.daily_pnl,
+            "start_time": self.stats["start_time"].isoformat() if self.stats["start_time"] else None,
+        }
+
+    def get_positions(self) -> List[Dict]:
+        """Get open positions (for API)"""
+        return [
+            {
+                "symbol": pos.symbol,
+                "side": pos.side,
+                "entry_price": pos.entry_price,
+                "current_price": self.prices.get(pos.symbol, pos.entry_price),
+                "size": pos.size,
+                "unrealized_pnl": pos.unrealized_pnl,
+                "stop_loss": pos.stop_loss,
+                "take_profit": pos.take_profit,
+                "entry_time": pos.entry_time.isoformat(),
+                "signal_source": pos.signal_source,
+            }
+            for pos in self.positions.values()
+        ]
+
+    def get_trade_history(self, limit: int = 50) -> List[Dict]:
+        """Get trade history (for API)"""
+        return [
+            {
+                "symbol": t.symbol,
+                "side": t.side,
+                "entry_price": t.entry_price,
+                "exit_price": t.exit_price,
+                "size": t.size,
+                "pnl": t.pnl,
+                "pnl_pct": t.pnl_pct,
+                "entry_time": t.entry_time.isoformat(),
+                "exit_time": t.exit_time.isoformat(),
+                "signal_source": t.signal_source,
+                "exit_reason": t.exit_reason,
+            }
+            for t in self.trade_history[-limit:]
+        ]
+
+
+# Simple entry point
+def run_bot(config_path: str = "config/bot_config.json"):
+    """Run the trading bot"""
+    config = BotConfig.load(config_path)
+    bot = JJBotPro(config)
+    bot.run()
+
+
+if __name__ == "__main__":
+    run_bot()
