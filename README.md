@@ -2,13 +2,27 @@
 
 A full-featured cryptocurrency trading bot with paper trading, real-time market data, and a modern web dashboard.
 
-**Platform:** Windows 10/11
-**Status:** ✅ Ready for Production
-**Version:** 2.3.0
+**Platform:** Windows 10/11 | Linux
+**Status:** Production Ready
+**Version:** 2.4.0
 
 ---
 
-## 🚀 Quick Start (Windows)
+## Features at a Glance
+
+| Feature | Status |
+|---------|--------|
+| Real-Time Market Data | WebSocket + REST APIs |
+| Paper Trading | Full simulation with P&L tracking |
+| Web Dashboard | React + Vite (responsive) |
+| Technical Analysis | RSI, MACD, Bollinger Bands, MA |
+| Backtesting | Historical strategy testing |
+| Risk Management | Position sizing, stop-loss, drawdown limits |
+| ML Predictions | Price direction forecasting |
+
+---
+
+## Quick Start (Windows)
 
 ### First Time Setup
 
@@ -353,7 +367,34 @@ For issues or questions:
 
 ---
 
-## 🆕 What's New in v2.3
+## What's New in v2.4.0
+
+### Professional UI/UX Polish
+- **Toast Notifications** - Beautiful, non-blocking notifications replace native alerts
+- **Loading Skeletons** - Professional animated loading states for all data sections
+- **Error Boundaries** - Graceful error handling that doesn't crash the entire app
+- **Confirmation Modals** - Styled dialogs for destructive actions (clear database, etc.)
+- **Empty States** - Helpful UI when there's no data to display
+- **Responsive Design** - Mobile-first CSS with proper breakpoints
+
+### Code Quality Improvements
+- **Standardized API Responses** - Consistent response format across all endpoints
+- **Input Validation** - Pydantic models for request validation
+- **Type Safety** - Better TypeScript-like validation in Python
+
+### Security Hardening
+- **Rate Limiting** - Per-IP and per-endpoint rate limits
+- **CORS Configuration** - Proper origin restrictions for production
+- **Request Logging** - Middleware for monitoring and debugging
+
+### Testing & Reliability
+- **pytest Integration** - Professional test framework configured
+- **API Tests** - Integration tests for all critical endpoints
+- **Async Support** - pytest-asyncio for async endpoint testing
+
+---
+
+## What's New in v2.3.0
 
 ### WebSocket Real-Time Updates
 - Live price updates without polling
