@@ -1,16 +1,14 @@
 """
 JJ-Bot Pro API Endpoints
-Control and monitor the autonomous trading bot
+Control and monitor the autonomous trading bot - runs integrated with API
 """
 
 import os
 import sys
 import json
 import asyncio
-import psutil
-import subprocess
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -38,9 +36,9 @@ class BotConfigUpdate(BaseModel):
     min_signal_confidence: Optional[float] = None
 
 
-# Global bot instance reference
+# Global bot instance - runs in same process as API
 _bot_instance = None
-_bot_process = None
+_bot_task = None
 
 
 def get_config_path():
@@ -66,16 +64,10 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
-def is_bot_running():
-    """Check if JJ-Bot Pro is running"""
-    for proc in psutil.process_iter(['pid', 'cmdline']):
-        try:
-            cmdline = proc.info.get('cmdline')
-            if cmdline and any('jjbot_pro.py' in str(arg) for arg in cmdline):
-                return True, proc.info['pid']
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return False, None
+def get_bot():
+    """Get or create bot instance"""
+    global _bot_instance
+    return _bot_instance
 
 
 # ===== STATUS & INFO =====
@@ -83,15 +75,30 @@ def is_bot_running():
 @router.get("/status")
 async def get_bot_status():
     """Get JJ-Bot Pro status and statistics"""
-    running, pid = is_bot_running()
+    global _bot_instance
+
     config = load_config()
+    bot = get_bot()
 
     status = {
-        "running": running,
-        "pid": pid,
+        "running": bot is not None and bot.running if bot else False,
         "mode": config.get("mode", "paper") if config else "not_configured",
         "configured": config is not None,
+        "integrated": True,  # Running in same process as API
     }
+
+    # Get live stats from running bot
+    if bot and bot.running:
+        status.update({
+            "equity": bot.equity,
+            "positions": len(bot.positions),
+            "total_trades": bot.stats["total_trades"],
+            "winning_trades": bot.stats["winning_trades"],
+            "total_pnl": bot.stats["total_pnl"],
+            "daily_pnl": bot.daily_pnl,
+            "start_time": bot.stats["start_time"].isoformat() if bot.stats["start_time"] else None,
+            "win_rate": (bot.stats["winning_trades"] / max(bot.stats["total_trades"], 1)) * 100,
+        })
 
     if config:
         status["config"] = {
@@ -143,18 +150,17 @@ async def update_bot_config(updates: BotConfigUpdate):
 
 @router.post("/start")
 async def start_bot(mode: Optional[str] = None):
-    """Start JJ-Bot Pro"""
-    global _bot_process
+    """Start JJ-Bot Pro (runs in same process as API)"""
+    global _bot_instance, _bot_task
 
-    running, pid = is_bot_running()
-    if running:
-        return {"status": "already_running", "pid": pid}
+    if _bot_instance and _bot_instance.running:
+        return {"status": "already_running", "message": "Bot is already running"}
 
     config = load_config()
     if not config:
         return {
             "status": "error",
-            "message": "Bot not configured. Run setup wizard first."
+            "message": "Bot not configured. Run setup wizard or use /api/pro/quick-start"
         }
 
     # Override mode if specified
@@ -163,34 +169,24 @@ async def start_bot(mode: Optional[str] = None):
         save_config(config)
 
     try:
-        project_root = os.path.join(os.path.dirname(__file__), '..', '..')
-        bot_script = os.path.join(project_root, 'jjbot_pro.py')
+        # Import and create bot
+        from jjbot_pro import JJBotPro, BotConfig
 
-        import platform
-        if platform.system() == 'Windows':
-            _bot_process = subprocess.Popen(
-                [sys.executable, bot_script],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-                cwd=project_root
-            )
-        else:
-            _bot_process = subprocess.Popen(
-                [sys.executable, bot_script],
-                cwd=project_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
+        bot_config = BotConfig(**config)
+        _bot_instance = JJBotPro(bot_config)
 
-        await asyncio.sleep(1)
+        # Start bot as background task
+        _bot_task = asyncio.create_task(_run_bot(_bot_instance))
 
-        running, pid = is_bot_running()
-        if running:
+        # Wait a moment for initialization
+        await asyncio.sleep(2)
+
+        if _bot_instance.running:
             return {
                 "status": "started",
-                "pid": pid,
                 "mode": config.get("mode", "paper"),
-                "message": f"JJ-Bot Pro started in {config.get('mode', 'paper')} mode"
+                "message": f"JJ-Bot Pro started in {config.get('mode', 'paper')} mode",
+                "integrated": True
             }
         else:
             return {"status": "error", "message": "Bot failed to start. Check logs."}
@@ -199,35 +195,50 @@ async def start_bot(mode: Optional[str] = None):
         return {"status": "error", "message": str(e)}
 
 
+async def _run_bot(bot):
+    """Run bot in background"""
+    try:
+        await bot.start()
+    except asyncio.CancelledError:
+        await bot.stop()
+    except Exception as e:
+        print(f"Bot error: {e}")
+        await bot.stop()
+
+
 @router.post("/stop")
 async def stop_bot():
     """Stop JJ-Bot Pro gracefully"""
-    stopped = False
+    global _bot_instance, _bot_task
 
-    for proc in psutil.process_iter(['pid', 'cmdline']):
-        try:
-            cmdline = proc.info.get('cmdline')
-            if cmdline and any('jjbot_pro.py' in str(arg) for arg in cmdline):
-                proc.terminate()
-                stopped = True
-                # Wait for graceful shutdown
-                try:
-                    proc.wait(timeout=5)
-                except psutil.TimeoutExpired:
-                    proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
+    if not _bot_instance or not _bot_instance.running:
+        return {"status": "not_running", "message": "Bot is not running"}
 
-    if stopped:
+    try:
+        # Stop the bot gracefully
+        await _bot_instance.stop()
+
+        # Cancel the task
+        if _bot_task:
+            _bot_task.cancel()
+            try:
+                await _bot_task
+            except asyncio.CancelledError:
+                pass
+            _bot_task = None
+
         return {"status": "stopped", "message": "JJ-Bot Pro stopped"}
-    return {"status": "not_running", "message": "Bot was not running"}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/train")
 async def start_training(episodes: int = 100):
     """Start RL agent training"""
-    running, pid = is_bot_running()
-    if running:
+    global _bot_instance
+
+    if _bot_instance and _bot_instance.running:
         return {
             "status": "error",
             "message": "Stop the bot before training"
@@ -247,30 +258,45 @@ async def start_training(episodes: int = 100):
 @router.get("/positions")
 async def get_positions():
     """Get current open positions"""
-    # This would connect to the running bot via shared state or API
-    # For now, read from the positions file if it exists
-    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
-    positions_file = os.path.join(project_root, 'data', 'positions.json')
+    global _bot_instance
 
-    if os.path.exists(positions_file):
-        with open(positions_file) as f:
-            return {"positions": json.load(f)}
+    if _bot_instance and _bot_instance.running:
+        return {
+            "positions": _bot_instance.get_positions(),
+            "count": len(_bot_instance.positions)
+        }
 
-    return {"positions": [], "message": "No position data available"}
+    return {"positions": [], "message": "Bot not running"}
 
 
 @router.get("/trades")
 async def get_trade_history(limit: int = 50):
     """Get recent trade history from JJ-Bot Pro"""
-    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
-    trades_file = os.path.join(project_root, 'data', 'pro_trades.json')
+    global _bot_instance
 
-    if os.path.exists(trades_file):
-        with open(trades_file) as f:
-            trades = json.load(f)
-            return {"trades": trades[-limit:], "total": len(trades)}
+    if _bot_instance:
+        return {
+            "trades": _bot_instance.get_trade_history(limit),
+            "total": len(_bot_instance.trade_history)
+        }
 
     return {"trades": [], "message": "No trade history available"}
+
+
+# ===== LIVE PRICES =====
+
+@router.get("/prices")
+async def get_live_prices():
+    """Get current prices from the bot"""
+    global _bot_instance
+
+    if _bot_instance and _bot_instance.running:
+        return {
+            "prices": _bot_instance.prices,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    return {"prices": {}, "message": "Bot not running"}
 
 
 # ===== ALTERNATIVE DATA & EDGE =====
@@ -440,7 +466,7 @@ async def test_exchange_connection():
 
 @router.post("/quick-start")
 async def quick_start_paper():
-    """Quick start paper trading with defaults"""
+    """Quick start paper trading with defaults - no setup needed"""
     config = load_config()
 
     if not config:
