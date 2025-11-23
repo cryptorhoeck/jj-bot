@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
-  // Bot state
+export function TradingTab({ darkMode, API_BASE, learningData }) {
   const [botRunning, setBotRunning] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Configuration state
   const [botConfig, setBotConfig] = useState({
     initial_capital: 10000,
     max_open_positions: 5,
@@ -17,29 +15,17 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     use_take_profit: true
   });
 
-  // Symbols state
   const [botSymbols, setBotSymbols] = useState([]);
   const [newSymbol, setNewSymbol] = useState('');
-  const [availableSymbols] = useState([
-    'BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'DOT', 'LINK', 'MATIC', 'UNI', 'AVAX',
-    'XRP', 'DOGE', 'TRX', 'ATOM', 'LTC', 'BCH', 'XLM', 'ETC', 'WBTC', 'SHIB'
-  ]);
-
-  // Positions state
   const [positions, setPositions] = useState([]);
-
-  // Backtest state
   const [backtestExpanded, setBacktestExpanded] = useState(false);
   const [backtestResults, setBacktestResults] = useState(null);
   const [backtestRunning, setBacktestRunning] = useState(false);
   const [backtestConfig, setBacktestConfig] = useState({
     strategy: 'rsi_strategy',
-    start_date: '',
-    end_date: '',
     symbols: ['BTC', 'ETH']
   });
 
-  // Load bot status
   const checkBotStatus = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/api/simulator/status`);
@@ -50,7 +36,6 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     }
   }, [API_BASE]);
 
-  // Load bot config
   const loadBotConfig = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/api/simulator/config/`);
@@ -73,31 +58,15 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     }
   }, [API_BASE]);
 
-  // Load symbols
   const loadSymbols = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/api/symbols/enabled`);
       const data = await response.json();
       if (data.success && Array.isArray(data.symbols)) {
         setBotSymbols(data.symbols);
-      } else {
-        setBotSymbols([]);
       }
     } catch (error) {
       console.error('Failed to load symbols:', error);
-      setBotSymbols([]);
-    }
-  }, [API_BASE]);
-
-  // Load positions (placeholder - positions feature not implemented yet)
-  const loadPositions = useCallback(async () => {
-    try {
-      // For now, just set empty array since positions endpoint doesn't exist yet
-      // TODO: Implement /api/positions endpoint
-      setPositions([]);
-    } catch (error) {
-      console.error('Failed to load positions:', error);
-      setPositions([]);
     }
   }, [API_BASE]);
 
@@ -105,17 +74,14 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     checkBotStatus();
     loadBotConfig();
     loadSymbols();
-    loadPositions();
 
     const interval = setInterval(() => {
       checkBotStatus();
-      loadPositions();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [checkBotStatus, loadBotConfig, loadSymbols, loadPositions]);
+  }, [checkBotStatus, loadBotConfig, loadSymbols]);
 
-  // Save config (debounced)
   const saveBotConfig = async (config) => {
     try {
       const payload = {
@@ -151,13 +117,10 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     }, 1000);
   };
 
-  // Bot controls
   const startBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/simulator/start`, {
-        method: 'POST'
-      });
+      const response = await fetch(`${API_BASE}/api/simulator/start`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
@@ -181,7 +144,6 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
     setLoading(false);
   };
 
-  // Symbol management
   const handleAddSymbol = async () => {
     const symbol = newSymbol.toUpperCase().trim();
     if (!symbol) return;
@@ -217,12 +179,12 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
         body: JSON.stringify({ symbol, enabled: false })
       });
       setBotSymbols(botSymbols.filter(s => s !== symbol));
+      toast.success(`${symbol} removed`);
     } catch (error) {
       console.error('Failed to remove symbol:', error);
     }
   };
 
-  // Backtest
   const runBacktest = async () => {
     setBacktestRunning(true);
     try {
@@ -233,7 +195,7 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
       });
       const data = await response.json();
       setBacktestResults(data);
-      toast.success('Backtest completed successfully!');
+      toast.success('Backtest completed!');
     } catch (error) {
       toast.error('Backtest failed: ' + error);
     }
@@ -241,61 +203,72 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="space-y-6">
       {/* Bot Status & Control */}
-      <div style={{
-        border: `2px solid ${botRunning ? colors.green : colors.border}`,
-        borderRadius: '0.75rem',
-        padding: '1.5rem',
-        backgroundColor: colors.card
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: colors.text }}>
-              🤖 Trading Bot
-            </h2>
-            <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginTop: '0.25rem' }}>
-              Status: {botRunning ? '🟢 Running' : '🔴 Stopped'}
-            </p>
+      <div className={`card p-6 ${botRunning ? 'card-success' : ''}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${botRunning ? 'bg-success/10' : 'bg-[var(--bg-tertiary)]'}`}>
+              <svg className={`w-7 h-7 ${botRunning ? 'text-success' : 'text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Trading Bot</h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
+                  {botRunning ? 'Running' : 'Stopped'}
+                </span>
+                {learningData?.current_state?.recommended_strategy && (
+                  <span className="badge badge-info">
+                    {learningData.current_state.recommended_strategy}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
+
           <button
             onClick={botRunning ? stopBot : startBot}
             disabled={loading}
-            style={{
-              padding: '0.75rem 2rem',
-              backgroundColor: botRunning ? colors.red : colors.green,
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              fontSize: '1rem',
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.6 : 1
-            }}
+            className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
           >
-            {loading ? '⏳ Loading...' : (botRunning ? '⏹️ Stop Bot' : '▶️ Start Bot')}
+            {loading ? (
+              <div className="spinner w-5 h-5" />
+            ) : botRunning ? (
+              <>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                </svg>
+                Stop Bot
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Start Bot
+              </>
+            )}
           </button>
         </div>
 
-        {/* Current Strategy (from learning system) */}
-        {learningData && learningData.current_state && (
-          <div style={{
-            backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-            padding: '1rem',
-            borderRadius: '0.5rem',
-            marginTop: '1rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* Strategy Info */}
+        {learningData?.current_state && (
+          <div className="mt-4 p-4 rounded-xl bg-[var(--bg-tertiary)]">
+            <div className="flex items-center justify-between">
               <div>
-                <p style={{ fontSize: '0.875rem', color: colors.textMuted }}>Active Strategy</p>
-                <p style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.blue }}>
-                  {learningData.current_state.recommended_strategy || 'rsi_strategy'}
+                <p className="text-xs text-muted uppercase tracking-wide">Active Strategy</p>
+                <p className="text-lg font-semibold text-info">
+                  {learningData.current_state.recommended_strategy || 'RSI Strategy'}
                 </p>
               </div>
               {learningData.current_state.confidence && (
-                <div>
-                  <p style={{ fontSize: '0.875rem', color: colors.textMuted }}>Confidence</p>
-                  <p style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.green }}>
+                <div className="text-right">
+                  <p className="text-xs text-muted uppercase tracking-wide">Confidence</p>
+                  <p className="text-lg font-semibold text-success">
                     {(learningData.current_state.confidence * 100).toFixed(0)}%
                   </p>
                 </div>
@@ -306,291 +279,217 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
       </div>
 
       {/* Configuration */}
-      <div style={{
-        border: `2px solid ${colors.border}`,
-        borderRadius: '0.75rem',
-        padding: '1.5rem',
-        backgroundColor: colors.card
-      }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-          ⚙️ Configuration
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Configuration
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-          {/* Initial Capital */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-              Initial Capital ($)
-            </label>
+            <label className="input-label">Initial Capital ($)</label>
             <input
               type="number"
               value={botConfig.initial_capital}
               onChange={(e) => updateConfig('initial_capital', parseFloat(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                color: colors.text,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem'
-              }}
+              className="input"
             />
           </div>
 
-          {/* Max Positions */}
           <div>
-            <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-              Max Open Positions
-            </label>
+            <label className="input-label">Max Open Positions</label>
             <input
               type="number"
               value={botConfig.max_open_positions}
               onChange={(e) => updateConfig('max_open_positions', parseInt(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                color: colors.text,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem'
-              }}
+              className="input"
             />
           </div>
 
-          {/* Position Size */}
           <div>
-            <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-              Position Size (% of capital)
-            </label>
+            <label className="input-label">Position Size (%)</label>
             <input
               type="number"
-              step="0.01"
+              step="1"
               value={(botConfig.position_size_pct * 100).toFixed(0)}
               onChange={(e) => updateConfig('position_size_pct', parseFloat(e.target.value) / 100)}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                color: colors.text,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem'
-              }}
+              className="input"
             />
           </div>
 
-          {/* Stop Loss */}
           <div>
-            <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-              Stop Loss (%)
-            </label>
+            <label className="input-label">Stop Loss (%)</label>
             <input
               type="number"
               step="0.1"
               value={(botConfig.stop_loss_pct * 100).toFixed(1)}
               onChange={(e) => updateConfig('stop_loss_pct', parseFloat(e.target.value) / 100)}
               disabled={!botConfig.use_stop_loss}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                color: colors.text,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem',
-                opacity: botConfig.use_stop_loss ? 1 : 0.5
-              }}
+              className={`input ${!botConfig.use_stop_loss ? 'opacity-50' : ''}`}
             />
           </div>
 
-          {/* Take Profit */}
           <div>
-            <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-              Take Profit (%)
-            </label>
+            <label className="input-label">Take Profit (%)</label>
             <input
               type="number"
               step="0.1"
               value={(botConfig.take_profit_pct * 100).toFixed(1)}
               onChange={(e) => updateConfig('take_profit_pct', parseFloat(e.target.value) / 100)}
               disabled={!botConfig.use_take_profit}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                color: colors.text,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '0.375rem',
-                opacity: botConfig.use_take_profit ? 1 : 0.5
-              }}
+              className={`input ${!botConfig.use_take_profit ? 'opacity-50' : ''}`}
             />
           </div>
         </div>
 
         {/* Checkboxes */}
-        <div style={{ display: 'flex', gap: '2rem', marginTop: '1rem' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+        <div className="flex flex-wrap gap-6 mt-4 pt-4 border-t border-[var(--border-color)]">
+          <label className="flex items-center gap-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={botConfig.use_stop_loss}
               onChange={(e) => updateConfig('use_stop_loss', e.target.checked)}
+              className="w-5 h-5 rounded border-2 border-[var(--border-color)] text-info focus:ring-info"
             />
-            <span style={{ color: colors.text }}>Use Stop Loss</span>
+            <span className="text-sm font-medium group-hover:text-info transition-colors">Use Stop Loss</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+          <label className="flex items-center gap-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={botConfig.use_take_profit}
               onChange={(e) => updateConfig('use_take_profit', e.target.checked)}
+              className="w-5 h-5 rounded border-2 border-[var(--border-color)] text-info focus:ring-info"
             />
-            <span style={{ color: colors.text }}>Use Take Profit</span>
+            <span className="text-sm font-medium group-hover:text-info transition-colors">Use Take Profit</span>
           </label>
         </div>
       </div>
 
-      {/* Symbols */}
-      <div style={{
-        border: `2px solid ${colors.border}`,
-        borderRadius: '0.75rem',
-        padding: '1.5rem',
-        backgroundColor: colors.card
-      }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-          📊 Trading Symbols ({botSymbols.length})
+      {/* Trading Symbols */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          </svg>
+          Trading Symbols
+          <span className="badge badge-info ml-2">{botSymbols.length} active</span>
         </h3>
 
-        {/* Add symbol */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+        {/* Add Symbol */}
+        <div className="flex gap-2 mb-4">
           <input
             type="text"
             placeholder="Add symbol (e.g., BTC)"
             value={newSymbol}
             onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
             onKeyPress={(e) => e.key === 'Enter' && handleAddSymbol()}
-            style={{
-              flex: 1,
-              padding: '0.5rem',
-              backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-              color: colors.text,
-              border: `1px solid ${colors.border}`,
-              borderRadius: '0.375rem'
-            }}
+            className="input flex-1"
           />
-          <button
-            onClick={handleAddSymbol}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: colors.blue,
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.375rem',
-              cursor: 'pointer',
-              fontWeight: '500'
-            }}
-          >
-            + Add
+          <button onClick={handleAddSymbol} className="btn btn-primary">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add
           </button>
         </div>
 
-        {/* Symbol list */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        {/* Symbol Tags */}
+        <div className="flex flex-wrap gap-2">
           {botSymbols.map(symbol => (
             <div
               key={symbol}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.5rem 0.75rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                borderRadius: '0.375rem',
-                border: `1px solid ${colors.border}`
-              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] group hover:border-danger transition-colors"
             >
-              <span style={{ color: colors.text, fontWeight: '500' }}>{symbol}</span>
+              <span className="font-semibold">{symbol}</span>
               <button
                 onClick={() => removeSymbol(symbol)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: colors.red,
-                  cursor: 'pointer',
-                  padding: '0',
-                  fontSize: '1rem'
-                }}
+                className="text-muted hover:text-danger transition-colors"
               >
-                ×
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           ))}
+          {botSymbols.length === 0 && (
+            <p className="text-muted text-sm">No symbols added yet. Add symbols to start trading.</p>
+          )}
         </div>
       </div>
 
-      {/* Learning System Performance */}
-      {learningData && learningData.top_strategies && learningData.top_strategies.length > 0 && (
-        <div style={{
-          border: `2px solid ${colors.border}`,
-          borderRadius: '0.75rem',
-          padding: '1.5rem',
-          backgroundColor: colors.card
-        }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-            🧠 Strategy Performance (Last 24h)
+      {/* Strategy Performance */}
+      {learningData?.top_strategies?.length > 0 && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            Strategy Performance (24h)
           </h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {learningData.top_strategies.slice(0, 6).map((strat, idx) => (
               <div
                 key={strat.name}
-                style={{
-                  padding: '1rem',
-                  backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                  borderRadius: '0.5rem',
-                  border: strat.name === learningData.current_state?.recommended_strategy
-                    ? `2px solid ${colors.blue}`
-                    : `1px solid ${colors.border}`
-                }}
+                className={`p-4 rounded-xl bg-[var(--bg-tertiary)] border ${
+                  strat.name === learningData.current_state?.recommended_strategy
+                    ? 'border-info'
+                    : 'border-[var(--border-color)]'
+                }`}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <p style={{ fontSize: '0.875rem', fontWeight: '600', color: colors.text }}>
-                    {idx === 0 && '🥇 '}
-                    {idx === 1 && '🥈 '}
-                    {idx === 2 && '🥉 '}
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-semibold flex items-center gap-2">
+                    {idx === 0 && <span className="text-yellow-500">1st</span>}
+                    {idx === 1 && <span className="text-gray-400">2nd</span>}
+                    {idx === 2 && <span className="text-amber-600">3rd</span>}
                     {strat.name}
                   </p>
+                  {strat.name === learningData.current_state?.recommended_strategy && (
+                    <span className="badge badge-info text-xs">Active</span>
+                  )}
                 </div>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
-                  <p style={{ color: colors.textMuted }}>
-                    Win Rate: <span style={{ color: colors.text, fontWeight: '600' }}>
-                      {(strat.win_rate * 100).toFixed(0)}%
-                    </span>
-                  </p>
-                  <p style={{ color: colors.textMuted }}>
-                    P&L: <span style={{ color: strat.total_pnl >= 0 ? colors.green : colors.red, fontWeight: '600' }}>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted">Win Rate</span>
+                    <span className="font-semibold">{(strat.win_rate * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">P&L</span>
+                    <span className={`font-semibold ${strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
                       ${strat.total_pnl.toFixed(2)}
                     </span>
-                  </p>
-                  <p style={{ color: colors.textMuted }}>
-                    Trades: <span style={{ color: colors.text }}>{strat.trade_count}</span>
-                  </p>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Trades</span>
+                    <span>{strat.trade_count}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Learning insights */}
-          {learningData.insights && learningData.insights.length > 0 && (
-            <div style={{ marginTop: '1rem' }}>
+          {/* Learning Insights */}
+          {learningData.insights?.length > 0 && (
+            <div className="mt-4 space-y-2">
               {learningData.insights.map((insight, idx) => (
                 <div
                   key={idx}
-                  style={{
-                    padding: '0.75rem',
-                    backgroundColor: insight.type === 'suggestion' ? `${colors.blue}20` : `${colors.yellow}20`,
-                    borderRadius: '0.375rem',
-                    marginBottom: '0.5rem'
-                  }}
+                  className={`p-3 rounded-lg ${insight.type === 'suggestion' ? 'bg-info/10' : 'bg-warning/10'}`}
                 >
-                  <p style={{ fontSize: '0.875rem', color: colors.text }}>
-                    {insight.type === 'suggestion' ? '💡' : 'ℹ️'} {insight.message}
+                  <p className="text-sm flex items-center gap-2">
+                    {insight.type === 'suggestion' ? (
+                      <svg className="w-4 h-4 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )}
+                    {insight.message}
                   </p>
                 </div>
               ))}
@@ -599,108 +498,37 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
         </div>
       )}
 
-      {/* Current Positions */}
-      <div style={{
-        border: `2px solid ${colors.border}`,
-        borderRadius: '0.75rem',
-        padding: '1.5rem',
-        backgroundColor: colors.card
-      }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-          📈 Open Positions ({positions.length})
-        </h3>
-
-        {positions.length > 0 ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Symbol</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Side</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Entry</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Current</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>P&L</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem', color: colors.textMuted }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((pos, idx) => (
-                  <tr key={idx} style={{ borderBottom: `1px solid ${colors.border}` }}>
-                    <td style={{ padding: '0.5rem', color: colors.text, fontWeight: '600' }}>{pos.symbol}</td>
-                    <td style={{ padding: '0.5rem', color: pos.side === 'LONG' ? colors.green : colors.red }}>
-                      {pos.side}
-                    </td>
-                    <td style={{ padding: '0.5rem', color: colors.text }}>${pos.entry_price?.toFixed(2)}</td>
-                    <td style={{ padding: '0.5rem', color: colors.text }}>${pos.current_price?.toFixed(2)}</td>
-                    <td style={{
-                      padding: '0.5rem',
-                      color: pos.unrealized_pnl >= 0 ? colors.green : colors.red,
-                      fontWeight: '600'
-                    }}>
-                      ${pos.unrealized_pnl?.toFixed(2)}
-                    </td>
-                    <td style={{ padding: '0.5rem', color: colors.textMuted, fontSize: '0.875rem' }}>
-                      {pos.status || 'OPEN'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p style={{ color: colors.textMuted, textAlign: 'center', padding: '2rem' }}>
-            No open positions. Start the bot to begin trading.
-          </p>
-        )}
-      </div>
-
-      {/* Backtest (Collapsible) */}
-      <div style={{
-        border: `2px solid ${colors.border}`,
-        borderRadius: '0.75rem',
-        padding: '1.5rem',
-        backgroundColor: colors.card
-      }}>
-        <div
+      {/* Backtest Section */}
+      <div className="card">
+        <button
           onClick={() => setBacktestExpanded(!backtestExpanded)}
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer'
-          }}
+          className="w-full p-6 flex items-center justify-between text-left"
         >
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: colors.text }}>
-            📊 Backtest (Optional)
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Backtest
+            <span className="badge badge-info text-xs ml-2">Optional</span>
           </h3>
-          <span style={{ fontSize: '1.5rem', color: colors.text }}>
-            {backtestExpanded ? '▼' : '▶'}
-          </span>
-        </div>
+          <svg className={`w-5 h-5 transition-transform ${backtestExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
         {backtestExpanded && (
-          <div style={{ marginTop: '1rem' }}>
-            <p style={{ fontSize: '0.875rem', color: colors.textMuted, marginBottom: '1rem' }}>
+          <div className="px-6 pb-6 border-t border-[var(--border-color)]">
+            <p className="text-sm text-muted mt-4 mb-4">
               Test strategies on historical data before going live
             </p>
 
-            {/* Backtest config */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label style={{ fontSize: '0.875rem', color: colors.textMuted, display: 'block', marginBottom: '0.5rem' }}>
-                  Strategy
-                </label>
+                <label className="input-label">Strategy</label>
                 <select
                   value={backtestConfig.strategy}
                   onChange={(e) => setBacktestConfig({ ...backtestConfig, strategy: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                    color: colors.text,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '0.375rem'
-                  }}
+                  className="input"
                 >
                   <option value="rsi_strategy">RSI Strategy</option>
                   <option value="momentum">Momentum</option>
@@ -713,31 +541,38 @@ export function TradingTab({ colors, darkMode, API_BASE, learningData }) {
             <button
               onClick={runBacktest}
               disabled={backtestRunning}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: colors.blue,
-                color: 'white',
-                border: 'none',
-                borderRadius: '0.375rem',
-                cursor: backtestRunning ? 'not-allowed' : 'pointer',
-                opacity: backtestRunning ? 0.6 : 1
-              }}
+              className="btn btn-primary"
             >
-              {backtestRunning ? '⏳ Running...' : '▶️ Run Backtest'}
+              {backtestRunning ? (
+                <>
+                  <div className="spinner w-4 h-4" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  </svg>
+                  Run Backtest
+                </>
+              )}
             </button>
 
             {backtestResults && (
-              <div style={{
-                marginTop: '1rem',
-                padding: '1rem',
-                backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                borderRadius: '0.5rem'
-              }}>
-                <p style={{ color: colors.text, fontWeight: '600', marginBottom: '0.5rem' }}>Results:</p>
-                <p style={{ color: colors.textMuted }}>Win Rate: {backtestResults.win_rate?.toFixed(1)}%</p>
-                <p style={{ color: backtestResults.total_pnl >= 0 ? colors.green : colors.red }}>
-                  Total P&L: ${backtestResults.total_pnl?.toFixed(2)}
-                </p>
+              <div className="mt-4 p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                <p className="font-semibold mb-2">Results</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted">Win Rate</p>
+                    <p className="font-semibold">{backtestResults.win_rate?.toFixed(1)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted">Total P&L</p>
+                    <p className={`font-semibold ${backtestResults.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                      ${backtestResults.total_pnl?.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </div>

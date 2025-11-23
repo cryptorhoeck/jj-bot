@@ -2,108 +2,55 @@ import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { ConfirmModal } from './components';
 
-export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
+export function DataTab({ darkMode, API_BASE, trades, summary }) {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [viewMode, setViewMode] = useState('trades'); // 'trades' or 'analytics'
+  const [viewMode, setViewMode] = useState('trades');
 
-  // Calculate real analytics from trades
   const analytics = useMemo(() => {
-    if (!trades || trades.length === 0) {
-      return null;
-    }
+    if (!trades || trades.length === 0) return null;
 
-    // Performance by symbol
     const bySymbol = {};
     trades.forEach(trade => {
       if (!bySymbol[trade.symbol]) {
-        bySymbol[trade.symbol] = {
-          trades: 0,
-          wins: 0,
-          losses: 0,
-          totalPnL: 0
-        };
+        bySymbol[trade.symbol] = { trades: 0, wins: 0, losses: 0, totalPnL: 0 };
       }
       bySymbol[trade.symbol].trades++;
       bySymbol[trade.symbol].totalPnL += trade.pnl || 0;
-      if (trade.pnl >= 0) {
-        bySymbol[trade.symbol].wins++;
-      } else {
-        bySymbol[trade.symbol].losses++;
-      }
+      if (trade.pnl >= 0) bySymbol[trade.symbol].wins++;
+      else bySymbol[trade.symbol].losses++;
     });
 
     const symbolStats = Object.entries(bySymbol).map(([symbol, stats]) => ({
-      symbol,
-      ...stats,
+      symbol, ...stats,
       winRate: (stats.wins / stats.trades) * 100,
       avgPnL: stats.totalPnL / stats.trades
     })).sort((a, b) => b.totalPnL - a.totalPnL);
 
-    // Performance by strategy
     const byStrategy = {};
     trades.forEach(trade => {
       const strategy = trade.strategy || 'unknown';
       if (!byStrategy[strategy]) {
-        byStrategy[strategy] = {
-          trades: 0,
-          wins: 0,
-          losses: 0,
-          totalPnL: 0
-        };
+        byStrategy[strategy] = { trades: 0, wins: 0, losses: 0, totalPnL: 0 };
       }
       byStrategy[strategy].trades++;
       byStrategy[strategy].totalPnL += trade.pnl || 0;
-      if (trade.pnl >= 0) {
-        byStrategy[strategy].wins++;
-      } else {
-        byStrategy[strategy].losses++;
-      }
+      if (trade.pnl >= 0) byStrategy[strategy].wins++;
+      else byStrategy[strategy].losses++;
     });
 
     const strategyStats = Object.entries(byStrategy).map(([strategy, stats]) => ({
-      strategy,
-      ...stats,
+      strategy, ...stats,
       winRate: (stats.wins / stats.trades) * 100,
       avgPnL: stats.totalPnL / stats.trades
     })).sort((a, b) => b.totalPnL - a.totalPnL);
 
-    // Performance by hour
-    const byHour = {};
-    for (let i = 0; i < 24; i++) {
-      byHour[i] = { trades: 0, totalPnL: 0, wins: 0 };
-    }
-    trades.forEach(trade => {
-      const hour = new Date(trade.timestamp).getHours();
-      byHour[hour].trades++;
-      byHour[hour].totalPnL += trade.pnl || 0;
-      if (trade.pnl >= 0) byHour[hour].wins++;
-    });
-
-    const hourStats = Object.entries(byHour)
-      .filter(([_, stats]) => stats.trades > 0)
-      .map(([hour, stats]) => ({
-        hour: parseInt(hour),
-        ...stats,
-        winRate: (stats.wins / stats.trades) * 100,
-        avgPnL: stats.totalPnL / stats.trades
-      }))
-      .sort((a, b) => b.totalPnL - a.totalPnL);
-
-    // Best/worst trades
     const sortedByPnL = [...trades].sort((a, b) => b.pnl - a.pnl);
     const bestTrades = sortedByPnL.slice(0, 5);
     const worstTrades = sortedByPnL.slice(-5).reverse();
 
-    return {
-      symbolStats,
-      strategyStats,
-      hourStats,
-      bestTrades,
-      worstTrades
-    };
+    return { symbolStats, strategyStats, bestTrades, worstTrades };
   }, [trades]);
 
-  // Data management functions
   const exportCSV = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/data/export`);
@@ -118,21 +65,17 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
       window.URL.revokeObjectURL(url);
       toast.success('CSV exported successfully!');
     } catch (error) {
-      toast.error('Error exporting data: ' + error);
+      toast.error('Export failed');
     }
-  };
-
-  const clearDatabase = () => {
-    setConfirmModalOpen(true);
   };
 
   const handleClearDatabaseConfirm = async () => {
     try {
       await fetch(`${API_BASE}/api/data/clear`, { method: 'POST' });
-      toast.success('Database cleared and backed up!');
+      toast.success('Database cleared!');
       window.location.reload();
     } catch (error) {
-      toast.error('Error clearing database: ' + error);
+      toast.error('Error clearing database');
     }
   };
 
@@ -140,48 +83,35 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
     try {
       const response = await fetch(`${API_BASE}/api/data/archive`, { method: 'POST' });
       const data = await response.json();
-      toast.success(data.message || 'Data archived successfully!');
+      toast.success(data.message || 'Data archived!');
     } catch (error) {
-      toast.error('Error archiving data: ' + error);
+      toast.error('Archive failed');
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* Header with view toggle */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: '700', color: colors.text }}>
-          📊 Data & Analytics
-        </h1>
-
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl font-bold">Data & Analytics</h1>
+        <div className="nav-tabs">
           <button
             onClick={() => setViewMode('trades')}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: viewMode === 'trades' ? colors.blue : colors.card,
-              color: viewMode === 'trades' ? 'white' : colors.text,
-              border: `2px solid ${viewMode === 'trades' ? colors.blue : colors.border}`,
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
+            className={`nav-tab ${viewMode === 'trades' ? 'active' : ''}`}
           >
-            📋 Trades
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span>Trades</span>
           </button>
           <button
             onClick={() => setViewMode('analytics')}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: viewMode === 'analytics' ? colors.blue : colors.card,
-              color: viewMode === 'analytics' ? 'white' : colors.text,
-              border: `2px solid ${viewMode === 'analytics' ? colors.blue : colors.border}`,
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
+            className={`nav-tab ${viewMode === 'analytics' ? 'active' : ''}`}
           >
-            📈 Analytics
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span>Analytics</span>
           </button>
         </div>
       </div>
@@ -190,147 +120,108 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
       {viewMode === 'trades' && (
         <>
           {/* Data Management */}
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.75rem',
-            padding: '1.5rem',
-            border: `2px solid ${colors.border}`
-          }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              💾 Data Management
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+              </svg>
+              Data Management
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-              <button
-                onClick={exportCSV}
-                style={{
-                  padding: '1rem',
-                  backgroundColor: colors.blue,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '1rem'
-                }}
-              >
-                📥 Export CSV
+            <div className="grid sm:grid-cols-3 gap-4 mb-4">
+              <button onClick={exportCSV} className="btn btn-primary">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export CSV
               </button>
-              <button
-                onClick={archiveData}
-                style={{
-                  padding: '1rem',
-                  backgroundColor: colors.yellow,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '1rem'
-                }}
-              >
-                📦 Archive
+              <button onClick={archiveData} className="btn btn-secondary">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                Archive
               </button>
-              <button
-                onClick={clearDatabase}
-                style={{
-                  padding: '1rem',
-                  backgroundColor: colors.red,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '1rem'
-                }}
-              >
-                🗑️ Clear Database
+              <button onClick={() => setConfirmModalOpen(true)} className="btn btn-danger">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Clear Database
               </button>
             </div>
 
-            <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb', borderRadius: '0.5rem' }}>
-              <p style={{ fontSize: '0.875rem', color: colors.textMuted }}>
-                Total Trades: <strong style={{ color: colors.text }}>{summary.total_trades}</strong> |
-                Total P&L: <strong style={{ color: summary.total_pnl >= 0 ? colors.green : colors.red }}>${summary.total_pnl?.toFixed(2)}</strong> |
-                Win Rate: <strong style={{ color: colors.text }}>{summary.win_rate?.toFixed(1)}%</strong>
-              </p>
+            {/* Stats Summary */}
+            <div className="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-muted uppercase tracking-wide">Total Trades</p>
+                  <p className="text-xl font-bold">{summary.total_trades || 0}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted uppercase tracking-wide">Total P&L</p>
+                  <p className={`text-xl font-bold ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${summary.total_pnl?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted uppercase tracking-wide">Win Rate</p>
+                  <p className="text-xl font-bold">{summary.win_rate?.toFixed(1) || '0'}%</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Trade History Table */}
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.75rem',
-            padding: '1.5rem',
-            border: `2px solid ${colors.border}`
-          }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              📋 Trade History ({trades.length})
+          {/* Trade History */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Trade History
+              <span className="badge badge-info ml-2">{trades.length} trades</span>
             </h3>
 
             {trades.length > 0 ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="table-container">
+                <table className="table">
                   <thead>
-                    <tr style={{ borderBottom: `2px solid ${colors.border}` }}>
-                      <th style={{ textAlign: 'left', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>Time</th>
-                      <th style={{ textAlign: 'left', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>Symbol</th>
-                      <th style={{ textAlign: 'left', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>Signal</th>
-                      <th style={{ textAlign: 'right', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>Price</th>
-                      <th style={{ textAlign: 'right', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>P&L</th>
-                      <th style={{ textAlign: 'left', padding: '0.75rem', color: colors.textMuted, fontWeight: '600' }}>Strategy</th>
+                    <tr>
+                      <th>Time</th>
+                      <th>Symbol</th>
+                      <th>Signal</th>
+                      <th className="text-right">Price</th>
+                      <th className="text-right">P&L</th>
+                      <th>Strategy</th>
                     </tr>
                   </thead>
                   <tbody>
                     {trades.map((trade, idx) => (
-                      <tr
-                        key={idx}
-                        style={{
-                          borderBottom: `1px solid ${colors.border}`,
-                          backgroundColor: idx % 2 === 0 ? 'transparent' : (darkMode ? '#1a1a1a' : '#f9fafb')
-                        }}
-                      >
-                        <td style={{ padding: '0.75rem', color: colors.text, fontSize: '0.875rem' }}>
-                          {new Date(trade.timestamp).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '0.75rem', color: colors.text, fontWeight: '600' }}>
-                          {trade.symbol}
-                        </td>
-                        <td style={{ padding: '0.75rem' }}>
-                          <span style={{
-                            padding: '0.25rem 0.75rem',
-                            borderRadius: '0.25rem',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            backgroundColor: trade.signal === 'BUY' ? `${colors.green}20` : `${colors.red}20`,
-                            color: trade.signal === 'BUY' ? colors.green : colors.red
-                          }}>
+                      <tr key={idx}>
+                        <td className="text-muted text-sm">{new Date(trade.timestamp).toLocaleString()}</td>
+                        <td className="font-semibold">{trade.symbol}</td>
+                        <td>
+                          <span className={`badge ${trade.signal === 'BUY' ? 'badge-success' : 'badge-danger'}`}>
                             {trade.signal}
                           </span>
                         </td>
-                        <td style={{ padding: '0.75rem', color: colors.text, textAlign: 'right', fontSize: '0.875rem' }}>
-                          ${parseFloat(trade.last_price).toFixed(2)}
+                        <td className="text-right text-muted">${parseFloat(trade.last_price).toFixed(2)}</td>
+                        <td className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                          {trade.pnl >= 0 ? '+' : ''}${trade.pnl?.toFixed(2)}
                         </td>
-                        <td style={{
-                          padding: '0.75rem',
-                          textAlign: 'right',
-                          color: trade.pnl >= 0 ? colors.green : colors.red,
-                          fontWeight: '700'
-                        }}>
-                          ${trade.pnl?.toFixed(2)}
-                        </td>
-                        <td style={{ padding: '0.75rem', color: colors.textMuted, fontSize: '0.875rem' }}>
-                          {trade.strategy || 'N/A'}
-                        </td>
+                        <td className="text-muted text-sm">{trade.strategy || 'N/A'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <p style={{ color: colors.textMuted, textAlign: 'center', padding: '3rem' }}>
-                No trades yet. Start the bot to generate trades.
-              </p>
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
+                  <svg className="w-8 h-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <p className="text-muted">No trades yet. Start the bot to generate trades.</p>
+              </div>
             )}
           </div>
         </>
@@ -340,47 +231,42 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
       {viewMode === 'analytics' && analytics && (
         <>
           {/* Performance by Symbol */}
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.75rem',
-            padding: '1.5rem',
-            border: `2px solid ${colors.border}`
-          }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              📊 Performance by Symbol
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+              Performance by Symbol
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-              {analytics.symbolStats.map(stat => (
-                <div
-                  key={stat.symbol}
-                  style={{
-                    padding: '1rem',
-                    backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                    borderRadius: '0.5rem',
-                    border: `1px solid ${colors.border}`
-                  }}
-                >
-                  <p style={{ fontSize: '1.25rem', fontWeight: '700', color: colors.text, marginBottom: '0.5rem' }}>
-                    {stat.symbol}
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem' }}>
-                    <p style={{ color: colors.textMuted }}>
-                      Trades: <strong style={{ color: colors.text }}>{stat.trades}</strong>
-                    </p>
-                    <p style={{ color: colors.textMuted }}>
-                      Win Rate: <strong style={{ color: colors.text }}>{stat.winRate.toFixed(1)}%</strong>
-                    </p>
-                    <p style={{ color: colors.textMuted }}>
-                      Total P&L: <strong style={{ color: stat.totalPnL >= 0 ? colors.green : colors.red }}>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {analytics.symbolStats.map((stat, idx) => (
+                <div key={stat.symbol} className={`stat-card ${stat.totalPnL >= 0 ? 'success' : 'danger'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-lg font-bold">{stat.symbol}</p>
+                    {idx === 0 && <span className="badge badge-success">Top</span>}
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted">Trades</span>
+                      <span className="font-semibold">{stat.trades}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Win Rate</span>
+                      <span className="font-semibold">{stat.winRate.toFixed(1)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Total P&L</span>
+                      <span className={`font-semibold ${stat.totalPnL >= 0 ? 'text-success' : 'text-danger'}`}>
                         ${stat.totalPnL.toFixed(2)}
-                      </strong>
-                    </p>
-                    <p style={{ color: colors.textMuted }}>
-                      Avg P&L: <strong style={{ color: stat.avgPnL >= 0 ? colors.green : colors.red }}>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Avg P&L</span>
+                      <span className={`font-semibold ${stat.avgPnL >= 0 ? 'text-success' : 'text-danger'}`}>
                         ${stat.avgPnL.toFixed(2)}
-                      </strong>
-                    </p>
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -388,196 +274,112 @@ export function DataTab({ colors, darkMode, API_BASE, trades, summary }) {
           </div>
 
           {/* Performance by Strategy */}
-          <div style={{
-            backgroundColor: colors.card,
-            borderRadius: '0.75rem',
-            padding: '1.5rem',
-            border: `2px solid ${colors.border}`
-          }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-              🧠 Performance by Strategy
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Performance by Strategy
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {analytics.strategyStats.map((stat, idx) => (
-                <div
-                  key={stat.strategy}
-                  style={{
-                    padding: '1rem',
-                    backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                    borderRadius: '0.5rem',
-                    border: `1px solid ${colors.border}`
-                  }}
-                >
-                  <p style={{ fontSize: '1rem', fontWeight: '600', color: colors.text, marginBottom: '0.5rem' }}>
-                    {idx < 3 && ['🥇', '🥈', '🥉'][idx]} {stat.strategy}
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem' }}>
-                    <p style={{ color: colors.textMuted }}>
-                      Trades: <strong style={{ color: colors.text }}>{stat.trades}</strong>
+                <div key={stat.strategy} className={`stat-card ${stat.totalPnL >= 0 ? 'success' : 'danger'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-semibold flex items-center gap-2">
+                      {idx === 0 && <span className="text-yellow-500">1st</span>}
+                      {idx === 1 && <span className="text-gray-400">2nd</span>}
+                      {idx === 2 && <span className="text-amber-600">3rd</span>}
+                      {stat.strategy}
                     </p>
-                    <p style={{ color: colors.textMuted }}>
-                      Win Rate: <strong style={{ color: colors.text }}>{stat.winRate.toFixed(1)}%</strong>
-                    </p>
-                    <p style={{ color: colors.textMuted }}>
-                      Total P&L: <strong style={{ color: stat.totalPnL >= 0 ? colors.green : colors.red }}>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted">Trades</span>
+                      <span className="font-semibold">{stat.trades}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Win Rate</span>
+                      <span className="font-semibold">{stat.winRate.toFixed(1)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Total P&L</span>
+                      <span className={`font-semibold ${stat.totalPnL >= 0 ? 'text-success' : 'text-danger'}`}>
                         ${stat.totalPnL.toFixed(2)}
-                      </strong>
-                    </p>
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Best/Worst Trades */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+          {/* Best & Worst Trades */}
+          <div className="grid lg:grid-cols-2 gap-6">
             {/* Best Trades */}
-            <div style={{
-              backgroundColor: colors.card,
-              borderRadius: '0.75rem',
-              padding: '1.5rem',
-              border: `2px solid ${colors.green}`
-            }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-                🎯 Best Trades
+            <div className="card card-success p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Best Trades
               </h3>
 
-              {analytics.bestTrades.map((trade, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: '0.75rem',
-                    backgroundColor: `${colors.green}10`,
-                    borderRadius: '0.5rem',
-                    marginBottom: '0.5rem',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}
-                >
-                  <div>
-                    <p style={{ fontSize: '1rem', fontWeight: '600', color: colors.text }}>
-                      {trade.symbol} {trade.signal}
-                    </p>
-                    <p style={{ fontSize: '0.75rem', color: colors.textMuted }}>
-                      {new Date(trade.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  <p style={{ fontSize: '1.25rem', fontWeight: '700', color: colors.green }}>
-                    +${trade.pnl.toFixed(2)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* Worst Trades */}
-            <div style={{
-              backgroundColor: colors.card,
-              borderRadius: '0.75rem',
-              padding: '1.5rem',
-              border: `2px solid ${colors.red}`
-            }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-                ⚠️ Worst Trades
-              </h3>
-
-              {analytics.worstTrades.map((trade, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: '0.75rem',
-                    backgroundColor: `${colors.red}10`,
-                    borderRadius: '0.5rem',
-                    marginBottom: '0.5rem',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}
-                >
-                  <div>
-                    <p style={{ fontSize: '1rem', fontWeight: '600', color: colors.text }}>
-                      {trade.symbol} {trade.signal}
-                    </p>
-                    <p style={{ fontSize: '0.75rem', color: colors.textMuted }}>
-                      {new Date(trade.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  <p style={{ fontSize: '1.25rem', fontWeight: '700', color: colors.red }}>
-                    ${trade.pnl.toFixed(2)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Performance by Time */}
-          {analytics.hourStats.length > 0 && (
-            <div style={{
-              backgroundColor: colors.card,
-              borderRadius: '0.75rem',
-              padding: '1.5rem',
-              border: `2px solid ${colors.border}`
-            }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: colors.text }}>
-                🕐 Best Trading Hours
-              </h3>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.5rem' }}>
-                {analytics.hourStats.slice(0, 12).map(stat => (
-                  <div
-                    key={stat.hour}
-                    style={{
-                      padding: '0.75rem',
-                      backgroundColor: darkMode ? '#1a1a1a' : '#f9fafb',
-                      borderRadius: '0.375rem',
-                      border: `1px solid ${colors.border}`,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <p style={{ fontSize: '1rem', fontWeight: '600', color: colors.text }}>
-                      {stat.hour}:00
-                    </p>
-                    <p style={{ fontSize: '0.75rem', color: colors.textMuted }}>
-                      {stat.trades} trades
-                    </p>
-                    <p style={{
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: stat.totalPnL >= 0 ? colors.green : colors.red
-                    }}>
-                      ${stat.totalPnL.toFixed(0)}
-                    </p>
+              <div className="space-y-3">
+                {analytics.bestTrades.map((trade, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-success/10">
+                    <div>
+                      <p className="font-semibold">{trade.symbol} {trade.signal}</p>
+                      <p className="text-xs text-muted">{new Date(trade.timestamp).toLocaleString()}</p>
+                    </div>
+                    <p className="text-lg font-bold text-success">+${trade.pnl.toFixed(2)}</p>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+
+            {/* Worst Trades */}
+            <div className="card card-danger p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Worst Trades
+              </h3>
+
+              <div className="space-y-3">
+                {analytics.worstTrades.map((trade, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-danger/10">
+                    <div>
+                      <p className="font-semibold">{trade.symbol} {trade.signal}</p>
+                      <p className="text-xs text-muted">{new Date(trade.timestamp).toLocaleString()}</p>
+                    </div>
+                    <p className="text-lg font-bold text-danger">${trade.pnl.toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </>
       )}
 
       {viewMode === 'analytics' && !analytics && (
-        <div style={{
-          backgroundColor: colors.card,
-          borderRadius: '0.75rem',
-          padding: '3rem',
-          border: `2px solid ${colors.border}`,
-          textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📊</p>
-          <p style={{ color: colors.textMuted, fontSize: '1rem' }}>
-            No trades yet. Analytics will appear once you have trading data.
-          </p>
+        <div className="card p-12 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
+            <svg className="w-8 h-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <p className="text-muted">No trades yet. Analytics will appear once you have trading data.</p>
         </div>
       )}
 
-      {/* Confirm Modal for Clear Database */}
       <ConfirmModal
         isOpen={confirmModalOpen}
         onClose={() => setConfirmModalOpen(false)}
         onConfirm={handleClearDatabaseConfirm}
         title="Clear Database"
-        message="Are you sure you want to clear all trade data? This action will create a backup first, but the current data will be removed."
+        message="Are you sure you want to clear all trade data? A backup will be created first."
         confirmText="Clear Database"
         cancelText="Cancel"
         confirmVariant="danger"
