@@ -491,7 +491,11 @@ class CCXTConnector:
                     break
                 except Exception as e:
                     logger.error(f"OHLCV stream error: {e}")
-                    await asyncio.sleep(1)
+                    # Exponential backoff on errors (1s, 2s, 4s, 8s, max 30s)
+                    if not hasattr(ohlcv_loop, '_backoff'):
+                        ohlcv_loop._backoff = 1
+                    await asyncio.sleep(ohlcv_loop._backoff)
+                    ohlcv_loop._backoff = min(ohlcv_loop._backoff * 2, 30)
 
         task = asyncio.create_task(ohlcv_loop())
         self._ws_tasks.append(task)
