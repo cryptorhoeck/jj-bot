@@ -222,7 +222,20 @@ class JJBotPro:
             "last_reward": 0.0,
             "last_pnl": 0.0,
             "last_win_rate": 0.0,
-            "progress_pct": 0.0
+            "progress_pct": 0.0,
+            "trading_iq": 0,
+            "expertise_level": "Untrained",
+            "avg_win_rate": 0.0,
+            "avg_profit_factor": 0.0,
+            "avg_reward": 0.0
+        }
+
+        # Training metrics for IQ calculation
+        self.training_metrics = {
+            "episode_count": 0,
+            "total_win_rate": 0.0,
+            "total_profit_factor": 0.0,
+            "total_reward": 0.0
         }
 
         # Components (initialized in start())
@@ -1074,6 +1087,46 @@ class JJBotPro:
             f"P&L: ${self.stats['total_pnl']:,.2f}"
         )
 
+    def _calculate_trading_iq(self):
+        """Calculate Trading IQ based on cumulative performance"""
+        if self.training_metrics["episode_count"] == 0:
+            return 0, "Untrained"
+
+        # Calculate averages
+        avg_win_rate = self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]
+        avg_profit_factor = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
+        avg_reward = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
+
+        # Normalize and score (0-100 scale)
+        # Win rate: 0-50% = 0-40 points
+        win_rate_score = min(40, (avg_win_rate / 0.5) * 40)
+
+        # Profit factor: 0-3 = 0-30 points
+        profit_factor_score = min(30, (avg_profit_factor / 3.0) * 30)
+
+        # Reward: normalize to 0-30 points (assuming rewards typically -100 to +100)
+        reward_normalized = max(0, min(100, avg_reward + 100)) / 100
+        reward_score = reward_normalized * 30
+
+        # Total IQ (0-100)
+        iq = int(win_rate_score + profit_factor_score + reward_score)
+
+        # Determine expertise level
+        if iq < 20:
+            level = "Novice"
+        elif iq < 40:
+            level = "Beginner"
+        elif iq < 60:
+            level = "Intermediate"
+        elif iq < 75:
+            level = "Advanced"
+        elif iq < 90:
+            level = "Expert"
+        else:
+            level = "Master"
+
+        return iq, level
+
     async def _training_loop(self):
         """Training loop for RL agent"""
         logger.info("Starting RL training...")
@@ -1094,12 +1147,31 @@ class JJBotPro:
             metrics = self.rl_agent.train_episode(self.rl_env)
             completed_episodes = episode + 1
 
+            # Update cumulative metrics for IQ calculation
+            win_rate = metrics.get('win_rate', 0)
+            total_wins = metrics.get('winning_trades', 0)
+            total_losses = metrics.get('losing_trades', 0)
+            profit_factor = (total_wins / max(1, total_losses)) if total_losses > 0 else 1.0
+
+            self.training_metrics["episode_count"] += 1
+            self.training_metrics["total_win_rate"] += win_rate
+            self.training_metrics["total_profit_factor"] += profit_factor
+            self.training_metrics["total_reward"] += metrics.get('episode_reward', 0)
+
+            # Calculate Trading IQ
+            iq, level = self._calculate_trading_iq()
+
             # Update progress
             self.training_progress["current_episode"] = completed_episodes
             self.training_progress["last_reward"] = metrics.get('episode_reward', 0)
             self.training_progress["last_pnl"] = metrics.get('total_pnl', 0)
-            self.training_progress["last_win_rate"] = metrics.get('win_rate', 0) * 100
+            self.training_progress["last_win_rate"] = win_rate * 100
             self.training_progress["progress_pct"] = (completed_episodes / self.config.train_episodes) * 100
+            self.training_progress["trading_iq"] = iq
+            self.training_progress["expertise_level"] = level
+            self.training_progress["avg_win_rate"] = (self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]) * 100
+            self.training_progress["avg_profit_factor"] = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
+            self.training_progress["avg_reward"] = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
 
             if episode % 10 == 0:
                 logger.info(

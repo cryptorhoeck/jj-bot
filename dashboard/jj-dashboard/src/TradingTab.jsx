@@ -383,44 +383,59 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
           {/* Training Progress */}
           {trainingProgress && trainingProgress.is_training && (
             <div className="card p-6 card-info">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
-                  <span className="text-2xl">🧠</span>
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">AI Training in Progress</h3>
-                  <p className="text-sm text-muted">
-                    Episode {trainingProgress.current_episode} / {trainingProgress.total_episodes}
-                  </p>
+              {/* Trading IQ Header */}
+              <div className="flex items-center justify-between mb-4 pb-4 border-b border-[var(--border-color)]">
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                    <span className="text-3xl font-bold text-white">{trainingProgress.trading_iq || 0}</span>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Trading IQ</h3>
+                    <p className="text-sm">
+                      <span className="font-semibold text-info">{trainingProgress.expertise_level || 'Untrained'}</span>
+                      {' '}<span className="text-muted">Level</span>
+                    </p>
+                  </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-info">{trainingProgress.progress_pct?.toFixed(1)}%</p>
+                  <p className="text-xs text-muted">Episode</p>
+                  <p className="text-lg font-bold">{trainingProgress.current_episode}/{trainingProgress.total_episodes}</p>
                 </div>
               </div>
 
               {/* Progress Bar */}
-              <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden mb-4">
-                <div
-                  className="h-full bg-info transition-all duration-300"
-                  style={{ width: `${trainingProgress.progress_pct}%` }}
-                />
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Training Progress</span>
+                  <span>{trainingProgress.progress_pct?.toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
+                    style={{ width: `${trainingProgress.progress_pct}%` }}
+                  />
+                </div>
               </div>
 
-              {/* Training Metrics */}
-              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
+              {/* Performance Metrics */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
                 <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Reward</p>
-                  <p className="text-sm font-bold">{trainingProgress.last_reward?.toFixed(2)}</p>
+                  <p className="text-xs text-muted uppercase">Avg Win Rate</p>
+                  <p className="text-sm font-bold">{trainingProgress.avg_win_rate?.toFixed(1)}%</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs text-muted uppercase">P&L</p>
+                  <p className="text-xs text-muted uppercase">Profit Factor</p>
+                  <p className="text-sm font-bold">{trainingProgress.avg_profit_factor?.toFixed(2)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Avg Reward</p>
+                  <p className="text-sm font-bold">{trainingProgress.avg_reward?.toFixed(1)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Last Episode</p>
                   <p className={`text-sm font-bold ${trainingProgress.last_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
                     ${trainingProgress.last_pnl?.toFixed(2)}
                   </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Win Rate</p>
-                  <p className="text-sm font-bold">{trainingProgress.last_win_rate?.toFixed(1)}%</p>
                 </div>
               </div>
             </div>
