@@ -99,19 +99,50 @@ simulator_process = None
 async def root():
     return {"message": "JJ-Bot API v2.1", "status": "running"}
 
-# ===== TRADES ENDPOINTS =====
+# ===== TRADES ENDPOINTS - Uses unified bot when running =====
 @app.get("/api/trades")
 async def get_trades(limit: int = 50):
+    # Use bot trades when running
+    bot = get_bot()
+    if bot and bot.running:
+        return {"trades": bot.get_trade_history(limit), "source": "unified_bot"}
+    # Fallback to database
     trades = engine.get_trades(limit=limit)
     return {"trades": trades}
 
 @app.get("/api/summary")
 async def get_summary():
+    # Use bot summary when running
+    bot = get_bot()
+    if bot and bot.running:
+        win_rate = (bot.stats["winning_trades"] / max(bot.stats["total_trades"], 1)) * 100
+        return {
+            "total_trades": bot.stats["total_trades"],
+            "winning_trades": bot.stats["winning_trades"],
+            "losing_trades": bot.stats["total_trades"] - bot.stats["winning_trades"],
+            "win_rate": win_rate,
+            "total_pnl": bot.stats["total_pnl"],
+            "current_equity": bot.equity,
+            "starting_capital": bot.config.initial_capital,
+            "daily_pnl": bot.daily_pnl,
+            "open_positions": len(bot.positions),
+            "mode": bot.config.mode,
+            "source": "unified_bot"
+        }
     return engine.get_summary()
 
 @app.get("/api/equity-curve")
 async def get_equity_curve(starting_capital: float = 10000.0):
     """Get equity curve over time for portfolio visualization"""
+    bot = get_bot()
+    if bot and bot.running:
+        # Build simple equity curve from bot
+        return {
+            "equity_curve": [{"equity": bot.equity, "timestamp": datetime.now().isoformat()}],
+            "starting_capital": bot.config.initial_capital,
+            "current_equity": bot.equity,
+            "source": "unified_bot"
+        }
     return {
         "equity_curve": engine.get_equity_curve(starting_capital),
         "starting_capital": starting_capital
@@ -120,6 +151,13 @@ async def get_equity_curve(starting_capital: float = 10000.0):
 @app.get("/api/positions/open")
 async def get_open_positions():
     """Get currently open trading positions with unrealized PnL"""
+    bot = get_bot()
+    if bot and bot.running:
+        return {
+            "open_positions": bot.get_positions(),
+            "count": len(bot.positions),
+            "source": "unified_bot"
+        }
     return {
         "open_positions": engine.get_open_positions(),
         "count": len(engine.get_open_positions())
@@ -282,75 +320,41 @@ async def get_market_prices():
 async def system_health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-# ===== BOT ENDPOINTS - Trading bot with learning =====
+# ===== BOT ENDPOINTS - Uses unified JJBotPro =====
+# Import the unified bot module
+from bot_pro_endpoints import get_bot, start_bot as pro_start_bot, stop_bot as pro_stop_bot, load_config
+
 @app.get("/api/bot/status")
 @app.get("/api/simulator/status")  # Keep old endpoint for compatibility
 async def bot_status():
-    """Check if trading bot is running"""
-    for proc in psutil.process_iter(['pid', 'cmdline']):
-        try:
-            cmdline = proc.info.get('cmdline')
-            if cmdline and any('sim_trader.py' in str(arg) for arg in cmdline):
-                return {"running": True, "pid": proc.info['pid']}
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
+    """Check if trading bot is running - uses unified JJBotPro"""
+    bot = get_bot()
+    config = load_config()
+
+    if bot and bot.running:
+        return {
+            "running": True,
+            "mode": config.get("mode", "paper") if config else "paper",
+            "equity": bot.equity,
+            "positions": len(bot.positions),
+            "total_trades": bot.stats["total_trades"],
+            "total_pnl": bot.stats["total_pnl"],
+            "symbols": list(bot.prices.keys()) if bot.prices else [],
+            "prices": bot.prices,
+        }
     return {"running": False}
 
 @app.post("/api/bot/start")
 @app.post("/api/simulator/start")  # Keep old endpoint for compatibility
-async def start_bot():
-    """Start the trading bot (learns and trades automatically)"""
-    global simulator_process
-
-    # Check if already running
-    status = await bot_status()
-    if status["running"]:
-        return {"status": "already_running", "message": "Bot is already running"}
-
-    # Start the bot
-    try:
-        # Use the project root directory (2 levels up from glue/api)
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        project_root = os.path.dirname(project_root)
-        sim_trader_path = os.path.join(project_root, "glue", "api", "sim_trader.py")
-
-        # On Windows, open bot in new console window so output is visible
-        # On Linux, output will go to current terminal
-        import platform
-        if platform.system() == 'Windows':
-            simulator_process = subprocess.Popen(
-                [sys.executable, sim_trader_path],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-                cwd=project_root
-            )
-        else:
-            simulator_process = subprocess.Popen(
-                [sys.executable, sim_trader_path],
-                cwd=project_root
-            )
-        await asyncio.sleep(1)
-        return {"status": "started", "message": "Trading bot started successfully"}
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to start bot: {str(e)}"}
+async def start_bot_endpoint():
+    """Start the unified trading bot"""
+    return await pro_start_bot()
 
 @app.post("/api/bot/stop")
 @app.post("/api/simulator/stop")  # Keep old endpoint for compatibility
-async def stop_bot():
-    """Stop the trading bot"""
-    stopped = False
-
-    for proc in psutil.process_iter(['pid', 'cmdline']):
-        try:
-            cmdline = proc.info.get('cmdline')
-            if cmdline and any('sim_trader.py' in str(arg) for arg in cmdline):
-                proc.terminate()
-                stopped = True
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-
-    if stopped:
-        return {"status": "stopped", "message": "Trading bot stopped"}
-    return {"status": "not_running", "message": "Bot was not running"}
+async def stop_bot_endpoint():
+    """Stop the unified trading bot"""
+    return await pro_stop_bot()
 
 # ===== DATA MANAGEMENT ENDPOINTS =====
 @app.get("/api/data/export")
@@ -505,11 +509,30 @@ async def dashboard():
     """)
 
 
-# ===== REAL MARKET DATA FROM COINGECKO (FREE) =====
+# ===== REAL MARKET DATA =====
 @app.get("/api/market/live")
 async def get_market_live():
-    """Get live market data using our market data infrastructure"""
+    """Get live market data - prefers unified bot data when running"""
     try:
+        # FIRST: Check if unified bot is running and has prices
+        bot = get_bot()
+        if bot and bot.running and bot.prices:
+            result = {}
+            for symbol, price in bot.prices.items():
+                base = symbol.split("/")[0] if "/" in symbol else symbol
+                result[base.lower()] = {
+                    "symbol": base,
+                    "name": base,
+                    "usd": price,
+                    "usd_24h_change": 0,
+                    "usd_market_cap": 0,
+                    "usd_24h_vol": 0,
+                    "image": "",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if result:
+                return {"status": "success", "data": result, "count": len(result), "source": "unified_bot"}
+
         from modules.data import cached_market_data_service
         from services.streaming.market_stream_service import market_stream_service
 
@@ -518,7 +541,7 @@ async def get_market_live():
 
         result = {}
 
-        # First, try to get data from WebSocket stream if it's running
+        # Try to get data from WebSocket stream if it's running
         if market_stream_service.running:
             stream_prices = market_stream_service.get_latest_prices()
             for symbol in symbols:
