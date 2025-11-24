@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-export function MarketChart({ colors, darkMode, API_BASE }) {
+export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
+  // Default colors based on dark mode if not provided
+  const colors = propColors || {
+    text: darkMode ? '#f1f5f9' : '#0f172a',
+    textMuted: darkMode ? '#94a3b8' : '#64748b',
+    bg: darkMode ? '#0f172a' : '#ffffff',
+    bgSecondary: darkMode ? '#1e293b' : '#f8fafc',
+    border: darkMode ? '#334155' : '#e2e8f0',
+  };
+
   const [selectedSymbol, setSelectedSymbol] = useState('BTC');
   const [timeframe, setTimeframe] = useState('1h');
   const [marketData, setMarketData] = useState([]);

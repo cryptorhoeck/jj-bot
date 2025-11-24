@@ -535,9 +535,19 @@ async def get_market_live():
 
         from modules.data import cached_market_data_service
         from services.streaming.market_stream_service import market_stream_service
+        from symbol_management_endpoints import get_db_path
+        import sqlite3
 
-        # Define supported symbols (top cryptocurrencies)
-        symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"]
+        # Get enabled symbols from database
+        try:
+            conn = sqlite3.connect(get_db_path())
+            cursor = conn.cursor()
+            cursor.execute("SELECT symbol FROM symbols WHERE enabled = 1 ORDER BY symbol ASC")
+            symbols = [row[0] for row in cursor.fetchall()]
+            conn.close()
+        except Exception as db_err:
+            print(f"⚠️  Failed to load symbols from DB: {db_err}, using defaults")
+            symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"]
 
         result = {}
 

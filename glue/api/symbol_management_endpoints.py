@@ -298,14 +298,17 @@ async def get_enabled_symbols() -> Dict[str, Any]:
         rows = cursor.fetchall()
         conn.close()
 
-        symbols = {row[0]: row[1] for row in rows}
+        # Return symbols as array (for TradingTab) AND as dict (for other services)
+        symbols_list = [row[0] for row in rows]
+        symbols_dict = {row[0]: row[1] for row in rows}
         coingecko_ids = [row[1] for row in rows]
 
         return {
             "success": True,
-            "symbols": symbols,
+            "symbols": symbols_list,  # Array for TradingTab compatibility
+            "symbols_map": symbols_dict,  # Dict for services that need coingecko_id
             "coingecko_ids": coingecko_ids,
-            "count": len(symbols)
+            "count": len(symbols_list)
         }
 
     except Exception as e:
