@@ -26,22 +26,30 @@ if not exist dashboard\jj-dashboard\node_modules (
 echo Starting services...
 echo.
 
+REM Build dashboard with latest changes
+echo [1/4] Building dashboard with latest changes...
+cd dashboard\jj-dashboard
+call npm run build
+cd ..\..
+echo Dashboard built successfully!
+echo.
+
 REM Start API Server in new window
-echo [1/3] Starting API Server on port 8000...
+echo [2/4] Starting API Server on port 8000...
 start "JJ-Bot API Server" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && cd glue\api && python main.py"
 
 REM Wait for API to start
 timeout /t 2 /nobreak >nul
 
 REM Start Dashboard in new window
-echo [2/3] Starting Dashboard on port 5173...
+echo [3/4] Starting Dashboard on port 5173...
 start "JJ-Bot Dashboard" cmd /k "cd /d %~dp0dashboard\jj-dashboard && npm run dev"
 
 REM Wait for dashboard to start before opening browser
 timeout /t 3 /nobreak >nul
 
 REM Open browser automatically
-echo [3/3] Opening dashboard in your browser...
+echo [4/4] Opening dashboard in your browser...
 start http://localhost:5173
 
 echo.
