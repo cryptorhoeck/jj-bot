@@ -79,13 +79,20 @@ class BotConfig:
     api_secret: str = ""
     sandbox: bool = True  # ALWAYS True unless explicitly going live
 
-    # Trading symbols
-    symbols: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT"])
+    # Trading symbols - Top 30 by market cap
+    symbols: List[str] = field(default_factory=lambda: [
+        "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "SOL/USDT",
+        "ADA/USDT", "DOGE/USDT", "TRX/USDT", "AVAX/USDT", "LINK/USDT",
+        "DOT/USDT", "MATIC/USDT", "SHIB/USDT", "LTC/USDT", "BCH/USDT",
+        "UNI/USDT", "XLM/USDT", "ATOM/USDT", "ETC/USDT", "FIL/USDT",
+        "HBAR/USDT", "APT/USDT", "ARB/USDT", "OP/USDT", "NEAR/USDT",
+        "INJ/USDT", "RUNE/USDT", "AAVE/USDT", "GRT/USDT", "FTM/USDT"
+    ])
 
     # Capital and position sizing
     initial_capital: float = 10000.0
-    max_position_pct: float = 0.10  # 10% per position
-    max_positions: int = 3
+    max_position_pct: float = 0.05  # 5% per position (smaller for more symbols)
+    max_positions: int = 10  # Allow more concurrent positions
 
     # Risk management
     stop_loss_pct: float = 0.02  # 2% stop loss
@@ -97,7 +104,7 @@ class BotConfig:
     use_rl_agent: bool = True
     use_edge_strategies: bool = True
     use_alternative_data: bool = True
-    min_signal_confidence: float = 0.6  # Minimum confidence to trade
+    min_signal_confidence: float = 0.45  # Lower threshold for more trades
 
     # RL settings
     rl_model_path: str = "models/ppo_agent.pt"
@@ -357,15 +364,18 @@ class JJBotPro:
     def _init_demo_prices(self):
         """Initialize demo prices for offline/demo mode"""
         import random
-        # Realistic starting prices
+        # Realistic starting prices for top 30 coins
         demo_prices = {
-            "BTC/USDT": 97000.0,
-            "ETH/USDT": 3500.0,
-            "SOL/USDT": 250.0,
-            "BNB/USDT": 650.0,
-            "XRP/USDT": 1.40,
-            "ADA/USDT": 1.00,
-            "DOGE/USDT": 0.40,
+            "BTC/USDT": 97000.0, "ETH/USDT": 3500.0, "BNB/USDT": 650.0,
+            "XRP/USDT": 1.40, "SOL/USDT": 250.0, "ADA/USDT": 1.00,
+            "DOGE/USDT": 0.40, "TRX/USDT": 0.20, "AVAX/USDT": 45.0,
+            "LINK/USDT": 18.0, "DOT/USDT": 9.0, "MATIC/USDT": 0.90,
+            "SHIB/USDT": 0.000025, "LTC/USDT": 95.0, "BCH/USDT": 500.0,
+            "UNI/USDT": 12.0, "XLM/USDT": 0.35, "ATOM/USDT": 12.0,
+            "ETC/USDT": 32.0, "FIL/USDT": 6.5, "HBAR/USDT": 0.12,
+            "APT/USDT": 12.0, "ARB/USDT": 1.20, "OP/USDT": 2.50,
+            "NEAR/USDT": 6.50, "INJ/USDT": 35.0, "RUNE/USDT": 6.0,
+            "AAVE/USDT": 180.0, "GRT/USDT": 0.25, "FTM/USDT": 1.10,
         }
         self._price_history = {}
         for symbol in self.config.symbols:
