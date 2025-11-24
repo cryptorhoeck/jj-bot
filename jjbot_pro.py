@@ -83,7 +83,7 @@ class BotConfig:
     symbols: List[str] = field(default_factory=lambda: [
         "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "SOL/USDT",
         "ADA/USDT", "DOGE/USDT", "TRX/USDT", "AVAX/USDT", "LINK/USDT",
-        "DOT/USDT", "MATIC/USDT", "SHIB/USDT", "LTC/USDT", "BCH/USDT",
+        "DOT/USDT", "POL/USDT", "SHIB/USDT", "LTC/USDT", "BCH/USDT",
         "UNI/USDT", "XLM/USDT", "ATOM/USDT", "ETC/USDT", "FIL/USDT",
         "HBAR/USDT", "APT/USDT", "ARB/USDT", "OP/USDT", "NEAR/USDT",
         "INJ/USDT", "RUNE/USDT", "AAVE/USDT", "GRT/USDT", "FTM/USDT"
@@ -369,7 +369,7 @@ class JJBotPro:
             "BTC/USDT": 97000.0, "ETH/USDT": 3500.0, "BNB/USDT": 650.0,
             "XRP/USDT": 1.40, "SOL/USDT": 250.0, "ADA/USDT": 1.00,
             "DOGE/USDT": 0.40, "TRX/USDT": 0.20, "AVAX/USDT": 45.0,
-            "LINK/USDT": 18.0, "DOT/USDT": 9.0, "MATIC/USDT": 0.90,
+            "LINK/USDT": 18.0, "DOT/USDT": 9.0, "POL/USDT": 0.50,
             "SHIB/USDT": 0.000025, "LTC/USDT": 95.0, "BCH/USDT": 500.0,
             "UNI/USDT": 12.0, "XLM/USDT": 0.35, "ATOM/USDT": 12.0,
             "ETC/USDT": 32.0, "FIL/USDT": 6.5, "HBAR/USDT": 0.12,

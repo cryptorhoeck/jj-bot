@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 // Available symbols for selection
 const AVAILABLE_SYMBOLS = [
   'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'AVAX', 'LINK',
-  'DOT', 'MATIC', 'SHIB', 'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL',
+  'DOT', 'POL', 'SHIB', 'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL',
   'HBAR', 'APT', 'ARB', 'OP', 'NEAR', 'INJ', 'RUNE', 'AAVE', 'GRT', 'FTM',
   'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'CRV', 'SNX', 'COMP', 'MKR',
   'SUSHI', 'YFI', '1INCH', 'BAL', 'LDO', 'RPL', 'SSV', 'GMX', 'DYDX', 'WOO'
