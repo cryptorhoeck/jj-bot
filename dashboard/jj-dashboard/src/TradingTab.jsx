@@ -264,33 +264,56 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                 <div>
                   <h2 className="text-xl font-bold">JJ-Bot Pro</h2>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
-                      {botRunning ? 'Running' : 'Stopped'}
-                    </span>
-                    <span className="badge badge-info">{proConfig.mode} mode</span>
-                    <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
+                    {trainingProgress?.is_training ? (
+                      <>
+                        <span className="badge badge-info">
+                          🧠 Training AI
+                        </span>
+                        <span className="text-sm text-muted">{trainingProgress.progress_pct?.toFixed(0)}% complete</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
+                          {botRunning ? '▶ Trading' : '⏹ Stopped'}
+                        </span>
+                        <span className="badge badge-info">{proConfig.mode} mode</span>
+                        <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={botRunning ? stopBot : startBot}
-                  disabled={loading}
-                  className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
-                >
-                  {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop Bot' : '▶️ Start Bot'}
-                </button>
-
-                {!botRunning && (
+                {trainingProgress?.is_training ? (
                   <button
-                    onClick={trainModel}
+                    onClick={stopBot}
                     disabled={loading}
-                    className="btn btn-lg btn-info"
-                    title="Train RL model"
+                    className="btn btn-lg btn-danger"
                   >
-                    🧠 Train AI
+                    {loading ? <div className="spinner w-5 h-5" /> : '⏹️ Stop Training'}
                   </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={botRunning ? stopBot : startBot}
+                      disabled={loading}
+                      className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
+                    >
+                      {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop' : '▶️ Start Trading'}
+                    </button>
+
+                    {!botRunning && (
+                      <button
+                        onClick={trainModel}
+                        disabled={loading}
+                        className="btn btn-lg btn-info"
+                        title="Train the AI model to improve trading decisions"
+                      >
+                        🧠 Train AI
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -323,6 +346,26 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
               </div>
             )}
           </div>
+
+          {/* Info Card - Modes Explained */}
+          {!botRunning && !trainingProgress?.is_training && (
+            <div className="card p-6 bg-[var(--bg-secondary)]">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">💡</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-2">How It Works</h3>
+                  <div className="space-y-2 text-sm text-muted">
+                    <p>
+                      <strong className="text-[var(--text-color)]">▶️ Start Bot (Paper Trading):</strong> Runs live trading with real market data and all strategies. No real money is used - trades are simulated to test strategies.
+                    </p>
+                    <p>
+                      <strong className="text-[var(--text-color)]">🧠 Train AI:</strong> Runs thousands of simulated episodes quickly to train the RL model. This improves the AI's trading decisions. Training stops the regular bot temporarily.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Training Progress */}
           {trainingProgress && trainingProgress.is_training && (
