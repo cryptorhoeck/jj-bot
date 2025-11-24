@@ -122,7 +122,7 @@ async def get_summary():
             "losing_trades": bot.stats["total_trades"] - bot.stats["winning_trades"],
             "win_rate": win_rate,
             "total_pnl": bot.stats["total_pnl"],
-            "current_equity": bot.equity,
+            "current_equity": bot.total_equity,
             "starting_capital": bot.config.initial_capital,
             "daily_pnl": bot.daily_pnl,
             "open_positions": len(bot.positions),
@@ -138,9 +138,9 @@ async def get_equity_curve(starting_capital: float = 10000.0):
     if bot and bot.running:
         # Build simple equity curve from bot
         return {
-            "equity_curve": [{"equity": bot.equity, "timestamp": datetime.now().isoformat()}],
+            "equity_curve": [{"equity": bot.total_equity, "timestamp": datetime.now().isoformat()}],
             "starting_capital": bot.config.initial_capital,
-            "current_equity": bot.equity,
+            "current_equity": bot.total_equity,
             "source": "unified_bot"
         }
     return {
@@ -335,7 +335,7 @@ async def bot_status():
         return {
             "running": True,
             "mode": config.get("mode", "paper") if config else "paper",
-            "equity": bot.equity,
+            "equity": bot.total_equity,
             "positions": len(bot.positions),
             "total_trades": bot.stats["total_trades"],
             "total_pnl": bot.stats["total_pnl"],

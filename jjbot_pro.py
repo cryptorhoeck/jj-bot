@@ -205,6 +205,12 @@ class JJBotPro:
 
         logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
 
+    @property
+    def total_equity(self) -> float:
+        """Get total equity including unrealized P&L"""
+        unrealized = sum(pos.unrealized_pnl for pos in self.positions.values())
+        return self.equity + unrealized
+
     def _setup_logging(self):
         """Configure logging"""
         log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
