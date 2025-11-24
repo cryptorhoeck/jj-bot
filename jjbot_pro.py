@@ -24,9 +24,36 @@ import signal
 # Internal modules
 from modules.exchange import create_connector, create_live_feed, CCXTConnector, LiveDataFeed
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
-from modules.rl import TradingEnvironment, create_agent, PPOAgent
-from modules.data_feeds import create_alternative_feed, AlternativeDataFeed, EdgeDetector
-from modules.strategy.edge_strategies import create_edge_manager, EdgeStrategyManager, TradeSignal
+
+# RL modules are optional (require PyTorch)
+try:
+    from modules.rl import TradingEnvironment, create_agent, PPOAgent
+    RL_AVAILABLE = True
+except ImportError:
+    TradingEnvironment = None
+    create_agent = None
+    PPOAgent = None
+    RL_AVAILABLE = False
+
+# Alternative data modules (optional)
+try:
+    from modules.data_feeds import create_alternative_feed, AlternativeDataFeed, EdgeDetector
+    ALT_DATA_AVAILABLE = True
+except ImportError:
+    create_alternative_feed = None
+    AlternativeDataFeed = None
+    EdgeDetector = None
+    ALT_DATA_AVAILABLE = False
+
+# Edge strategies
+try:
+    from modules.strategy.edge_strategies import create_edge_manager, EdgeStrategyManager, TradeSignal
+    EDGE_AVAILABLE = True
+except ImportError:
+    create_edge_manager = None
+    EdgeStrategyManager = None
+    TradeSignal = None
+    EDGE_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
@@ -221,7 +248,8 @@ class JJBotPro:
         """Initialize all trading components"""
         logger.info("Initializing components...")
 
-        # 1. Exchange connector
+        # 1. Exchange connector (optional for paper mode)
+        self._demo_mode = False
         self.exchange = create_connector(
             self.config.exchange,
             self.config.api_key,
@@ -232,41 +260,58 @@ class JJBotPro:
         if self.config.mode != "training":
             connected = await self.exchange.connect()
             if not connected:
-                raise RuntimeError("Failed to connect to exchange")
-            logger.info(f"Connected to {self.config.exchange}")
+                if self.config.mode == "paper":
+                    logger.warning("Exchange connection failed - running in DEMO mode with simulated prices")
+                    self._demo_mode = True
+                    # Initialize with simulated prices
+                    self._init_demo_prices()
+                else:
+                    raise RuntimeError("Failed to connect to exchange")
+            else:
+                logger.info(f"Connected to {self.config.exchange}")
 
-        # 2. Live data feed
-        self.data_feed = create_live_feed(
-            self.config.exchange,
-            self.config.api_key,
-            self.config.api_secret,
-            sandbox=self.config.sandbox
-        )
-
-        if self.config.mode != "training":
-            # Register price update callback
-            self.data_feed.on_price(self._on_price_update)
-
-            await self.data_feed.start(
-                symbols=self.config.symbols,
-                timeframes=["1m", "5m", "1h"]
+        # 2. Live data feed (skip in demo mode)
+        if not self._demo_mode:
+            self.data_feed = create_live_feed(
+                self.config.exchange,
+                self.config.api_key,
+                self.config.api_secret,
+                sandbox=self.config.sandbox
             )
-            logger.info("Live data feed started")
 
-        # 3. Alternative data
-        if self.config.use_alternative_data:
+            if self.config.mode != "training":
+                # Register price update callback
+                self.data_feed.on_price(self._on_price_update)
+
+                try:
+                    await self.data_feed.start(
+                        symbols=self.config.symbols,
+                        timeframes=["1m", "5m", "1h"]
+                    )
+                    logger.info("Live data feed started")
+                except Exception as e:
+                    logger.warning(f"Live data feed failed: {e} - continuing in demo mode")
+                    self._demo_mode = True
+                    self._init_demo_prices()
+
+        # 3. Alternative data (optional - requires aiohttp)
+        if self.config.use_alternative_data and ALT_DATA_AVAILABLE:
             self.alt_data = create_alternative_feed()
             self.edge_detector = EdgeDetector(self.alt_data)
             logger.info("Alternative data feed initialized")
+        elif self.config.use_alternative_data:
+            logger.warning("Alternative data requested but modules not available")
 
-        # 4. Edge strategies
-        if self.config.use_edge_strategies:
+        # 4. Edge strategies (optional)
+        if self.config.use_edge_strategies and EDGE_AVAILABLE:
             base_symbols = [s.split("/")[0] for s in self.config.symbols]
             self.edge_manager = create_edge_manager(base_symbols)
             logger.info("Edge strategies initialized")
+        elif self.config.use_edge_strategies:
+            logger.warning("Edge strategies requested but modules not available")
 
-        # 5. RL Agent
-        if self.config.use_rl_agent:
+        # 5. RL Agent (optional - requires PyTorch)
+        if self.config.use_rl_agent and RL_AVAILABLE:
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct
@@ -284,6 +329,8 @@ class JJBotPro:
                 logger.info(f"Loaded RL model from {self.config.rl_model_path}")
             else:
                 logger.info("No existing RL model found - starting fresh")
+        elif self.config.use_rl_agent:
+            logger.warning("RL agent requested but PyTorch not available - trading without AI")
 
         logger.info("All components initialized")
 
@@ -299,12 +346,43 @@ class JJBotPro:
             else:
                 pos.unrealized_pnl = (pos.entry_price - update.price) / pos.entry_price * pos.size
 
+    def _init_demo_prices(self):
+        """Initialize demo prices for offline/demo mode"""
+        import random
+        # Realistic starting prices
+        demo_prices = {
+            "BTC/USDT": 97000.0,
+            "ETH/USDT": 3500.0,
+            "SOL/USDT": 250.0,
+            "BNB/USDT": 650.0,
+            "XRP/USDT": 1.40,
+            "ADA/USDT": 1.00,
+            "DOGE/USDT": 0.40,
+        }
+        for symbol in self.config.symbols:
+            self.prices[symbol] = demo_prices.get(symbol, 100.0)
+        logger.info(f"Demo prices initialized: {self.prices}")
+
+    async def _update_demo_prices(self):
+        """Simulate price movements in demo mode"""
+        import random
+        for symbol in self.prices:
+            # Random walk: -0.5% to +0.5% per update
+            change = random.uniform(-0.005, 0.005)
+            self.prices[symbol] *= (1 + change)
+
     async def _trading_loop(self):
         """Main trading loop"""
         logger.info("Entering main trading loop...")
+        if self._demo_mode:
+            logger.info("Running in DEMO mode - prices are simulated")
 
         while self.running:
             try:
+                # Update demo prices if in demo mode
+                if self._demo_mode:
+                    await self._update_demo_prices()
+
                 # Reset daily stats at midnight
                 await self._check_daily_reset()
 

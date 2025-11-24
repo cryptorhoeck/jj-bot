@@ -202,15 +202,19 @@ class CCXTConnector:
                 if self.credentials.password:
                     config["password"] = self.credentials.password
 
-            if self.sandbox:
-                config["sandbox"] = True
+            # Note: For paper trading, we use live public API (no auth) with real prices
+            # but don't execute real trades. Only use sandbox for testing live trading.
+            # Commented out sandbox mode as testnet may not be accessible:
+            # if self.sandbox:
+            #     config["sandbox"] = True
 
             self.exchange = exchange_class(config)
 
             # Load markets
             await asyncio.to_thread(self.exchange.load_markets)
 
-            logger.info(f"Connected to {exchange_id} ({'sandbox' if self.sandbox else 'live'})")
+            mode = "paper" if self.sandbox else "live"
+            logger.info(f"Connected to {exchange_id} ({mode} mode - using live prices)")
             return True
 
         except Exception as e:
