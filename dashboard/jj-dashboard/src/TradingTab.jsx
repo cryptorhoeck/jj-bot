@@ -174,11 +174,45 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   const stopBot = async () => {
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/api/bot/stop`, { method: 'POST' });
-      setBotRunning(false);
-      toast.success('Trading bot stopped');
+      const response = await fetch(`${API_BASE}/api/bot/stop`, { method: 'POST' });
+      const data = await response.json();
+      if (data.status === 'stopped' || data.status === 'not_running') {
+        setBotRunning(false);
+        toast.success('Trading bot stopped');
+      } else if (data.status === 'error') {
+        toast.error(data.message || 'Failed to stop bot');
+      }
     } catch (error) {
       toast.error('Error stopping bot');
+    }
+    setLoading(false);
+  };
+
+  // Train RL model
+  const trainModel = async () => {
+    if (botRunning) {
+      toast.error('Stop the bot before starting training');
+      return;
+    }
+
+    const episodes = parseInt(prompt('How many training episodes? (Default: 100, Recommended: 500-1000)', '500'));
+    if (!episodes || episodes < 1) {
+      toast.error('Invalid number of episodes');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/train?episodes=${episodes}`, { method: 'POST' });
+      const data = await response.json();
+      if (data.status === 'started') {
+        setBotRunning(true);
+        toast.success(`RL training started for ${episodes} episodes. This may take a while...`);
+      } else if (data.status === 'error') {
+        toast.error(data.message || 'Failed to start training');
+      }
+    } catch (error) {
+      toast.error('Error starting training');
     }
     setLoading(false);
   };
@@ -232,13 +266,26 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                 </div>
               </div>
 
-              <button
-                onClick={botRunning ? stopBot : startBot}
-                disabled={loading}
-                className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
-              >
-                {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop Bot' : '▶️ Start Bot'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={botRunning ? stopBot : startBot}
+                  disabled={loading}
+                  className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
+                >
+                  {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop Bot' : '▶️ Start Bot'}
+                </button>
+
+                {!botRunning && (
+                  <button
+                    onClick={trainModel}
+                    disabled={loading}
+                    className="btn btn-lg btn-info"
+                    title="Train RL model"
+                  >
+                    🧠 Train AI
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Live Stats */}
