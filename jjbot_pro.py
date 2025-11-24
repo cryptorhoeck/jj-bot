@@ -1082,13 +1082,16 @@ class JJBotPro:
             {
                 "symbol": t.symbol,
                 "side": t.side,
+                "signal": "BUY" if t.side == "long" else "SELL",  # Frontend expects signal
                 "entry_price": t.entry_price,
                 "exit_price": t.exit_price,
+                "last_price": t.exit_price,  # Frontend expects last_price
                 "size": t.size,
                 "pnl": t.pnl,
                 "pnl_pct": t.pnl_pct,
                 "entry_time": t.entry_time.isoformat(),
                 "exit_time": t.exit_time.isoformat(),
+                "timestamp": t.exit_time.isoformat(),  # Frontend expects timestamp
                 "signal_source": t.signal_source,
                 "exit_reason": t.exit_reason,
             }
