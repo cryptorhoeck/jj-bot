@@ -547,7 +547,7 @@ async def get_market_live():
             conn.close()
         except Exception as db_err:
             print(f"⚠️  Failed to load symbols from DB: {db_err}, using defaults")
-            symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"]
+            symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "POL"]
 
         result = {}
 
@@ -628,7 +628,7 @@ async def get_ohlc_data(symbol: str, timeframe: str = "1h", source: str = "auto"
     """
     try:
         # Auto-detect source
-        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
 
         if source == "auto":
             source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
@@ -652,7 +652,7 @@ async def get_ohlc_data(symbol: str, timeframe: str = "1h", source: str = "auto"
             price_map = {
                 "BTC": 45000, "ETH": 2500, "SOL": 100, "BNB": 350,
                 "XRP": 0.65, "ADA": 0.45, "DOGE": 0.08, "AVAX": 35,
-                "DOT": 7.5, "MATIC": 0.85, "AAPL": 180, "TSLA": 250,
+                "DOT": 7.5, "POL": 0.45, "AAPL": 180, "TSLA": 250,
                 "GOOGL": 140, "MSFT": 380, "AMZN": 150, "SPY": 450,
                 "QQQ": 380, "DIA": 350
             }
@@ -692,7 +692,7 @@ async def get_ticker_data(symbol: str, source: str = "auto"):
         source: 'kraken', 'yahoo', or 'auto'
     """
     try:
-        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
 
         if source == "auto":
             source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
@@ -724,7 +724,7 @@ async def get_batch_ohlc(symbols: str, timeframe: str = "1h", source: str = "aut
 
         for symbol in symbol_list:
             # Determine source for each symbol
-            crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC', 'BNB']
+            crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
             sym_source = "kraken" if symbol in crypto_symbols else "yahoo"
 
             if sym_source == "kraken":

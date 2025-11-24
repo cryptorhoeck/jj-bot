@@ -385,7 +385,7 @@ class MarketDataService:
             "DOGE": "XDGUSD",
             "AVAX": "AVAXUSD",
             "DOT": "DOTUSD",
-            "MATIC": "MATICUSD"
+            "POL": "POLUSD"
         }
         return mapping.get(symbol.upper(), f"{symbol.upper()}USD")
 

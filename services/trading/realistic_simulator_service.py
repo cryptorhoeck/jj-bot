@@ -164,7 +164,7 @@ class RealisticSimulatorService(BaseService):
                 print("⚠️ API failed, using fallback top 10 symbols")
                 self.symbols_config = {
                     'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
-                    'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35
+                    'DOT': 7, 'LINK': 15, 'POL': 0.45, 'UNI': 6, 'AVAX': 35
                 }
 
             # Price generator

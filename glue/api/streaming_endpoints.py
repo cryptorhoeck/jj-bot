@@ -326,13 +326,13 @@ async def get_supported_exchanges():
             "kraken": {
                 "name": "Kraken",
                 "supported": True,
-                "symbols": ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"],
+                "symbols": ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "POL"],
                 "features": ["ticker", "real-time pricing", "auto-reconnect"]
             },
             "binance": {
                 "name": "Binance",
                 "supported": True,
-                "symbols": ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC"],
+                "symbols": ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "POL"],
                 "features": ["ticker", "real-time pricing", "auto-reconnect", "higher update frequency"]
             }
         },

@@ -26,7 +26,7 @@ SYMBOLS_DB_PATH = os.path.join(project_root, "data", "symbols.db")
 # Default base prices (updated as we trade)
 BASE_PRICES = {
     'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
-    'DOT': 7, 'LINK': 15, 'MATIC': 0.80, 'UNI': 6, 'AVAX': 35,
+    'DOT': 7, 'LINK': 15, 'POL': 0.45, 'UNI': 6, 'AVAX': 35,
     'XRP': 0.65, 'DOGE': 0.08, 'TRX': 0.10, 'ATOM': 10,
     'LTC': 70, 'BCH': 250, 'XLM': 0.12, 'ETC': 20,
     'WBTC': 45000, 'SHIB': 0.00001

@@ -62,7 +62,7 @@ def init_symbols_db():
             ("TRX", "tron", 1, 0),
             ("LINK", "chainlink", 1, 0),
             ("DOT", "polkadot", 1, 0),
-            ("MATIC", "polygon", 1, 0),
+            ("POL", "polygon", 1, 0),
             ("WBTC", "wrapped-bitcoin", 1, 0),
             ("SHIB", "shiba-inu", 1, 0),
             ("LTC", "litecoin", 1, 0),

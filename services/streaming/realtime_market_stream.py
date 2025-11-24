@@ -298,7 +298,7 @@ class RealtimeMarketStream:
             "DOGE": "XDG/USD",
             "AVAX": "AVAX/USD",
             "DOT": "DOT/USD",
-            "MATIC": "MATIC/USD"
+            "POL": "POL/USD"
         }
         return mapping.get(symbol.upper(), f"{symbol.upper()}/USD")
 
@@ -313,7 +313,7 @@ class RealtimeMarketStream:
             "XDG/USD": "DOGE",
             "AVAX/USD": "AVAX",
             "DOT/USD": "DOT",
-            "MATIC/USD": "MATIC"
+            "POL/USD": "POL"
         }
         return mapping.get(pair, pair.split("/")[0])
 

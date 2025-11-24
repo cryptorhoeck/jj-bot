@@ -196,7 +196,7 @@ class CachedMarketDataService:
 
     def _detect_source(self, symbol: str) -> str:
         """Auto-detect data source based on symbol"""
-        crypto_symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'MATIC']
+        crypto_symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL']
 
         if symbol.upper() in crypto_symbols:
             return 'kraken'
