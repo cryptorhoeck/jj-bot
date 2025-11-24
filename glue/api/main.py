@@ -57,10 +57,35 @@ async def lifespan(app: FastAPI):
     else:
         print("ℹ️  No auto-start services configured")
 
+    # Auto-start JJ-Bot Pro if configured
+    from bot_pro_endpoints import load_config, start_bot as pro_start_bot
+    config = load_config()
+    if config and config.get("mode") in ["paper", "live", "training"]:
+        print(f"🤖 Auto-starting JJ-Bot Pro in {config.get('mode')} mode...")
+        try:
+            result = await pro_start_bot()
+            if result.get("status") == "started":
+                print(f"✅ JJ-Bot Pro started successfully")
+            else:
+                print(f"⚠️  JJ-Bot Pro startup: {result.get('message', 'Unknown status')}")
+        except Exception as e:
+            print(f"❌ Failed to auto-start JJ-Bot Pro: {e}")
+
     yield
 
     # Shutdown (add cleanup here if needed)
     print("👋 Shutting down API...")
+
+    # Stop bot gracefully on shutdown
+    from bot_pro_endpoints import stop_bot as pro_stop_bot, get_bot
+    bot = get_bot()
+    if bot and bot.running:
+        print("🛑 Stopping JJ-Bot Pro...")
+        try:
+            await pro_stop_bot()
+            print("✅ JJ-Bot Pro stopped")
+        except Exception as e:
+            print(f"⚠️  Error stopping bot: {e}")
 
 # Create FastAPI app with lifespan
 app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)

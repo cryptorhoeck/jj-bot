@@ -1,5 +1,5 @@
 {
-  "mode": "paper",
+  "mode": "training",
   "exchange": "binance",
   "api_key": "",
   "api_secret": "",
@@ -20,7 +20,7 @@
   "use_alternative_data": true,
   "min_signal_confidence": 0.6,
   "rl_model_path": "models/ppo_agent.pt",
-  "train_episodes": 100,
+  "train_episodes": 500,
   "analysis_interval_seconds": 60,
   "log_level": "INFO",
   "log_trades": true
