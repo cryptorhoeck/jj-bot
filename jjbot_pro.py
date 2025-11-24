@@ -252,7 +252,11 @@ class JJBotPro:
     def _load_state(self) -> Optional[Dict]:
         """Load saved bot state from trades database (same source as dashboard)"""
         import sqlite3
-        db_path = Path("data/trades.db")
+        # Use absolute path relative to this file (same as engine.py does)
+        project_root = Path(__file__).parent
+        db_path = project_root / "data" / "trades.db"
+
+        logger.info(f"Looking for trades database at: {db_path}")
 
         if not db_path.exists():
             logger.info("No trades database found, starting fresh")
@@ -293,6 +297,8 @@ class JJBotPro:
                 }
                 logger.info(f"Loaded state from database: {total_trades} trades, equity=${equity:.2f}")
                 return state
+            else:
+                logger.info("Trades database exists but is empty, starting fresh")
 
         except Exception as e:
             logger.warning(f"Failed to load state from database: {e}")
