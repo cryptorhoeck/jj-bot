@@ -214,6 +214,17 @@ class JJBotPro:
         self.positions: Dict[str, Position] = self._load_positions()
         self.trade_history: List[TradeRecord] = []
 
+        # Training state
+        self.training_progress = {
+            "is_training": False,
+            "current_episode": 0,
+            "total_episodes": 0,
+            "last_reward": 0.0,
+            "last_pnl": 0.0,
+            "last_win_rate": 0.0,
+            "progress_pct": 0.0
+        }
+
         # Components (initialized in start())
         self.exchange: Optional[CCXTConnector] = None
         self.data_feed: Optional[LiveDataFeed] = None
@@ -1071,11 +1082,21 @@ class JJBotPro:
             logger.error("RL components not initialized")
             return
 
+        self.training_progress["is_training"] = True
+        self.training_progress["total_episodes"] = self.config.train_episodes
+
         for episode in range(self.config.train_episodes):
             if not self.running:
                 break
 
             metrics = self.rl_agent.train_episode(self.rl_env)
+
+            # Update progress
+            self.training_progress["current_episode"] = episode + 1
+            self.training_progress["last_reward"] = metrics.get('episode_reward', 0)
+            self.training_progress["last_pnl"] = metrics.get('total_pnl', 0)
+            self.training_progress["last_win_rate"] = metrics.get('win_rate', 0) * 100
+            self.training_progress["progress_pct"] = ((episode + 1) / self.config.train_episodes) * 100
 
             if episode % 10 == 0:
                 logger.info(
@@ -1092,6 +1113,7 @@ class JJBotPro:
 
         # Final save
         self.rl_agent.save(self.config.rl_model_path)
+        self.training_progress["is_training"] = False
         logger.info(f"Training complete. Model saved to {self.config.rl_model_path}")
 
     async def stop(self):

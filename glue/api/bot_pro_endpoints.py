@@ -100,6 +100,10 @@ async def get_bot_status():
             "win_rate": (bot.stats["winning_trades"] / max(bot.stats["total_trades"], 1)) * 100,
         })
 
+    # Include training progress if bot exists
+    if bot:
+        status["training"] = bot.training_progress
+
     if config:
         status["config"] = {
             "exchange": config.get("exchange", "binance"),

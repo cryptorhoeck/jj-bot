@@ -43,6 +43,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   const [selectedSymbols, setSelectedSymbols] = useState([]);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
+  const [trainingProgress, setTrainingProgress] = useState(null);
 
   // Load bot status
   const checkBotStatus = useCallback(async () => {
@@ -50,6 +51,12 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
       const response = await fetch(`${API_BASE}/api/bot/status`);
       const data = await response.json();
       setBotRunning(data.running || false);
+
+      // Update training progress
+      if (data.training) {
+        setTrainingProgress(data.training);
+      }
+
       if (data.running) {
         setBotStats({
           equity: data.equity || 10000,
@@ -316,6 +323,52 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
               </div>
             )}
           </div>
+
+          {/* Training Progress */}
+          {trainingProgress && trainingProgress.is_training && (
+            <div className="card p-6 card-info">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
+                  <span className="text-2xl">🧠</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">AI Training in Progress</h3>
+                  <p className="text-sm text-muted">
+                    Episode {trainingProgress.current_episode} / {trainingProgress.total_episodes}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-info">{trainingProgress.progress_pct?.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden mb-4">
+                <div
+                  className="h-full bg-info transition-all duration-300"
+                  style={{ width: `${trainingProgress.progress_pct}%` }}
+                />
+              </div>
+
+              {/* Training Metrics */}
+              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Reward</p>
+                  <p className="text-sm font-bold">{trainingProgress.last_reward?.toFixed(2)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">P&L</p>
+                  <p className={`text-sm font-bold ${trainingProgress.last_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${trainingProgress.last_pnl?.toFixed(2)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Win Rate</p>
+                  <p className="text-sm font-bold">{trainingProgress.last_win_rate?.toFixed(1)}%</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Open Positions */}
           {positions.length > 0 && (
