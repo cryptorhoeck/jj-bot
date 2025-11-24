@@ -376,14 +376,24 @@ class JJBotPro:
             # Random walk: -2% to +2% per update (active demo)
             change = random.uniform(-0.02, 0.02)
             self.prices[symbol] *= (1 + change)
+            price = self.prices[symbol]
+
             # Track price history for strategy
             if not hasattr(self, '_price_history'):
                 self._price_history = {}
             if symbol not in self._price_history:
                 self._price_history[symbol] = []
-            self._price_history[symbol].append(self.prices[symbol])
+            self._price_history[symbol].append(price)
             # Keep last 20 prices
             self._price_history[symbol] = self._price_history[symbol][-20:]
+
+            # Update position P&L for demo mode
+            if symbol in self.positions:
+                pos = self.positions[symbol]
+                if pos.side == "long":
+                    pos.unrealized_pnl = (price - pos.entry_price) / pos.entry_price * pos.size
+                else:
+                    pos.unrealized_pnl = (pos.entry_price - price) / pos.entry_price * pos.size
 
     async def _demo_strategy(self, symbol: str, price: float):
         """Simple momentum strategy for demo mode - ACTUALLY TRADES"""
