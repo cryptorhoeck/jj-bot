@@ -178,12 +178,37 @@ class JJBotPro:
         self.config = config or BotConfig.load()
         self._setup_logging()
 
-        # State
+        # State - try to load from saved state first
         self.running = False
-        self.equity = self.config.initial_capital
-        self.peak_equity = self.config.initial_capital
-        self.daily_pnl = 0.0
-        self.daily_start_equity = self.config.initial_capital
+        saved_state = self._load_state()
+
+        if saved_state:
+            # Restore from saved state
+            self.equity = saved_state.get("equity", self.config.initial_capital)
+            self.peak_equity = saved_state.get("peak_equity", self.equity)
+            self.daily_pnl = saved_state.get("daily_pnl", 0.0)
+            self.daily_start_equity = saved_state.get("daily_start_equity", self.equity)
+            self.stats = saved_state.get("stats", {
+                "total_trades": 0,
+                "winning_trades": 0,
+                "total_pnl": 0.0,
+                "signals_analyzed": 0,
+                "start_time": None,
+            })
+            logger.info(f"Restored state: equity=${self.equity:.2f}, trades={self.stats['total_trades']}")
+        else:
+            # Fresh start
+            self.equity = self.config.initial_capital
+            self.peak_equity = self.config.initial_capital
+            self.daily_pnl = 0.0
+            self.daily_start_equity = self.config.initial_capital
+            self.stats = {
+                "total_trades": 0,
+                "winning_trades": 0,
+                "total_pnl": 0.0,
+                "signals_analyzed": 0,
+                "start_time": None,
+            }
 
         # Positions and history
         self.positions: Dict[str, Position] = {}
@@ -200,15 +225,6 @@ class JJBotPro:
 
         # Price cache
         self.prices: Dict[str, float] = {}
-
-        # Statistics
-        self.stats = {
-            "total_trades": 0,
-            "winning_trades": 0,
-            "total_pnl": 0.0,
-            "signals_analyzed": 0,
-            "start_time": None,
-        }
 
         logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
 
@@ -232,6 +248,38 @@ class JJBotPro:
                 logging.FileHandler("logs/jjbot.log", mode="a")
             ]
         )
+
+    def _load_state(self) -> Optional[Dict]:
+        """Load saved bot state from file"""
+        state_file = Path("data/bot_state.json")
+        if state_file.exists():
+            try:
+                with open(state_file) as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load state: {e}")
+        return None
+
+    def _save_state(self):
+        """Save bot state to file"""
+        state_file = Path("data/bot_state.json")
+        os.makedirs("data", exist_ok=True)
+        try:
+            state = {
+                "equity": self.equity,
+                "peak_equity": self.peak_equity,
+                "daily_pnl": self.daily_pnl,
+                "daily_start_equity": self.daily_start_equity,
+                "stats": self.stats,
+                "last_updated": datetime.now().isoformat()
+            }
+            # Handle datetime in stats
+            if state["stats"].get("start_time"):
+                state["stats"]["start_time"] = state["stats"]["start_time"].isoformat() if isinstance(state["stats"]["start_time"], datetime) else state["stats"]["start_time"]
+            with open(state_file, "w") as f:
+                json.dump(state, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save state: {e}")
 
     async def start(self):
         """Start the trading bot"""
@@ -716,6 +764,9 @@ class JJBotPro:
 
         self.stats["total_trades"] += 1
 
+        # Save state after opening position
+        self._save_state()
+
     async def _check_exits(self):
         """Check positions for exit conditions"""
         positions_to_close = []
@@ -804,6 +855,9 @@ class JJBotPro:
 
         # Remove position
         del self.positions[symbol]
+
+        # Save state after each trade
+        self._save_state()
 
     def _check_risk_limits(self) -> bool:
         """Check if risk limits allow trading"""
