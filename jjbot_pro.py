@@ -213,6 +213,9 @@ class JJBotPro:
 
     def _setup_logging(self):
         """Configure logging"""
+        # Create logs directory BEFORE setting up file handler
+        os.makedirs("logs", exist_ok=True)
+
         log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
         logging.basicConfig(
             level=log_level,
@@ -222,7 +225,6 @@ class JJBotPro:
                 logging.FileHandler("logs/jjbot.log", mode="a")
             ]
         )
-        os.makedirs("logs", exist_ok=True)
 
     async def start(self):
         """Start the trading bot"""
