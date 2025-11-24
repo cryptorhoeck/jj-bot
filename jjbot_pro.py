@@ -211,7 +211,7 @@ class JJBotPro:
             }
 
         # Positions and history
-        self.positions: Dict[str, Position] = {}
+        self.positions: Dict[str, Position] = self._load_positions()
         self.trade_history: List[TradeRecord] = []
 
         # Components (initialized in start())
@@ -304,6 +304,85 @@ class JJBotPro:
             logger.warning(f"Failed to load state from database: {e}")
 
         return None
+
+    def _load_positions(self) -> Dict[str, Position]:
+        """Load open positions from trades database"""
+        import sqlite3
+        project_root = Path(__file__).parent
+        db_path = project_root / "data" / "trades.db"
+
+        positions = {}
+
+        if not db_path.exists():
+            return positions
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+
+            # Get all trades to determine open positions (same logic as engine.py)
+            cur.execute("""
+                SELECT id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at
+                FROM trades
+                ORDER BY timestamp ASC
+            """)
+
+            all_trades = cur.fetchall()
+            conn.close()
+
+            # Track positions per symbol
+            position_data = {}
+
+            for trade in all_trades:
+                trade_id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at = trade
+
+                if symbol not in position_data:
+                    position_data[symbol] = {
+                        "symbol": symbol,
+                        "entry_time": timestamp,
+                        "entry_price": entry_price or last_price,
+                        "current_price": last_price,
+                        "trade_count": 0,
+                        "signal": signal,
+                    }
+
+                position_data[symbol]["trade_count"] += 1
+                position_data[symbol]["current_price"] = last_price
+                position_data[symbol]["signal"] = signal
+
+            # Create Position objects for open positions (odd trade count)
+            for symbol, data in position_data.items():
+                if data["trade_count"] % 2 == 1:  # Odd = open position
+                    try:
+                        entry_time = datetime.fromisoformat(data["entry_time"]) if data["entry_time"] else datetime.now()
+                    except:
+                        entry_time = datetime.now()
+
+                    # Determine side from signal
+                    side = "long" if data["signal"] == "BUY" else "short"
+
+                    # Calculate position size (use a default based on config)
+                    position_size = self.config.initial_capital * self.config.max_position_pct
+
+                    positions[symbol] = Position(
+                        symbol=symbol,
+                        side=side,
+                        entry_price=data["entry_price"],
+                        size=position_size,
+                        stop_loss=data["entry_price"] * (0.95 if side == "long" else 1.05),
+                        take_profit=data["entry_price"] * (1.10 if side == "long" else 0.90),
+                        entry_time=entry_time,
+                        signal_source="restored",
+                        unrealized_pnl=0.0  # Will be calculated when prices update
+                    )
+
+            if positions:
+                logger.info(f"Restored {len(positions)} open positions from database")
+
+        except Exception as e:
+            logger.warning(f"Failed to load positions from database: {e}")
+
+        return positions
 
     def _save_state(self):
         """Save bot state to file"""
