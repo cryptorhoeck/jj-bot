@@ -122,15 +122,22 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
     }
   };
 
-  // Update config field with debounce
-  const updateConfig = (field, value) => {
+  // Update config field with immediate save for sliders, debounce for text inputs
+  const updateConfig = (field, value, immediate = false) => {
     const newConfig = { ...proConfig, [field]: value };
     setProConfig(newConfig);
 
     if (updateConfig.timeout) clearTimeout(updateConfig.timeout);
-    updateConfig.timeout = setTimeout(() => {
+
+    if (immediate) {
+      // Save immediately for sliders and toggles
       saveConfig({ [field]: value });
-    }, 1000);
+    } else {
+      // Debounce for text inputs
+      updateConfig.timeout = setTimeout(() => {
+        saveConfig({ [field]: value });
+      }, 500);
+    }
   };
 
   // Toggle symbol selection
@@ -312,7 +319,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
               {['paper', 'live'].map(mode => (
                 <button
                   key={mode}
-                  onClick={() => updateConfig('mode', mode)}
+                  onClick={() => updateConfig('mode', mode, true)}
                   className={`px-6 py-3 rounded-lg font-medium transition-all ${
                     proConfig.mode === mode
                       ? mode === 'live' ? 'bg-danger text-white' : 'bg-success text-white'
@@ -421,7 +428,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                 max="0.9"
                 step="0.05"
                 value={proConfig.min_signal_confidence}
-                onChange={(e) => updateConfig('min_signal_confidence', parseFloat(e.target.value))}
+                onChange={(e) => updateConfig('min_signal_confidence', parseFloat(e.target.value), true)}
                 className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer"
               />
               <span className="text-xl font-bold w-16 text-center">
@@ -528,7 +535,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   <input
                     type="checkbox"
                     checked={proConfig.use_rl_agent}
-                    onChange={(e) => updateConfig('use_rl_agent', e.target.checked)}
+                    onChange={(e) => updateConfig('use_rl_agent', e.target.checked, true)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
@@ -545,7 +552,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   <input
                     type="checkbox"
                     checked={proConfig.use_edge_strategies}
-                    onChange={(e) => updateConfig('use_edge_strategies', e.target.checked)}
+                    onChange={(e) => updateConfig('use_edge_strategies', e.target.checked, true)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
@@ -562,7 +569,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   <input
                     type="checkbox"
                     checked={proConfig.use_alternative_data}
-                    onChange={(e) => updateConfig('use_alternative_data', e.target.checked)}
+                    onChange={(e) => updateConfig('use_alternative_data', e.target.checked, true)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
