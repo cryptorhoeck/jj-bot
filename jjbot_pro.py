@@ -1085,18 +1085,21 @@ class JJBotPro:
         self.training_progress["is_training"] = True
         self.training_progress["total_episodes"] = self.config.train_episodes
 
+        completed_episodes = 0
         for episode in range(self.config.train_episodes):
             if not self.running:
+                logger.info(f"Training stopped by user at episode {episode}")
                 break
 
             metrics = self.rl_agent.train_episode(self.rl_env)
+            completed_episodes = episode + 1
 
             # Update progress
-            self.training_progress["current_episode"] = episode + 1
+            self.training_progress["current_episode"] = completed_episodes
             self.training_progress["last_reward"] = metrics.get('episode_reward', 0)
             self.training_progress["last_pnl"] = metrics.get('total_pnl', 0)
             self.training_progress["last_win_rate"] = metrics.get('win_rate', 0) * 100
-            self.training_progress["progress_pct"] = ((episode + 1) / self.config.train_episodes) * 100
+            self.training_progress["progress_pct"] = (completed_episodes / self.config.train_episodes) * 100
 
             if episode % 10 == 0:
                 logger.info(
@@ -1111,21 +1114,32 @@ class JJBotPro:
                 os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
                 self.rl_agent.save(self.config.rl_model_path)
 
-        # Final save
+        # Always save model at end (whether completed or stopped)
+        os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
         self.rl_agent.save(self.config.rl_model_path)
         self.training_progress["is_training"] = False
 
-        # Switch back to paper mode after training
+        # Switch back to paper mode
         self.config.mode = "paper"
-        logger.info(f"Training complete. Model saved to {self.config.rl_model_path}. Switched to paper mode.")
+
+        if completed_episodes == self.config.train_episodes:
+            logger.info(f"Training complete! {completed_episodes} episodes. Model saved to {self.config.rl_model_path}")
+        else:
+            logger.info(f"Training stopped after {completed_episodes} episodes. Progress saved to {self.config.rl_model_path}")
 
     async def stop(self):
         """Stop the bot gracefully"""
         logger.info("Stopping JJ-Bot Pro...")
+        was_training = self.training_progress["is_training"]
         self.running = False
 
-        # Close all positions (paper mode only - in live, user decides)
-        if self.config.mode == "paper":
+        # If training, wait a moment for it to save
+        if was_training:
+            logger.info("Waiting for training to save progress...")
+            await asyncio.sleep(2)
+
+        # Close all positions (paper/live trading mode only - not during training)
+        if self.config.mode == "paper" and not was_training:
             for symbol in list(self.positions.keys()):
                 price = self.prices.get(symbol, self.positions[symbol].entry_price)
                 await self._close_position(symbol, price, "shutdown")

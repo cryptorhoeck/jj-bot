@@ -179,18 +179,29 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
 
   // Stop bot
   const stopBot = async () => {
+    const isTraining = trainingProgress?.is_training;
+
     setLoading(true);
+    if (isTraining) {
+      toast.loading('Stopping training and saving progress...');
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/bot/stop`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'stopped' || data.status === 'not_running') {
         setBotRunning(false);
-        toast.success('Trading bot stopped');
+        setTrainingProgress(null);
+        if (isTraining) {
+          toast.success('Training stopped. Progress saved!');
+        } else {
+          toast.success('Bot stopped');
+        }
       } else if (data.status === 'error') {
-        toast.error(data.message || 'Failed to stop bot');
+        toast.error(data.message || 'Failed to stop');
       }
     } catch (error) {
-      toast.error('Error stopping bot');
+      toast.error(isTraining ? 'Error stopping training' : 'Error stopping bot');
     }
     setLoading(false);
   };
