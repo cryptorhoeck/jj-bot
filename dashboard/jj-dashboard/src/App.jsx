@@ -125,7 +125,7 @@ function App() {
 
   const checkBotStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/bot/status`);
+      const response = await fetch(`${API_BASE}/api/pro/status`);
       const data = await response.json();
 
       setBotStatus({

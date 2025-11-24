@@ -48,7 +48,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   // Load bot status
   const checkBotStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/bot/status`);
+      const response = await fetch(`${API_BASE}/api/pro/status`);
       const data = await response.json();
       setBotRunning(data.running || false);
 
@@ -163,7 +163,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   const startBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/bot/start`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/pro/start`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
@@ -187,7 +187,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/bot/stop`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'stopped' || data.status === 'not_running') {
         setBotRunning(false);
