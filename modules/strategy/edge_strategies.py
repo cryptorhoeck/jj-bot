@@ -511,16 +511,20 @@ class EdgeStrategyManager:
         long_signals = [s for s in signals if s.direction == "long"]
         short_signals = [s for s in signals if s.direction == "short"]
 
-        # Calculate weighted scores
+        # Calculate weighted scores - handle both enum and int strength values
+        def get_strength_value(s):
+            strength = s.strength if hasattr(s, 'strength') else s.get('strength', 1)
+            return strength.value if hasattr(strength, 'value') else strength
+
         def calc_score(sigs: List[TradeSignal]) -> float:
-            return sum(s.strength.value * s.confidence for s in sigs)
+            return sum(get_strength_value(s) * s.confidence for s in sigs)
 
         long_score = calc_score(long_signals)
         short_score = calc_score(short_signals)
 
         # Need clear winner
         if long_score > short_score * 1.5 and long_signals:
-            best = max(long_signals, key=lambda s: s.strength.value * s.confidence)
+            best = max(long_signals, key=lambda s: get_strength_value(s) * s.confidence)
             combined = TradeSignal(
                 symbol=best.symbol,
                 direction="long",
@@ -535,7 +539,7 @@ class EdgeStrategyManager:
             return combined
 
         elif short_score > long_score * 1.5 and short_signals:
-            best = max(short_signals, key=lambda s: s.strength.value * s.confidence)
+            best = max(short_signals, key=lambda s: get_strength_value(s) * s.confidence)
             combined = TradeSignal(
                 symbol=best.symbol,
                 direction="short",
