@@ -1022,21 +1022,28 @@ class JJBotPro:
 
     def get_positions(self) -> List[Dict]:
         """Get open positions (for API)"""
-        return [
-            {
+        positions_list = []
+        for pos in self.positions.values():
+            current_price = self.prices.get(pos.symbol, pos.entry_price)
+            # Calculate unrealized P&L on-the-fly for accuracy
+            if pos.side == "long":
+                unrealized_pnl = (current_price - pos.entry_price) / pos.entry_price * pos.size
+            else:
+                unrealized_pnl = (pos.entry_price - current_price) / pos.entry_price * pos.size
+
+            positions_list.append({
                 "symbol": pos.symbol,
                 "side": pos.side,
                 "entry_price": pos.entry_price,
-                "current_price": self.prices.get(pos.symbol, pos.entry_price),
+                "current_price": current_price,
                 "size": pos.size,
-                "unrealized_pnl": pos.unrealized_pnl,
+                "unrealized_pnl": unrealized_pnl,
                 "stop_loss": pos.stop_loss,
                 "take_profit": pos.take_profit,
                 "entry_time": pos.entry_time.isoformat(),
                 "signal_source": pos.signal_source,
-            }
-            for pos in self.positions.values()
-        ]
+            })
+        return positions_list
 
     def get_trade_history(self, limit: int = 50) -> List[Dict]:
         """Get trade history (for API)"""
