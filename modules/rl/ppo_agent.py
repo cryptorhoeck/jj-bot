@@ -412,7 +412,8 @@ class PPOAgent:
 
     def load(self, path: str):
         """Load model and training state"""
-        checkpoint = torch.load(path, map_location=self.device)
+        # PyTorch 2.6+ requires weights_only=False for backward compatibility
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
 
         self.policy.load_state_dict(checkpoint["policy_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
