@@ -34,6 +34,14 @@ function App() {
   const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
+  // Unified Bot Status
+  const [botStatus, setBotStatus] = useState({
+    running: false,
+    mode: 'paper',
+    training: null,
+    apiConnected: false
+  });
+
   // Apply dark mode to document
   useEffect(() => {
     if (darkMode) {
@@ -115,14 +123,28 @@ function App() {
     }
   };
 
-  const checkSimulatorStatus = async () => {
+  const checkBotStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/simulator/status`);
+      const response = await fetch(`${API_BASE}/api/bot/status`);
       const data = await response.json();
-      setSimulatorRunning(data.running);
+
+      setBotStatus({
+        running: data.running || false,
+        mode: data.mode || 'paper',
+        training: data.training || null,
+        apiConnected: true
+      });
+
+      setSimulatorRunning(data.running || false); // For backward compatibility
     } catch (error) {
-      console.error('Error checking simulator:', error);
+      console.error('Error checking bot status:', error);
+      setBotStatus(prev => ({ ...prev, apiConnected: false }));
     }
+  };
+
+  const checkSimulatorStatus = async () => {
+    // Legacy function - now calls unified bot status
+    await checkBotStatus();
   };
 
   const startSimulator = async () => {
@@ -328,12 +350,22 @@ function App() {
 
               {/* Status Badges */}
               <div className="hidden md:flex items-center gap-2 ml-4">
-                <span className={`badge ${wsConnected ? 'badge-live' : 'badge-danger'}`}>
-                  {wsConnected ? 'Live' : 'Offline'}
+                <span className={`badge ${botStatus.apiConnected ? 'badge-live' : 'badge-danger'}`}>
+                  {botStatus.apiConnected ? '🟢 API' : '🔴 API'}
                 </span>
-                <span className={`badge ${simulatorRunning ? 'badge-success' : 'badge-warning'}`}>
-                  Bot: {simulatorRunning ? 'Active' : 'Stopped'}
-                </span>
+                {botStatus.training?.is_training ? (
+                  <span className="badge badge-info">
+                    🧠 Training ({botStatus.training.trading_iq || 0} IQ)
+                  </span>
+                ) : botStatus.running ? (
+                  <span className="badge badge-success">
+                    ▶ Trading
+                  </span>
+                ) : (
+                  <span className="badge badge-warning">
+                    ⏹ Stopped
+                  </span>
+                )}
               </div>
             </div>
 
