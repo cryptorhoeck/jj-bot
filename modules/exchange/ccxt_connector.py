@@ -263,10 +263,18 @@ class CCXTConnector:
             task.cancel()
 
         if self.ws_exchange:
-            await self.ws_exchange.close()
+            try:
+                await self.ws_exchange.close()
+            except Exception as e:
+                logger.debug(f"WS exchange close error: {e}")
 
         if self.exchange:
-            self.exchange.close()
+            # Not all ccxt exchanges have close(), check first
+            if hasattr(self.exchange, 'close') and callable(self.exchange.close):
+                try:
+                    self.exchange.close()
+                except Exception as e:
+                    logger.debug(f"Exchange close error: {e}")
 
         logger.info("Exchange connections closed")
 

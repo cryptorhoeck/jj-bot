@@ -359,17 +359,106 @@ class JJBotPro:
             "ADA/USDT": 1.00,
             "DOGE/USDT": 0.40,
         }
+        self._price_history = {}
         for symbol in self.config.symbols:
-            self.prices[symbol] = demo_prices.get(symbol, 100.0)
+            base_price = demo_prices.get(symbol, 100.0)
+            self.prices[symbol] = base_price
+            # Pre-fill price history so trading can start immediately
+            self._price_history[symbol] = [
+                base_price * (1 + random.uniform(-0.01, 0.01)) for _ in range(10)
+            ]
         logger.info(f"Demo prices initialized: {self.prices}")
 
     async def _update_demo_prices(self):
         """Simulate price movements in demo mode"""
         import random
         for symbol in self.prices:
-            # Random walk: -0.5% to +0.5% per update
-            change = random.uniform(-0.005, 0.005)
+            # Random walk: -2% to +2% per update (active demo)
+            change = random.uniform(-0.02, 0.02)
             self.prices[symbol] *= (1 + change)
+            # Track price history for strategy
+            if not hasattr(self, '_price_history'):
+                self._price_history = {}
+            if symbol not in self._price_history:
+                self._price_history[symbol] = []
+            self._price_history[symbol].append(self.prices[symbol])
+            # Keep last 20 prices
+            self._price_history[symbol] = self._price_history[symbol][-20:]
+
+    async def _demo_strategy(self, symbol: str, price: float):
+        """Simple momentum strategy for demo mode - ACTUALLY TRADES"""
+        import random
+
+        # Skip if already have position
+        if symbol in self.positions:
+            return None
+
+        # Initialize trade counter for immediate first trade
+        if not hasattr(self, '_demo_trade_count'):
+            self._demo_trade_count = 0
+
+        # Need price history
+        if not hasattr(self, '_price_history') or symbol not in self._price_history:
+            return None
+
+        history = self._price_history[symbol]
+        if len(history) < 3:  # Reduced from 5 to 3
+            return None
+
+        # Calculate momentum (price change over last 3 periods)
+        momentum = (price - history[-3]) / history[-3] if history[-3] > 0 else 0
+
+        # Generate signal based on momentum
+        signal = None
+
+        # FIRST TRADE: Always make a trade quickly to show bot is working
+        if self._demo_trade_count < 2:
+            self._demo_trade_count += 1
+            direction = "long" if momentum >= 0 else "short"
+            signal = self._create_signal(
+                symbol, price, direction, 0.75, "demo_kickstart",
+                f"Initial demo trade #{self._demo_trade_count}"
+            )
+            logger.info(f"DEMO SIGNAL: {direction.upper()} {symbol} - kickstart trade #{self._demo_trade_count}")
+            return signal
+
+        # Momentum up = BUY (lower threshold: 0.3% instead of 1%)
+        if momentum > 0.003:
+            signal = self._create_signal(
+                symbol, price, "long", 0.7, "demo_momentum",
+                f"Bullish momentum: {momentum:.2%}"
+            )
+            logger.info(f"DEMO SIGNAL: BUY {symbol} - momentum {momentum:.2%}")
+
+        # Momentum down = mean reversion buy
+        elif momentum < -0.003:
+            signal = self._create_signal(
+                symbol, price, "long", 0.65, "demo_mean_reversion",
+                f"Mean reversion: oversold {momentum:.2%}"
+            )
+            logger.info(f"DEMO SIGNAL: BUY {symbol} (mean reversion) - dip {momentum:.2%}")
+
+        # Random trade occasionally (increased to 35% chance)
+        elif random.random() < 0.35:
+            direction = random.choice(["long", "short"])
+            signal = self._create_signal(
+                symbol, price, direction, 0.65, "demo_random",
+                f"Demo trade for testing"
+            )
+            logger.info(f"DEMO SIGNAL: {direction.upper()} {symbol} - random demo trade")
+
+        return signal
+
+    def _create_signal(self, symbol, price, direction, confidence, edge_type, reason):
+        """Create a signal dict (works without TradeSignal class)"""
+        return {
+            "symbol": symbol,
+            "direction": direction,
+            "confidence": confidence,
+            "edge_type": edge_type,
+            "entry_price": price,
+            "reason": reason,
+        }
 
     async def _trading_loop(self):
         """Main trading loop"""
@@ -424,46 +513,49 @@ class JJBotPro:
         if price <= 0:
             return
 
-        signals: List[TradeSignal] = []
+        signals = []
 
-        # 1. Get edge strategy signals
-        if self.edge_manager:
-            try:
-                # Build data dict for edge analysis
-                alt_signals = {}
-                if self.alt_data:
-                    alt_signals = await self.alt_data.get_alternative_signals(base_symbol)
+        # DEMO MODE: Use simple momentum strategy that actually trades
+        if self._demo_mode:
+            signal = await self._demo_strategy(symbol, price)
+            if signal:
+                signals.append(signal)
+        else:
+            # Production: Use edge strategies and alternative data
+            # 1. Get edge strategy signals
+            if self.edge_manager and EDGE_AVAILABLE:
+                try:
+                    alt_signals = {}
+                    if self.alt_data:
+                        alt_signals = await self.alt_data.get_alternative_signals(base_symbol)
 
-                edge_data = {
-                    "symbol": base_symbol,
-                    "price": price,
-                    "funding_rate": alt_signals.get("funding", {}).get("rate", 0),
-                    "fear_greed_index": alt_signals.get("sentiment", {}).get("fear_greed", 50),
-                    "long_short_ratio": alt_signals.get("funding", {}).get("long_short_ratio", 1.0),
-                }
+                    edge_data = {
+                        "symbol": base_symbol,
+                        "price": price,
+                        "funding_rate": alt_signals.get("funding", {}).get("rate", 0),
+                        "fear_greed_index": alt_signals.get("sentiment", {}).get("fear_greed", 50),
+                        "long_short_ratio": alt_signals.get("funding", {}).get("long_short_ratio", 1.0),
+                    }
 
-                edge_signals = await self.edge_manager.analyze_all(edge_data)
-                signals.extend(edge_signals)
+                    edge_signals = await self.edge_manager.analyze_all(edge_data)
+                    signals.extend(edge_signals)
+                except Exception as e:
+                    logger.debug(f"Edge analysis error for {symbol}: {e}")
 
-            except Exception as e:
-                logger.debug(f"Edge analysis error for {symbol}: {e}")
-
-        # 2. Get alternative data edge signals
-        if self.edge_detector:
-            try:
-                recommendation = await self.edge_detector.get_trade_recommendation(base_symbol)
-                if recommendation["action"] != "hold" and recommendation["confidence"] > 0.5:
-                    signals.append(TradeSignal(
-                        symbol=symbol,
-                        direction="long" if recommendation["action"] == "buy" else "short",
-                        strength=2,  # MODERATE
-                        confidence=recommendation["confidence"],
-                        edge_type="alternative_data",
-                        entry_price=price,
-                        reason=recommendation.get("reason", "Alternative data signal")
-                    ))
-            except Exception as e:
-                logger.debug(f"Alt data error for {symbol}: {e}")
+            # 2. Get alternative data signals
+            if self.edge_detector:
+                try:
+                    recommendation = await self.edge_detector.get_trade_recommendation(base_symbol)
+                    if recommendation["action"] != "hold" and recommendation["confidence"] > 0.5:
+                        signals.append(self._create_signal(
+                            symbol, price,
+                            "long" if recommendation["action"] == "buy" else "short",
+                            recommendation["confidence"],
+                            "alternative_data",
+                            recommendation.get("reason", "Alternative data signal")
+                        ))
+                except Exception as e:
+                    logger.debug(f"Alt data error for {symbol}: {e}")
 
         # 3. Get RL agent signal (if no position)
         if self.rl_agent and symbol not in self.positions:
@@ -506,13 +598,26 @@ class JJBotPro:
 
         # 4. Combine signals and decide
         if signals:
-            combined = self.edge_manager.get_combined_signal(signals) if self.edge_manager else signals[0]
+            # Use first signal (demo mode) or combine (production)
+            if self._demo_mode or not self.edge_manager:
+                combined = signals[0]
+            else:
+                combined = self.edge_manager.get_combined_signal(signals)
 
-            if combined and combined.confidence >= self.config.min_signal_confidence:
+            # Get confidence (works with dict or object)
+            conf = combined.get("confidence", 0) if isinstance(combined, dict) else getattr(combined, "confidence", 0)
+
+            if combined and conf >= self.config.min_signal_confidence:
                 await self._handle_signal(symbol, combined)
 
-    async def _handle_signal(self, symbol: str, signal: TradeSignal):
-        """Handle a trading signal"""
+    async def _handle_signal(self, symbol: str, signal):
+        """Handle a trading signal (dict or TradeSignal object)"""
+        # Helper to get attribute from dict or object
+        def get_attr(obj, key, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
         # Skip if already have position in this symbol
         if symbol in self.positions:
             return
@@ -521,7 +626,13 @@ class JJBotPro:
         if len(self.positions) >= self.config.max_positions:
             return
 
-        price = self.prices.get(symbol, signal.entry_price or 0)
+        direction = get_attr(signal, "direction", "long")
+        confidence = get_attr(signal, "confidence", 0.5)
+        edge_type = get_attr(signal, "edge_type", "unknown")
+        reason = get_attr(signal, "reason", "")
+        entry_price = get_attr(signal, "entry_price", 0)
+
+        price = self.prices.get(symbol, entry_price or 0)
         if price <= 0:
             return
 
@@ -529,21 +640,21 @@ class JJBotPro:
         position_value = self.equity * self.config.max_position_pct
 
         # Calculate stops
-        if signal.direction == "long":
+        if direction == "long":
             stop_loss = price * (1 - self.config.stop_loss_pct)
             take_profit = price * (1 + self.config.take_profit_pct)
         else:
             stop_loss = price * (1 + self.config.stop_loss_pct)
             take_profit = price * (1 - self.config.take_profit_pct)
 
-        logger.info(f"SIGNAL: {signal.direction.upper()} {symbol} @ ${price:.2f}")
-        logger.info(f"  Confidence: {signal.confidence:.1%}, Edge: {signal.edge_type}")
-        logger.info(f"  Reason: {signal.reason}")
+        logger.info(f"SIGNAL: {direction.upper()} {symbol} @ ${price:.2f}")
+        logger.info(f"  Confidence: {confidence:.1%}, Edge: {edge_type}")
+        logger.info(f"  Reason: {reason}")
 
         # Execute based on mode
         if self.config.mode == "live":
             # Real order execution
-            side = OrderSide.BUY if signal.direction == "long" else OrderSide.SELL
+            side = OrderSide.BUY if direction == "long" else OrderSide.SELL
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
@@ -553,26 +664,26 @@ class JJBotPro:
 
             result = await self.exchange.create_order(order)
             if result:
-                entry_price = result.price
-                logger.info(f"ORDER FILLED: {result.order_id} @ ${entry_price:.2f}")
+                filled_price = result.price
+                logger.info(f"ORDER FILLED: {result.order_id} @ ${filled_price:.2f}")
             else:
                 logger.error("Order failed")
                 return
         else:
             # Paper trading
-            entry_price = price
-            logger.info(f"PAPER TRADE: {signal.direction.upper()} {symbol} @ ${entry_price:.2f}")
+            filled_price = price
+            logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f}")
 
         # Record position
         self.positions[symbol] = Position(
             symbol=symbol,
-            side=signal.direction,
-            entry_price=entry_price,
+            side=direction,
+            entry_price=filled_price,
             size=position_value,
             stop_loss=stop_loss,
             take_profit=take_profit,
             entry_time=datetime.now(),
-            signal_source=signal.edge_type
+            signal_source=edge_type
         )
 
         self.stats["total_trades"] += 1
