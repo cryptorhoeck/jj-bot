@@ -276,7 +276,9 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                         <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
                           {botRunning ? '▶ Trading' : '⏹ Stopped'}
                         </span>
-                        <span className="badge badge-info">{proConfig.mode} mode</span>
+                        {proConfig.mode === 'live' && (
+                          <span className="badge badge-danger">⚠️ LIVE MONEY</span>
+                        )}
                         <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
                       </>
                     )}
@@ -356,10 +358,10 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   <h3 className="font-semibold mb-2">How It Works</h3>
                   <div className="space-y-2 text-sm text-muted">
                     <p>
-                      <strong className="text-[var(--text-color)]">▶️ Start Bot (Paper Trading):</strong> Runs live trading with real market data and all strategies. No real money is used - trades are simulated to test strategies.
+                      <strong className="text-[var(--text-color)]">▶️ Start Trading:</strong> Bot trades with real market data. No real money (paper trading). Click "Stop" to pause.
                     </p>
                     <p>
-                      <strong className="text-[var(--text-color)]">🧠 Train AI:</strong> Runs thousands of simulated episodes quickly to train the RL model. This improves the AI's trading decisions. Training stops the regular bot temporarily.
+                      <strong className="text-[var(--text-color)]">🧠 Train AI:</strong> Trains the AI model quickly. Trading pauses during training. Click "Stop Training" anytime to cancel.
                     </p>
                   </div>
                 </div>

@@ -1114,7 +1114,10 @@ class JJBotPro:
         # Final save
         self.rl_agent.save(self.config.rl_model_path)
         self.training_progress["is_training"] = False
-        logger.info(f"Training complete. Model saved to {self.config.rl_model_path}")
+
+        # Switch back to paper mode after training
+        self.config.mode = "paper"
+        logger.info(f"Training complete. Model saved to {self.config.rl_model_path}. Switched to paper mode.")
 
     async def stop(self):
         """Stop the bot gracefully"""

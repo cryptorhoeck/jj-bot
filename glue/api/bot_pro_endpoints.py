@@ -219,6 +219,12 @@ async def stop_bot():
         return {"status": "not_running", "message": "Bot is not running"}
 
     try:
+        # If in training mode, switch back to paper
+        if _bot_instance.config.mode == "training":
+            config = load_config() or {}
+            config["mode"] = "paper"
+            save_config(config)
+
         # Stop the bot gracefully
         await _bot_instance.stop()
 
