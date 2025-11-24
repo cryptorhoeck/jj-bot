@@ -1,583 +1,631 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+// Available symbols for selection
+const AVAILABLE_SYMBOLS = [
+  'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'AVAX', 'LINK',
+  'DOT', 'MATIC', 'SHIB', 'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL',
+  'HBAR', 'APT', 'ARB', 'OP', 'NEAR', 'INJ', 'RUNE', 'AAVE', 'GRT', 'FTM',
+  'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'CRV', 'SNX', 'COMP', 'MKR',
+  'SUSHI', 'YFI', '1INCH', 'BAL', 'LDO', 'RPL', 'SSV', 'GMX', 'DYDX', 'WOO'
+];
+
 export function TradingTab({ darkMode, API_BASE, learningData }) {
   const [botRunning, setBotRunning] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState('control'); // control, config, symbols, strategies
 
-  const [botConfig, setBotConfig] = useState({
+  // Pro config state
+  const [proConfig, setProConfig] = useState({
+    mode: 'paper',
     initial_capital: 10000,
-    max_open_positions: 5,
-    position_size_pct: 0.10,
+    max_position_pct: 0.05,
+    max_positions: 10,
     stop_loss_pct: 0.02,
-    take_profit_pct: 0.05,
-    use_stop_loss: true,
-    use_take_profit: true
+    take_profit_pct: 0.04,
+    max_daily_loss_pct: 0.05,
+    max_drawdown_pct: 0.10,
+    min_signal_confidence: 0.45,
+    use_rl_agent: true,
+    use_edge_strategies: true,
+    use_alternative_data: true,
+    symbols: []
   });
 
-  const [botSymbols, setBotSymbols] = useState([]);
-  const [newSymbol, setNewSymbol] = useState('');
+  const [botStats, setBotStats] = useState({
+    equity: 10000,
+    positions: 0,
+    total_trades: 0,
+    total_pnl: 0,
+    win_rate: 0
+  });
+
+  const [selectedSymbols, setSelectedSymbols] = useState([]);
+  const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
-  const [backtestExpanded, setBacktestExpanded] = useState(false);
-  const [backtestResults, setBacktestResults] = useState(null);
-  const [backtestRunning, setBacktestRunning] = useState(false);
-  const [backtestConfig, setBacktestConfig] = useState({
-    strategy: 'rsi_strategy',
-    symbols: ['BTC', 'ETH']
-  });
 
+  // Load bot status
   const checkBotStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/simulator/status`);
+      const response = await fetch(`${API_BASE}/api/bot/status`);
       const data = await response.json();
-      setBotRunning(data.running);
+      setBotRunning(data.running || false);
+      if (data.running) {
+        setBotStats({
+          equity: data.equity || 10000,
+          positions: data.positions || 0,
+          total_trades: data.total_trades || 0,
+          total_pnl: data.total_pnl || 0,
+          win_rate: data.win_rate || 0
+        });
+      }
     } catch (error) {
       console.error('Failed to check bot status:', error);
     }
   }, [API_BASE]);
 
-  const loadBotConfig = useCallback(async () => {
+  // Load pro config
+  const loadProConfig = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/simulator/config/`);
+      const response = await fetch(`${API_BASE}/api/pro/config`);
       const data = await response.json();
-
-      if (data.success && data.config) {
-        const cfg = data.config;
-        setBotConfig({
-          initial_capital: cfg.initial_capital || 10000,
-          max_open_positions: cfg.trading_mechanics?.max_open_positions || 5,
-          position_size_pct: cfg.trading_mechanics?.position_size_pct || 0.10,
-          stop_loss_pct: cfg.risk_management?.stop_loss_pct || 0.02,
-          take_profit_pct: cfg.risk_management?.take_profit_pct || 0.05,
-          use_stop_loss: cfg.risk_management?.use_stop_loss !== false,
-          use_take_profit: cfg.risk_management?.use_take_profit !== false
-        });
+      if (data.config) {
+        setProConfig(prev => ({ ...prev, ...data.config }));
+        if (data.config.symbols) {
+          setSelectedSymbols(data.config.symbols.map(s => s.replace('/USDT', '')));
+        }
       }
     } catch (error) {
-      console.error('Failed to load bot config:', error);
+      console.error('Failed to load pro config:', error);
     }
   }, [API_BASE]);
 
-  const loadSymbols = useCallback(async () => {
+  // Load open positions
+  const loadPositions = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/symbols/enabled`);
+      const response = await fetch(`${API_BASE}/api/positions/open`);
       const data = await response.json();
-      if (data.success && Array.isArray(data.symbols)) {
-        setBotSymbols(data.symbols);
+      if (data.open_positions) {
+        setPositions(data.open_positions);
       }
     } catch (error) {
-      console.error('Failed to load symbols:', error);
+      console.error('Failed to load positions:', error);
     }
   }, [API_BASE]);
 
   useEffect(() => {
     checkBotStatus();
-    loadBotConfig();
-    loadSymbols();
-
+    loadProConfig();
+    loadPositions();
     const interval = setInterval(() => {
       checkBotStatus();
+      if (botRunning) loadPositions();
     }, 5000);
-
     return () => clearInterval(interval);
-  }, [checkBotStatus, loadBotConfig, loadSymbols]);
+  }, [checkBotStatus, loadProConfig, loadPositions, botRunning]);
 
-  const saveBotConfig = async (config) => {
+  // Save config to API
+  const saveConfig = async (updates) => {
     try {
-      const payload = {
-        initial_capital: config.initial_capital,
-        trading_mechanics: {
-          max_open_positions: config.max_open_positions,
-          position_size_pct: config.position_size_pct
-        },
-        risk_management: {
-          stop_loss_pct: config.stop_loss_pct,
-          take_profit_pct: config.take_profit_pct,
-          use_stop_loss: config.use_stop_loss,
-          use_take_profit: config.use_take_profit
-        }
-      };
-
-      await fetch(`${API_BASE}/api/simulator/config/`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE}/api/pro/config`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(updates)
       });
+      const data = await response.json();
+      if (data.status === 'updated') {
+        toast.success('Configuration saved');
+        setProConfig(prev => ({ ...prev, ...updates }));
+      }
     } catch (error) {
-      console.error('Failed to save config:', error);
+      toast.error('Failed to save config');
     }
   };
 
-  const updateConfig = (key, value) => {
-    const newConfig = { ...botConfig, [key]: value };
-    setBotConfig(newConfig);
+  // Update config field with debounce
+  const updateConfig = (field, value) => {
+    const newConfig = { ...proConfig, [field]: value };
+    setProConfig(newConfig);
+
     if (updateConfig.timeout) clearTimeout(updateConfig.timeout);
     updateConfig.timeout = setTimeout(() => {
-      saveBotConfig(newConfig);
+      saveConfig({ [field]: value });
     }, 1000);
   };
 
+  // Toggle symbol selection
+  const toggleSymbol = (symbol) => {
+    const newSymbols = selectedSymbols.includes(symbol)
+      ? selectedSymbols.filter(s => s !== symbol)
+      : [...selectedSymbols, symbol];
+    setSelectedSymbols(newSymbols);
+
+    // Save to config as SYMBOL/USDT format
+    const symbolsWithPair = newSymbols.map(s => `${s}/USDT`);
+    saveConfig({ symbols: symbolsWithPair });
+  };
+
+  // Start bot
   const startBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/simulator/start`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/bot/start`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
-        toast.success('Trading bot started successfully!');
+        toast.success('Trading bot started!');
+      } else if (data.status === 'error') {
+        toast.error(data.message || 'Failed to start bot');
       }
     } catch (error) {
-      toast.error('Error starting bot: ' + error);
+      toast.error('Error starting bot');
     }
     setLoading(false);
   };
 
+  // Stop bot
   const stopBot = async () => {
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/api/simulator/stop`, { method: 'POST' });
+      await fetch(`${API_BASE}/api/bot/stop`, { method: 'POST' });
       setBotRunning(false);
       toast.success('Trading bot stopped');
     } catch (error) {
-      toast.error('Error stopping bot: ' + error);
+      toast.error('Error stopping bot');
     }
     setLoading(false);
   };
 
-  const handleAddSymbol = async () => {
-    const symbol = newSymbol.toUpperCase().trim();
-    if (!symbol) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/api/symbols/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, enabled: true })
-      });
-
-      if (response.status === 404) {
-        await fetch(`${API_BASE}/api/symbols/add`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ symbol, coingecko_id: symbol.toLowerCase() })
-        });
-      }
-
-      setBotSymbols([...botSymbols, symbol]);
-      setNewSymbol('');
-      toast.success(`${symbol} added to trading list`);
-    } catch (error) {
-      toast.error('Failed to add symbol');
-    }
-  };
-
-  const removeSymbol = async (symbol) => {
-    try {
-      await fetch(`${API_BASE}/api/symbols/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, enabled: false })
-      });
-      setBotSymbols(botSymbols.filter(s => s !== symbol));
-      toast.success(`${symbol} removed`);
-    } catch (error) {
-      console.error('Failed to remove symbol:', error);
-    }
-  };
-
-  const runBacktest = async () => {
-    setBacktestRunning(true);
-    try {
-      const response = await fetch(`${API_BASE}/api/backtest/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(backtestConfig)
-      });
-      const data = await response.json();
-      setBacktestResults(data);
-      toast.success('Backtest completed!');
-    } catch (error) {
-      toast.error('Backtest failed: ' + error);
-    }
-    setBacktestRunning(false);
-  };
+  // Filter symbols by search
+  const filteredSymbols = AVAILABLE_SYMBOLS.filter(s =>
+    s.toLowerCase().includes(symbolSearch.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
-      {/* Bot Status & Control */}
-      <div className={`card p-6 ${botRunning ? 'card-success' : ''}`}>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${botRunning ? 'bg-success/10' : 'bg-[var(--bg-tertiary)]'}`}>
-              <svg className={`w-7 h-7 ${botRunning ? 'text-success' : 'text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-bold">Trading Bot</h2>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
-                  {botRunning ? 'Running' : 'Stopped'}
-                </span>
-                {learningData?.current_state?.recommended_strategy && (
-                  <span className="badge badge-info">
-                    {learningData.current_state.recommended_strategy}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
+      {/* Navigation Tabs */}
+      <div className="flex gap-2 border-b border-[var(--border-color)] pb-2">
+        {['control', 'config', 'symbols', 'strategies'].map(section => (
           <button
-            onClick={botRunning ? stopBot : startBot}
-            disabled={loading}
-            className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
+            key={section}
+            onClick={() => setActiveSection(section)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeSection === section
+                ? 'bg-info text-white'
+                : 'text-muted hover:bg-[var(--bg-tertiary)]'
+            }`}
           >
-            {loading ? (
-              <div className="spinner w-5 h-5" />
-            ) : botRunning ? (
-              <>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                </svg>
-                Stop Bot
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Start Bot
-              </>
-            )}
+            {section === 'control' && '🤖 Control'}
+            {section === 'config' && '⚙️ Settings'}
+            {section === 'symbols' && '📊 Symbols'}
+            {section === 'strategies' && '🧠 Strategies'}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {/* Strategy Info */}
-        {learningData?.current_state && (
-          <div className="mt-4 p-4 rounded-xl bg-[var(--bg-tertiary)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted uppercase tracking-wide">Active Strategy</p>
-                <p className="text-lg font-semibold text-info">
-                  {learningData.current_state.recommended_strategy || 'RSI Strategy'}
-                </p>
-              </div>
-              {learningData.current_state.confidence && (
-                <div className="text-right">
-                  <p className="text-xs text-muted uppercase tracking-wide">Confidence</p>
-                  <p className="text-lg font-semibold text-success">
-                    {(learningData.current_state.confidence * 100).toFixed(0)}%
-                  </p>
+      {/* CONTROL SECTION */}
+      {activeSection === 'control' && (
+        <>
+          {/* Bot Status & Control */}
+          <div className={`card p-6 ${botRunning ? 'card-success' : ''}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${botRunning ? 'bg-success/10' : 'bg-[var(--bg-tertiary)]'}`}>
+                  <span className="text-3xl">{botRunning ? '🟢' : '⚪'}</span>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+                <div>
+                  <h2 className="text-xl font-bold">JJ-Bot Pro</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
+                      {botRunning ? 'Running' : 'Stopped'}
+                    </span>
+                    <span className="badge badge-info">{proConfig.mode} mode</span>
+                    <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
+                  </div>
+                </div>
+              </div>
 
-      {/* Configuration */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Configuration
-        </h3>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="input-label">Initial Capital ($)</label>
-            <input
-              type="number"
-              value={botConfig.initial_capital}
-              onChange={(e) => updateConfig('initial_capital', parseFloat(e.target.value))}
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="input-label">Max Open Positions</label>
-            <input
-              type="number"
-              value={botConfig.max_open_positions}
-              onChange={(e) => updateConfig('max_open_positions', parseInt(e.target.value))}
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="input-label">Position Size (%)</label>
-            <input
-              type="number"
-              step="1"
-              value={(botConfig.position_size_pct * 100).toFixed(0)}
-              onChange={(e) => updateConfig('position_size_pct', parseFloat(e.target.value) / 100)}
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="input-label">Stop Loss (%)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={(botConfig.stop_loss_pct * 100).toFixed(1)}
-              onChange={(e) => updateConfig('stop_loss_pct', parseFloat(e.target.value) / 100)}
-              disabled={!botConfig.use_stop_loss}
-              className={`input ${!botConfig.use_stop_loss ? 'opacity-50' : ''}`}
-            />
-          </div>
-
-          <div>
-            <label className="input-label">Take Profit (%)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={(botConfig.take_profit_pct * 100).toFixed(1)}
-              onChange={(e) => updateConfig('take_profit_pct', parseFloat(e.target.value) / 100)}
-              disabled={!botConfig.use_take_profit}
-              className={`input ${!botConfig.use_take_profit ? 'opacity-50' : ''}`}
-            />
-          </div>
-        </div>
-
-        {/* Checkboxes */}
-        <div className="flex flex-wrap gap-6 mt-4 pt-4 border-t border-[var(--border-color)]">
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={botConfig.use_stop_loss}
-              onChange={(e) => updateConfig('use_stop_loss', e.target.checked)}
-              className="w-5 h-5 rounded border-2 border-[var(--border-color)] text-info focus:ring-info"
-            />
-            <span className="text-sm font-medium group-hover:text-info transition-colors">Use Stop Loss</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={botConfig.use_take_profit}
-              onChange={(e) => updateConfig('use_take_profit', e.target.checked)}
-              className="w-5 h-5 rounded border-2 border-[var(--border-color)] text-info focus:ring-info"
-            />
-            <span className="text-sm font-medium group-hover:text-info transition-colors">Use Take Profit</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Trading Symbols */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <svg className="w-5 h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-          </svg>
-          Trading Symbols
-          <span className="badge badge-info ml-2">{botSymbols.length} active</span>
-        </h3>
-
-        {/* Add Symbol */}
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            placeholder="Add symbol (e.g., BTC)"
-            value={newSymbol}
-            onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-            onKeyPress={(e) => e.key === 'Enter' && handleAddSymbol()}
-            className="input flex-1"
-          />
-          <button onClick={handleAddSymbol} className="btn btn-primary">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add
-          </button>
-        </div>
-
-        {/* Symbol Tags */}
-        <div className="flex flex-wrap gap-2">
-          {botSymbols.map(symbol => (
-            <div
-              key={symbol}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] group hover:border-danger transition-colors"
-            >
-              <span className="font-semibold">{symbol}</span>
               <button
-                onClick={() => removeSymbol(symbol)}
-                className="text-muted hover:text-danger transition-colors"
+                onClick={botRunning ? stopBot : startBot}
+                disabled={loading}
+                className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop Bot' : '▶️ Start Bot'}
               </button>
             </div>
-          ))}
-          {botSymbols.length === 0 && (
-            <p className="text-muted text-sm">No symbols added yet. Add symbols to start trading.</p>
-          )}
-        </div>
-      </div>
 
-      {/* Strategy Performance */}
-      {learningData?.top_strategies?.length > 0 && (
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            Strategy Performance (24h)
-          </h3>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {learningData.top_strategies.slice(0, 6).map((strat, idx) => (
-              <div
-                key={strat.name}
-                className={`p-4 rounded-xl bg-[var(--bg-tertiary)] border ${
-                  strat.name === learningData.current_state?.recommended_strategy
-                    ? 'border-info'
-                    : 'border-[var(--border-color)]'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-semibold flex items-center gap-2">
-                    {idx === 0 && <span className="text-yellow-500">1st</span>}
-                    {idx === 1 && <span className="text-gray-400">2nd</span>}
-                    {idx === 2 && <span className="text-amber-600">3rd</span>}
-                    {strat.name}
-                  </p>
-                  {strat.name === learningData.current_state?.recommended_strategy && (
-                    <span className="badge badge-info text-xs">Active</span>
-                  )}
+            {/* Live Stats */}
+            {botRunning && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-4 border-t border-[var(--border-color)]">
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Equity</p>
+                  <p className="text-lg font-bold">${botStats.equity?.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
                 </div>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted">Win Rate</span>
-                    <span className="font-semibold">{(strat.win_rate * 100).toFixed(0)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">P&L</span>
-                    <span className={`font-semibold ${strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                      ${strat.total_pnl.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Trades</span>
-                    <span>{strat.trade_count}</span>
-                  </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Positions</p>
+                  <p className="text-lg font-bold">{botStats.positions}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Trades</p>
+                  <p className="text-lg font-bold">{botStats.total_trades}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">P&L</p>
+                  <p className={`text-lg font-bold ${botStats.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${botStats.total_pnl?.toFixed(2)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Win Rate</p>
+                  <p className="text-lg font-bold">{botStats.win_rate?.toFixed(1)}%</p>
                 </div>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Learning Insights */}
-          {learningData.insights?.length > 0 && (
-            <div className="mt-4 space-y-2">
-              {learningData.insights.map((insight, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg ${insight.type === 'suggestion' ? 'bg-info/10' : 'bg-warning/10'}`}
+          {/* Open Positions */}
+          {positions.length > 0 && (
+            <div className="card p-6">
+              <h3 className="text-lg font-semibold mb-4">📈 Open Positions ({positions.length})</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-muted text-left border-b border-[var(--border-color)]">
+                      <th className="pb-2">Symbol</th>
+                      <th className="pb-2">Side</th>
+                      <th className="pb-2">Entry</th>
+                      <th className="pb-2">Current</th>
+                      <th className="pb-2">P&L</th>
+                      <th className="pb-2">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions.map((pos, idx) => (
+                      <tr key={idx} className="border-b border-[var(--border-color)]">
+                        <td className="py-2 font-semibold">{pos.symbol}</td>
+                        <td className={pos.side === 'long' ? 'text-success' : 'text-danger'}>
+                          {pos.side?.toUpperCase()}
+                        </td>
+                        <td>${pos.entry_price?.toFixed(2)}</td>
+                        <td>${pos.current_price?.toFixed(2)}</td>
+                        <td className={pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}>
+                          ${pos.unrealized_pnl?.toFixed(2)}
+                        </td>
+                        <td className="text-muted">{pos.signal_source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* SETTINGS SECTION */}
+      {activeSection === 'config' && (
+        <div className="space-y-6">
+          {/* Trading Mode */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">🎯 Trading Mode</h3>
+            <div className="flex gap-4">
+              {['paper', 'live'].map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => updateConfig('mode', mode)}
+                  className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                    proConfig.mode === mode
+                      ? mode === 'live' ? 'bg-danger text-white' : 'bg-success text-white'
+                      : 'bg-[var(--bg-tertiary)] text-muted hover:bg-[var(--bg-secondary)]'
+                  }`}
                 >
-                  <p className="text-sm flex items-center gap-2">
-                    {insight.type === 'suggestion' ? (
-                      <svg className="w-4 h-4 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    )}
-                    {insight.message}
-                  </p>
-                </div>
+                  {mode === 'paper' ? '📝 Paper Trading' : '💰 Live Trading'}
+                </button>
               ))}
+            </div>
+            {proConfig.mode === 'live' && (
+              <p className="mt-2 text-danger text-sm">⚠️ Live trading uses real funds. Use with caution!</p>
+            )}
+          </div>
+
+          {/* Capital & Position Sizing */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">💰 Capital & Position Sizing</h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <label className="input-label">Initial Capital ($)</label>
+                <input
+                  type="number"
+                  value={proConfig.initial_capital}
+                  onChange={(e) => updateConfig('initial_capital', parseFloat(e.target.value))}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="input-label">Position Size (%)</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={(proConfig.max_position_pct * 100).toFixed(0)}
+                  onChange={(e) => updateConfig('max_position_pct', parseFloat(e.target.value) / 100)}
+                  className="input"
+                />
+                <p className="text-xs text-muted mt-1">${(proConfig.initial_capital * proConfig.max_position_pct).toFixed(0)} per trade</p>
+              </div>
+              <div>
+                <label className="input-label">Max Concurrent Positions</label>
+                <input
+                  type="number"
+                  value={proConfig.max_positions}
+                  onChange={(e) => updateConfig('max_positions', parseInt(e.target.value))}
+                  className="input"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Management */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">🛡️ Risk Management</h3>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="input-label">Stop Loss (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(proConfig.stop_loss_pct * 100).toFixed(1)}
+                  onChange={(e) => updateConfig('stop_loss_pct', parseFloat(e.target.value) / 100)}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="input-label">Take Profit (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(proConfig.take_profit_pct * 100).toFixed(1)}
+                  onChange={(e) => updateConfig('take_profit_pct', parseFloat(e.target.value) / 100)}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="input-label">Max Daily Loss (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(proConfig.max_daily_loss_pct * 100).toFixed(1)}
+                  onChange={(e) => updateConfig('max_daily_loss_pct', parseFloat(e.target.value) / 100)}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="input-label">Max Drawdown (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={(proConfig.max_drawdown_pct * 100).toFixed(1)}
+                  onChange={(e) => updateConfig('max_drawdown_pct', parseFloat(e.target.value) / 100)}
+                  className="input"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Signal Confidence */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">🎚️ Signal Confidence Threshold</h3>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="0.1"
+                max="0.9"
+                step="0.05"
+                value={proConfig.min_signal_confidence}
+                onChange={(e) => updateConfig('min_signal_confidence', parseFloat(e.target.value))}
+                className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer"
+              />
+              <span className="text-xl font-bold w-16 text-center">
+                {(proConfig.min_signal_confidence * 100).toFixed(0)}%
+              </span>
+            </div>
+            <p className="text-sm text-muted mt-2">
+              Lower = more trades (riskier) | Higher = fewer trades (safer)
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* SYMBOLS SECTION */}
+      {activeSection === 'symbols' && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">📊 Trading Symbols</h3>
+            <span className="badge badge-info">{selectedSymbols.length} selected</span>
+          </div>
+
+          {/* Search */}
+          <input
+            type="text"
+            placeholder="Search symbols..."
+            value={symbolSearch}
+            onChange={(e) => setSymbolSearch(e.target.value)}
+            className="input mb-4"
+          />
+
+          {/* Quick Actions */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => {
+                setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 10));
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 10).map(s => `${s}/USDT`) });
+              }}
+              className="btn btn-sm"
+            >
+              Top 10
+            </button>
+            <button
+              onClick={() => {
+                setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 25));
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 25).map(s => `${s}/USDT`) });
+              }}
+              className="btn btn-sm"
+            >
+              Top 25
+            </button>
+            <button
+              onClick={() => {
+                setSelectedSymbols(AVAILABLE_SYMBOLS);
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.map(s => `${s}/USDT`) });
+              }}
+              className="btn btn-sm"
+            >
+              All 50
+            </button>
+            <button
+              onClick={() => {
+                setSelectedSymbols([]);
+                saveConfig({ symbols: [] });
+              }}
+              className="btn btn-sm btn-danger"
+            >
+              Clear All
+            </button>
+          </div>
+
+          {/* Symbol Grid */}
+          <div className="grid grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2">
+            {filteredSymbols.map(symbol => (
+              <button
+                key={symbol}
+                onClick={() => toggleSymbol(symbol)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  selectedSymbols.includes(symbol)
+                    ? 'bg-info text-white'
+                    : 'bg-[var(--bg-tertiary)] text-muted hover:bg-[var(--bg-secondary)]'
+                }`}
+              >
+                {symbol}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STRATEGIES SECTION */}
+      {activeSection === 'strategies' && (
+        <div className="space-y-6">
+          {/* Strategy Toggles */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">🧠 Strategy Components</h3>
+            <div className="space-y-4">
+              {/* RL Agent */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <div>
+                  <p className="font-semibold">🤖 RL Agent (PPO)</p>
+                  <p className="text-sm text-muted">Neural network that learns from trading experience</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proConfig.use_rl_agent}
+                    onChange={(e) => updateConfig('use_rl_agent', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
+                </label>
+              </div>
+
+              {/* Edge Strategies */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <div>
+                  <p className="font-semibold">📈 Edge Strategies</p>
+                  <p className="text-sm text-muted">Funding rate, sentiment, order flow, liquidations</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proConfig.use_edge_strategies}
+                    onChange={(e) => updateConfig('use_edge_strategies', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
+                </label>
+              </div>
+
+              {/* Alternative Data */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <div>
+                  <p className="font-semibold">📊 Alternative Data</p>
+                  <p className="text-sm text-muted">Social sentiment, on-chain metrics, whale activity</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proConfig.use_alternative_data}
+                    onChange={(e) => updateConfig('use_alternative_data', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Available Strategies Info */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">📋 Edge Strategies (4)</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="font-semibold text-info">💰 Funding Rate Arbitrage</p>
+                <p className="text-sm text-muted">Trade when funding rates are extremely positive/negative</p>
+              </div>
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="font-semibold text-warning">😨 Sentiment Extreme</p>
+                <p className="text-sm text-muted">Counter-trade when fear/greed reaches extremes</p>
+              </div>
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="font-semibold text-success">📊 Order Flow Imbalance</p>
+                <p className="text-sm text-muted">Detect heavy buy/sell pressure imbalances</p>
+              </div>
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="font-semibold text-danger">💥 Liquidation Cascade</p>
+                <p className="text-sm text-muted">Trade liquidation-driven price movements</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Strategy Performance */}
+          {learningData?.top_strategies?.length > 0 && (
+            <div className="card p-6">
+              <h3 className="text-lg font-semibold mb-4">🏆 Strategy Performance (24h)</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                {learningData.top_strategies.slice(0, 6).map((strat, idx) => (
+                  <div key={strat.name} className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold">{strat.name}</span>
+                      {idx === 0 && <span className="text-yellow-500">🥇</span>}
+                      {idx === 1 && <span className="text-gray-400">🥈</span>}
+                      {idx === 2 && <span className="text-amber-600">🥉</span>}
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted">Win Rate</span>
+                        <span>{(strat.win_rate * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted">P&L</span>
+                        <span className={strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}>
+                          ${strat.total_pnl?.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
-
-      {/* Backtest Section */}
-      <div className="card">
-        <button
-          onClick={() => setBacktestExpanded(!backtestExpanded)}
-          className="w-full p-6 flex items-center justify-between text-left"
-        >
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            Backtest
-            <span className="badge badge-info text-xs ml-2">Optional</span>
-          </h3>
-          <svg className={`w-5 h-5 transition-transform ${backtestExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {backtestExpanded && (
-          <div className="px-6 pb-6 border-t border-[var(--border-color)]">
-            <p className="text-sm text-muted mt-4 mb-4">
-              Test strategies on historical data before going live
-            </p>
-
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="input-label">Strategy</label>
-                <select
-                  value={backtestConfig.strategy}
-                  onChange={(e) => setBacktestConfig({ ...backtestConfig, strategy: e.target.value })}
-                  className="input"
-                >
-                  <option value="rsi_strategy">RSI Strategy</option>
-                  <option value="momentum">Momentum</option>
-                  <option value="trend_following">Trend Following</option>
-                  <option value="mean_reversion">Mean Reversion</option>
-                </select>
-              </div>
-            </div>
-
-            <button
-              onClick={runBacktest}
-              disabled={backtestRunning}
-              className="btn btn-primary"
-            >
-              {backtestRunning ? (
-                <>
-                  <div className="spinner w-4 h-4" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  </svg>
-                  Run Backtest
-                </>
-              )}
-            </button>
-
-            {backtestResults && (
-              <div className="mt-4 p-4 rounded-xl bg-[var(--bg-tertiary)]">
-                <p className="font-semibold mb-2">Results</p>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted">Win Rate</p>
-                    <p className="font-semibold">{backtestResults.win_rate?.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-muted">Total P&L</p>
-                    <p className={`font-semibold ${backtestResults.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                      ${backtestResults.total_pnl?.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
