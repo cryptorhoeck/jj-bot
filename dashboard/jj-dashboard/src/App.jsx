@@ -42,6 +42,39 @@ function App() {
     apiConnected: false
   });
 
+  // API connection state
+  const [apiReady, setApiReady] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+
+  // Check if API is ready
+  const checkApiReady = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/summary`, { signal: AbortSignal.timeout(2000) });
+      if (response.ok) {
+        setApiReady(true);
+        setConnectionAttempts(0);
+        return true;
+      }
+    } catch (error) {
+      console.log('API not ready yet...');
+    }
+    return false;
+  };
+
+  // Wait for API to be ready on mount
+  useEffect(() => {
+    let interval;
+    const waitForApi = async () => {
+      const ready = await checkApiReady();
+      if (!ready) {
+        setConnectionAttempts(prev => prev + 1);
+        interval = setTimeout(waitForApi, 2000); // Retry every 2 seconds
+      }
+    };
+    waitForApi();
+    return () => clearTimeout(interval);
+  }, []);
+
   // Apply dark mode to document
   useEffect(() => {
     if (darkMode) {
@@ -297,6 +330,8 @@ function App() {
   };
 
   useEffect(() => {
+    if (!apiReady) return; // Don't fetch until API is ready
+
     fetchTrades();
     fetchSummary();
     fetchMarketData();
@@ -319,7 +354,7 @@ function App() {
       clearInterval(fastInterval);
       clearInterval(marketInterval);
     };
-  }, [activeTab, marketRefreshInterval]);
+  }, [apiReady, activeTab, marketRefreshInterval]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -327,6 +362,38 @@ function App() {
     { id: 'charts', label: 'Charts', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
     { id: 'data', label: 'Data', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
   ];
+
+  // Show loading screen while waiting for API
+  if (!apiReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="text-center">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/25">
+            <svg className="w-12 h-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold mb-2">JJ-Bot</h1>
+          <p className="text-muted mb-6">v2.4 Pro</p>
+
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="spinner w-5 h-5 border-2 border-info border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-lg">Connecting to server...</p>
+          </div>
+
+          <p className="text-sm text-muted">
+            {connectionAttempts > 0 && `Attempt ${connectionAttempts}... `}
+            {connectionAttempts > 10 && (
+              <span className="text-warning">
+                <br />Server is taking longer than expected.
+                <br />Make sure start_all.bat is running.
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen transition-colors duration-300">
