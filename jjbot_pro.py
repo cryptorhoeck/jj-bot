@@ -250,14 +250,53 @@ class JJBotPro:
         )
 
     def _load_state(self) -> Optional[Dict]:
-        """Load saved bot state from file"""
-        state_file = Path("data/bot_state.json")
-        if state_file.exists():
-            try:
-                with open(state_file) as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load state: {e}")
+        """Load saved bot state from trades database (same source as dashboard)"""
+        import sqlite3
+        db_path = Path("data/trades.db")
+
+        if not db_path.exists():
+            logger.info("No trades database found, starting fresh")
+            return None
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+
+            # Get stats from database (same queries as engine.get_summary)
+            cur.execute("SELECT COUNT(*) FROM trades")
+            total_trades = cur.fetchone()[0]
+
+            cur.execute("SELECT SUM(pnl) FROM trades WHERE pnl IS NOT NULL")
+            total_pnl = cur.fetchone()[0] or 0.0
+
+            cur.execute("SELECT COUNT(*) FROM trades WHERE pnl > 0")
+            winning_trades = cur.fetchone()[0]
+
+            conn.close()
+
+            if total_trades > 0:
+                # Calculate equity from initial capital + total P&L
+                equity = self.config.initial_capital + total_pnl
+
+                state = {
+                    "equity": equity,
+                    "peak_equity": max(equity, self.config.initial_capital),
+                    "daily_pnl": 0.0,  # Reset daily on restart
+                    "daily_start_equity": equity,
+                    "stats": {
+                        "total_trades": total_trades,
+                        "winning_trades": winning_trades,
+                        "total_pnl": total_pnl,
+                        "signals_analyzed": 0,
+                        "start_time": None,
+                    }
+                }
+                logger.info(f"Loaded state from database: {total_trades} trades, equity=${equity:.2f}")
+                return state
+
+        except Exception as e:
+            logger.warning(f"Failed to load state from database: {e}")
+
         return None
 
     def _save_state(self):
