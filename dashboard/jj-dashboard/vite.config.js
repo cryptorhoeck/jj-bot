@@ -5,9 +5,9 @@ export default defineConfig({
   plugins: [react()],
   base: '/dashboard/',
   server: {
-    // CSP with Google Fonts support
+    // CSP with Google Fonts support - properly allow external stylesheets
     headers: {
-      'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:8000 ws://127.0.0.1:8000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000;"
+      'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:8000 ws://127.0.0.1:8000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000;"
     }
   },
   build: {
