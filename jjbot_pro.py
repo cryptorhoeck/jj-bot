@@ -461,6 +461,33 @@ class JJBotPro:
                 else:
                     pos.unrealized_pnl = (pos.entry_price - price) / pos.entry_price * pos.size
 
+    async def _fetch_prices_rest(self):
+        """Fetch prices via REST API as fallback when WebSocket isn't working"""
+        if not self.exchange:
+            return
+
+        try:
+            tickers = await self.exchange.get_tickers(self.config.symbols)
+            if tickers:
+                updated_count = 0
+                for symbol, ticker in tickers.items():
+                    if ticker.last and ticker.last > 0:
+                        self.prices[symbol] = ticker.last
+                        updated_count += 1
+
+                        # Also update position P&L when prices update
+                        if symbol in self.positions:
+                            pos = self.positions[symbol]
+                            if pos.side == "long":
+                                pos.unrealized_pnl = (ticker.last - pos.entry_price) / pos.entry_price * pos.size
+                            else:
+                                pos.unrealized_pnl = (pos.entry_price - ticker.last) / pos.entry_price * pos.size
+
+                if updated_count > 0:
+                    logger.debug(f"REST API updated {updated_count} prices")
+        except Exception as e:
+            logger.warning(f"REST API price fetch failed: {e}")
+
     async def _demo_strategy(self, symbol: str, price: float):
         """Simple momentum strategy for demo mode - ACTUALLY TRADES"""
         import random
@@ -544,9 +571,13 @@ class JJBotPro:
 
         while self.running:
             try:
-                # Update demo prices if in demo mode
+                # Update prices - demo mode uses simulation, live mode uses REST API fallback
                 if self._demo_mode:
                     await self._update_demo_prices()
+                else:
+                    # Always fetch fresh prices via REST API to ensure P&L is accurate
+                    # This supplements WebSocket data which may be stale or disconnected
+                    await self._fetch_prices_rest()
 
                 # Reset daily stats at midnight
                 await self._check_daily_reset()
