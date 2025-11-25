@@ -304,7 +304,9 @@ def get_open_positions() -> List[Dict[str, Any]]:
                     "unrealized_pnl": pnl or 0.0,
                     "trade_count": 0,
                     "is_open": False,
-                    "created_at": created_at
+                    "created_at": created_at,
+                    "side": None,
+                    "signal_source": None
                 }
 
             positions[symbol]["trade_count"] += 1
@@ -312,6 +314,13 @@ def get_open_positions() -> List[Dict[str, Any]]:
 
             # Simple logic: odd number of trades means position is open
             positions[symbol]["is_open"] = (positions[symbol]["trade_count"] % 2 == 1)
+
+            # Track the side based on entry signal (odd-numbered trades are entries)
+            if positions[symbol]["trade_count"] % 2 == 1:
+                # This is an entry trade - determine side from signal
+                positions[symbol]["side"] = "long" if signal == "BUY" else "short"
+                positions[symbol]["entry_price"] = entry_price or last_price
+                positions[symbol]["entry_time"] = timestamp
 
         # Return only open positions
         open_positions = [
