@@ -104,12 +104,14 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
     checkBotStatus();
     loadProConfig();
     loadPositions();
+    // Poll more frequently during training (every 2s) vs normal (every 5s)
+    const pollInterval = trainingProgress?.is_training ? 2000 : 5000;
     const interval = setInterval(() => {
       checkBotStatus();
       if (botRunning) loadPositions();
-    }, 5000);
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [checkBotStatus, loadProConfig, loadPositions, botRunning]);
+  }, [checkBotStatus, loadProConfig, loadPositions, botRunning, trainingProgress?.is_training]);
 
   // Save config to API
   const saveConfig = async (updates) => {
@@ -278,9 +280,9 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                     {trainingProgress?.is_training ? (
                       <>
                         <span className="badge badge-info">
-                          🧠 Training AI
+                          🧠 Training AI ({trainingProgress.trading_iq || 0} IQ)
                         </span>
-                        <span className="text-sm text-muted">{trainingProgress.progress_pct?.toFixed(0)}% complete</span>
+                        <span className="text-sm text-muted">{trainingProgress.progress_pct?.toFixed(0) || 0}% complete</span>
                       </>
                     ) : (
                       <>
@@ -469,7 +471,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                         <td className={pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}>
                           ${pos.unrealized_pnl?.toFixed(2)}
                         </td>
-                        <td className="text-muted">{pos.signal_source}</td>
+                        <td className="text-muted">{pos.signal_source || pos.source || 'restored'}</td>
                       </tr>
                     ))}
                   </tbody>
