@@ -367,12 +367,18 @@ class JJBotPro:
                         "entry_price": entry_price or last_price,
                         "current_price": last_price,
                         "trade_count": 0,
-                        "signal": signal,
+                        "entry_signal": signal,  # Signal that opened the position
                     }
 
                 position_data[symbol]["trade_count"] += 1
                 position_data[symbol]["current_price"] = last_price
-                position_data[symbol]["signal"] = signal
+
+                # Update entry data only on odd-numbered trades (position entries)
+                # This ensures we track the CURRENT open position's entry, not the first one ever
+                if position_data[symbol]["trade_count"] % 2 == 1:
+                    position_data[symbol]["entry_signal"] = signal
+                    position_data[symbol]["entry_price"] = entry_price or last_price
+                    position_data[symbol]["entry_time"] = timestamp
 
             # Create Position objects for open positions (odd trade count)
             for symbol, data in position_data.items():
@@ -382,8 +388,8 @@ class JJBotPro:
                     except:
                         entry_time = datetime.now()
 
-                    # Determine side from signal
-                    side = "long" if data["signal"] == "BUY" else "short"
+                    # Determine side from the entry signal (BUY = long, SELL = short)
+                    side = "long" if data["entry_signal"] == "BUY" else "short"
 
                     # Calculate position size (use a default based on config)
                     position_size = self.config.initial_capital * self.config.max_position_pct

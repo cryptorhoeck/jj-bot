@@ -306,7 +306,7 @@ def get_open_positions() -> List[Dict[str, Any]]:
                     "is_open": False,
                     "created_at": created_at,
                     "side": None,
-                    "signal_source": None
+                    "signal_source": "restored"  # Source unknown for positions loaded from DB
                 }
 
             positions[symbol]["trade_count"] += 1
