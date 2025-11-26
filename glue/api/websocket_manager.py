@@ -267,6 +267,37 @@ class WebSocketManager:
         """Get WebSocket manager statistics"""
         return self.stats.copy()
 
+    async def shutdown(self):
+        """
+        Gracefully shutdown all WebSocket connections.
+
+        Called during application shutdown to properly close all connections
+        and cancel heartbeat tasks.
+        """
+        print("🔌 Shutting down WebSocket connections...")
+
+        # Cancel all heartbeat tasks
+        for task in self.heartbeat_tasks.values():
+            if not task.done():
+                task.cancel()
+        self.heartbeat_tasks.clear()
+
+        # Notify and close all connections
+        for connection in list(self.active_connections):
+            try:
+                await self._send_to_client(connection, {
+                    "type": "system",
+                    "level": "warning",
+                    "message": "Server is shutting down",
+                    "timestamp": datetime.now().isoformat()
+                })
+                await connection.close(code=1001, reason="Server shutdown")
+            except Exception as e:
+                print(f"⚠️ Error closing WebSocket: {e}")
+
+        self.active_connections.clear()
+        print("✅ WebSocket connections closed")
+
 
 # Global WebSocket manager instance
 ws_manager = WebSocketManager()

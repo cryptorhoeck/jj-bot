@@ -14,34 +14,47 @@ Provides data for advanced visualizations:
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-import sqlite3
+import logging
 import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
+from config import TradingDefaults
+from modules.database.connection import get_connection, TRADES_DB_PATH
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/analytics/enhanced", tags=["enhanced_analytics"])
-
-
-def get_db_path() -> str:
-    """Get database path"""
-    return os.path.join(
-        os.path.dirname(__file__), '..', '..', 'data', 'trades.db'
-    )
 
 
 @router.get("/equity-curve", summary="Get Equity Curve Data")
 async def get_equity_curve(
-    hours: int = Query(24, ge=1, le=168, description="Time period in hours (1-168)")
+    hours: int = Query(24, ge=1, le=168, description="Time period in hours (1-168)"),
+    initial_capital: float = Query(
+        None,
+        ge=0,
+        description="Override initial capital (uses config default if not provided)"
+    )
 ) -> Dict[str, Any]:
     """
     Get equity curve data showing capital growth over time.
 
     Returns cumulative P&L and capital at each trade.
     Perfect for plotting equity curve charts.
+
+    Args:
+        hours: Time period in hours to analyze (1-168)
+        initial_capital: Optional override for initial capital
+
+    Returns:
+        Equity curve data with timestamps, P&L, and capital values
     """
     try:
-        conn = sqlite3.connect(get_db_path())
+        # Use configured default or override
+        capital = initial_capital if initial_capital is not None else TradingDefaults.INITIAL_CAPITAL
+
+        conn = get_connection(TRADES_DB_PATH)
         cursor = conn.cursor()
 
         # Get trades from last N hours
@@ -55,7 +68,6 @@ async def get_equity_curve(
         """, (time_threshold,))
 
         trades = cursor.fetchall()
-        conn.close()
 
         if not trades:
             return {
@@ -64,12 +76,12 @@ async def get_equity_curve(
                     "timestamps": [],
                     "cumulative_pnl": [],
                     "capital": [],
-                    "trade_count": 0
+                    "trade_count": 0,
+                    "initial_capital": capital
                 }
             }
 
         # Calculate cumulative P&L and capital
-        initial_capital = 10000.0  # TODO: Get from simulator config
         cumulative_pnl = 0
         timestamps = []
         cumulative_pnls = []
@@ -81,7 +93,9 @@ async def get_equity_curve(
 
             timestamps.append(timestamp)
             cumulative_pnls.append(round(cumulative_pnl, 2))
-            capitals.append(round(initial_capital + cumulative_pnl, 2))
+            capitals.append(round(capital + cumulative_pnl, 2))
+
+        final_capital = capitals[-1] if capitals else capital
 
         return {
             "success": True,
@@ -90,13 +104,14 @@ async def get_equity_curve(
                 "cumulative_pnl": cumulative_pnls,
                 "capital": capitals,
                 "trade_count": len(trades),
-                "initial_capital": initial_capital,
-                "final_capital": capitals[-1] if capitals else initial_capital,
-                "total_return": round((capitals[-1] - initial_capital) / initial_capital * 100, 2) if capitals else 0
+                "initial_capital": capital,
+                "final_capital": final_capital,
+                "total_return": round((final_capital - capital) / capital * 100, 2) if capital > 0 else 0
             }
         }
 
     except Exception as e:
+        logger.exception(f"Error getting equity curve: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

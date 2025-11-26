@@ -377,6 +377,220 @@ HOT_RELOAD = get_env('HOT_RELOAD', True, bool)
 USE_MOCK_DATA = get_env('USE_MOCK_DATA', False, bool)
 TEST_DATABASE_PATH = get_env('TEST_DATABASE_PATH', 'data/test_jj_trades.db')
 
+# ======================
+# CENTRALIZED TRADING DEFAULTS
+# These replace all magic numbers scattered throughout the codebase
+# ======================
+class TradingDefaults:
+    """Centralized trading defaults - single source of truth"""
+    # Capital
+    INITIAL_CAPITAL = get_env('DEFAULT_INITIAL_CAPITAL', 10000.0, float)
+
+    # Position sizing
+    MAX_POSITION_PCT = get_env('DEFAULT_MAX_POSITION_PCT', 0.10, float)  # 10% per position
+    MAX_POSITIONS = get_env('DEFAULT_MAX_POSITIONS', 3, int)
+
+    # Risk management
+    STOP_LOSS_PCT = get_env('DEFAULT_STOP_LOSS_PCT', 0.02, float)  # 2%
+    TAKE_PROFIT_PCT = get_env('DEFAULT_TAKE_PROFIT_PCT', 0.04, float)  # 4%
+    MAX_DAILY_LOSS_PCT = get_env('DEFAULT_MAX_DAILY_LOSS_PCT', 0.05, float)  # 5%
+    MAX_DRAWDOWN_PCT = get_env('DEFAULT_MAX_DRAWDOWN_PCT', 0.10, float)  # 10%
+
+    # Trading fees
+    COMMISSION_RATE = get_env('DEFAULT_COMMISSION_RATE', 0.001, float)  # 0.1%
+    SLIPPAGE_RATE = get_env('DEFAULT_SLIPPAGE_RATE', 0.0005, float)  # 0.05%
+
+    # Signal thresholds
+    MIN_SIGNAL_CONFIDENCE = get_env('DEFAULT_MIN_SIGNAL_CONFIDENCE', 0.6, float)
+
+    # Timing
+    ANALYSIS_INTERVAL_SECONDS = get_env('DEFAULT_ANALYSIS_INTERVAL', 60, int)
+    TICK_INTERVAL_SECONDS = get_env('DEFAULT_TICK_INTERVAL', 2, int)
+
+    @classmethod
+    def as_dict(cls) -> Dict[str, Any]:
+        """Return all defaults as a dictionary"""
+        return {
+            'initial_capital': cls.INITIAL_CAPITAL,
+            'max_position_pct': cls.MAX_POSITION_PCT,
+            'max_positions': cls.MAX_POSITIONS,
+            'stop_loss_pct': cls.STOP_LOSS_PCT,
+            'take_profit_pct': cls.TAKE_PROFIT_PCT,
+            'max_daily_loss_pct': cls.MAX_DAILY_LOSS_PCT,
+            'max_drawdown_pct': cls.MAX_DRAWDOWN_PCT,
+            'commission_rate': cls.COMMISSION_RATE,
+            'slippage_rate': cls.SLIPPAGE_RATE,
+            'min_signal_confidence': cls.MIN_SIGNAL_CONFIDENCE,
+            'analysis_interval_seconds': cls.ANALYSIS_INTERVAL_SECONDS,
+            'tick_interval_seconds': cls.TICK_INTERVAL_SECONDS,
+        }
+
+
+# ======================
+# KRAKEN SYMBOL MAPPING
+# Centralized Kraken symbol mapping for price fetching
+# ======================
+class KrakenSymbols:
+    """Kraken symbol mapping - single source of truth"""
+
+    # Pairs to fetch from Kraken (these are request pairs)
+    PAIRS = [
+        "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD",
+        "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD", "UNIUSD",
+        "ATOMUSD", "LTCUSD", "XLMUSD", "ALGOUSD", "NEARUSD",
+        "ICPUSD", "FILUSD", "APTUSD", "ARBUSD", "OPUSD",
+        "MATICUSD", "AABORUSD", "TRXUSD", "SHIBUSD"
+    ]
+
+    # Response pair to standard symbol mapping
+    # Kraken returns different pair names in responses
+    PAIR_TO_SYMBOL = {
+        "XXBTZUSD": "BTC",
+        "XETHZUSD": "ETH",
+        "SOLUSD": "SOL",
+        "XXRPZUSD": "XRP",
+        "ADAUSD": "ADA",
+        "XDGUSD": "DOGE",
+        "AVAXUSD": "AVAX",
+        "DOTUSD": "DOT",
+        "LINKUSD": "LINK",
+        "UNIUSD": "UNI",
+        "ATOMUSD": "ATOM",
+        "XLTCZUSD": "LTC",
+        "XXLMZUSD": "XLM",
+        "ALGOUSD": "ALGO",
+        "NEARUSD": "NEAR",
+        "ICPUSD": "ICP",
+        "FILUSD": "FIL",
+        "APTUSD": "APT",
+        "ARBUSD": "ARB",
+        "OPUSD": "OP",
+        "MATICUSD": "MATIC",
+        "AABORUSD": "AAVE",
+        "TRXUSD": "TRX",
+        "SHIBUSD": "SHIB",
+    }
+
+    # Standard symbol to Kraken request pair mapping
+    SYMBOL_TO_PAIR = {
+        "BTC": "XBTUSD",
+        "ETH": "ETHUSD",
+        "SOL": "SOLUSD",
+        "XRP": "XRPUSD",
+        "ADA": "ADAUSD",
+        "DOGE": "XDGUSD",
+        "AVAX": "AVAXUSD",
+        "DOT": "DOTUSD",
+        "LINK": "LINKUSD",
+        "UNI": "UNIUSD",
+        "ATOM": "ATOMUSD",
+        "LTC": "LTCUSD",
+        "XLM": "XLMUSD",
+        "ALGO": "ALGOUSD",
+        "NEAR": "NEARUSD",
+        "ICP": "ICPUSD",
+        "FIL": "FILUSD",
+        "APT": "APTUSD",
+        "ARB": "ARBUSD",
+        "OP": "OPUSD",
+        "MATIC": "MATICUSD",
+        "AAVE": "AAVORUSD",
+        "TRX": "TRXUSD",
+        "SHIB": "SHIBUSD",
+    }
+
+    @classmethod
+    def get_symbol(cls, kraken_pair: str) -> Optional[str]:
+        """Convert Kraken response pair to standard symbol"""
+        return cls.PAIR_TO_SYMBOL.get(kraken_pair)
+
+    @classmethod
+    def get_pair(cls, symbol: str) -> str:
+        """Convert standard symbol to Kraken request pair"""
+        return cls.SYMBOL_TO_PAIR.get(symbol.upper(), f"{symbol.upper()}USD")
+
+
+# ======================
+# ENVIRONMENT VALIDATION
+# ======================
+class ConfigValidationError(Exception):
+    """Raised when configuration validation fails"""
+    pass
+
+
+def validate_environment() -> Dict[str, Any]:
+    """
+    Validate environment configuration on startup.
+
+    Returns:
+        Dict with validation results
+
+    Raises:
+        ConfigValidationError if critical configuration is missing
+    """
+    warnings = []
+    errors = []
+
+    # Check critical paths exist
+    from pathlib import Path
+    data_dir = Path(BASE_DIR) / 'data'
+    logs_dir = Path(BASE_DIR) / 'logs'
+
+    if not data_dir.exists():
+        data_dir.mkdir(parents=True, exist_ok=True)
+        warnings.append(f"Created missing data directory: {data_dir}")
+
+    if not logs_dir.exists():
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        warnings.append(f"Created missing logs directory: {logs_dir}")
+
+    # Validate trading configuration
+    if TradingDefaults.STOP_LOSS_PCT <= 0 or TradingDefaults.STOP_LOSS_PCT > 0.5:
+        errors.append(f"Invalid STOP_LOSS_PCT: {TradingDefaults.STOP_LOSS_PCT} (must be 0-0.5)")
+
+    if TradingDefaults.TAKE_PROFIT_PCT <= 0 or TradingDefaults.TAKE_PROFIT_PCT > 1.0:
+        errors.append(f"Invalid TAKE_PROFIT_PCT: {TradingDefaults.TAKE_PROFIT_PCT} (must be 0-1.0)")
+
+    if TradingDefaults.MAX_POSITION_PCT <= 0 or TradingDefaults.MAX_POSITION_PCT > 1.0:
+        errors.append(f"Invalid MAX_POSITION_PCT: {TradingDefaults.MAX_POSITION_PCT} (must be 0-1.0)")
+
+    if TradingDefaults.INITIAL_CAPITAL <= 0:
+        errors.append(f"Invalid INITIAL_CAPITAL: {TradingDefaults.INITIAL_CAPITAL} (must be > 0)")
+
+    # Warn about missing API keys if live trading is enabled
+    if ENABLE_REAL_TRADING:
+        if not KRAKEN_API_KEY and not COINBASE_API_KEY:
+            warnings.append("ENABLE_REAL_TRADING is True but no exchange API keys configured")
+
+    # Validate API configuration
+    if API_PORT < 1 or API_PORT > 65535:
+        errors.append(f"Invalid API_PORT: {API_PORT}")
+
+    result = {
+        'valid': len(errors) == 0,
+        'errors': errors,
+        'warnings': warnings,
+    }
+
+    if errors:
+        raise ConfigValidationError(f"Configuration validation failed: {errors}")
+
+    return result
+
+
+def startup_validation():
+    """Run validation on startup and print results"""
+    try:
+        result = validate_environment()
+        if result['warnings']:
+            for warning in result['warnings']:
+                print(f"⚠️  Config Warning: {warning}")
+        print("✅ Configuration validated successfully")
+        return True
+    except ConfigValidationError as e:
+        print(f"❌ Configuration Error: {e}")
+        return False
+
 
 def get_all_config() -> Dict[str, Any]:
     """

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { DashboardTab } from "./ImprovedDashboard.jsx";
 import { TradingTab } from "./TradingTab.jsx";
@@ -7,8 +7,49 @@ import { MarketChart } from "./MarketChart.jsx";
 import { ConfirmModal } from './components';
 import './App.css';
 
-const API_BASE = 'http://127.0.0.1:8000';
-const WS_URL = 'ws://127.0.0.1:8000/ws';
+// Configurable API endpoints via environment variables
+// In production, set VITE_API_BASE and VITE_WS_URL in .env
+const getApiBase = () => {
+  // Check for environment variable first
+  if (import.meta.env.VITE_API_BASE) {
+    return import.meta.env.VITE_API_BASE;
+  }
+  // Check for runtime config (can be injected by server)
+  if (window.__RUNTIME_CONFIG__?.API_BASE) {
+    return window.__RUNTIME_CONFIG__.API_BASE;
+  }
+  // Fallback: use current host for production, localhost for development
+  if (import.meta.env.PROD) {
+    return `${window.location.protocol}//${window.location.host}`;
+  }
+  return 'http://127.0.0.1:8000';
+};
+
+const getWsUrl = () => {
+  // Check for environment variable first
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  // Check for runtime config
+  if (window.__RUNTIME_CONFIG__?.WS_URL) {
+    return window.__RUNTIME_CONFIG__.WS_URL;
+  }
+  // Fallback: derive from API base
+  const apiBase = getApiBase();
+  const wsProtocol = apiBase.startsWith('https') ? 'wss' : 'ws';
+  const host = apiBase.replace(/^https?:\/\//, '');
+  return `${wsProtocol}://${host}/ws`;
+};
+
+const API_BASE = getApiBase();
+const WS_URL = getWsUrl();
+
+// Log configuration on startup (development only)
+if (import.meta.env.DEV) {
+  console.log('JJ-Bot Dashboard Configuration:');
+  console.log('  API_BASE:', API_BASE);
+  console.log('  WS_URL:', WS_URL);
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -268,17 +309,43 @@ function App() {
     }
   };
 
-  // WebSocket connection
+  // WebSocket connection with exponential backoff reconnection
   useEffect(() => {
     let ws = null;
     let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const baseReconnectDelay = 1000; // 1 second
+    const maxReconnectDelay = 30000; // 30 seconds
+
+    const getReconnectDelay = () => {
+      // Exponential backoff with jitter
+      const exponentialDelay = Math.min(
+        baseReconnectDelay * Math.pow(2, reconnectAttempts),
+        maxReconnectDelay
+      );
+      // Add random jitter (0-25% of delay)
+      const jitter = exponentialDelay * Math.random() * 0.25;
+      return exponentialDelay + jitter;
+    };
 
     const connectWebSocket = () => {
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        console.warn('Max WebSocket reconnection attempts reached');
+        toast.error('Lost connection to server. Please refresh the page.');
+        return;
+      }
+
       try {
         ws = new WebSocket(WS_URL);
 
         ws.onopen = () => {
+          console.log('WebSocket connected');
           setWsConnected(true);
+          reconnectAttempts = 0; // Reset on successful connection
+          if (reconnectAttempts > 0) {
+            toast.success('Reconnected to server');
+          }
         };
 
         ws.onmessage = (event) => {
@@ -290,23 +357,49 @@ function App() {
           }
         };
 
-        ws.onerror = () => setWsConnected(false);
-        ws.onclose = () => {
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
           setWsConnected(false);
-          reconnectTimer = setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onclose = (event) => {
+          setWsConnected(false);
+
+          // Don't reconnect if closed cleanly (code 1000) or if we're unmounting
+          if (event.code === 1000) {
+            console.log('WebSocket closed cleanly');
+            return;
+          }
+
+          reconnectAttempts++;
+          const delay = getReconnectDelay();
+          console.log(`WebSocket closed. Reconnecting in ${Math.round(delay/1000)}s (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+
+          reconnectTimer = setTimeout(connectWebSocket, delay);
         };
       } catch (error) {
-        reconnectTimer = setTimeout(connectWebSocket, 3000);
+        console.error('WebSocket connection error:', error);
+        reconnectAttempts++;
+        const delay = getReconnectDelay();
+        reconnectTimer = setTimeout(connectWebSocket, delay);
       }
     };
 
-    connectWebSocket();
+    // Only connect if API is ready
+    if (apiReady) {
+      connectWebSocket();
+    }
 
     return () => {
-      if (ws) ws.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectAttempts = maxReconnectAttempts; // Prevent reconnection on unmount
+      if (ws) {
+        ws.close(1000, 'Component unmounting');
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
     };
-  }, []);
+  }, [apiReady]);
 
   const handleWebSocketMessage = (message) => {
     switch (message.type) {

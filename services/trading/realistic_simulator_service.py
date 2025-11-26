@@ -258,68 +258,293 @@ class RealisticSimulatorService(BaseService):
         """
         try:
             # Prepare data for strategy engine
-            # Strategy engine expects price history
-            if len(price_history) < 20:  # FAST: Reduced from 50 to 20
+            if len(price_history) < 20:
                 return None  # Need enough history
 
             # Calculate indicators
             self.strategy_engine.calculate_indicators(price_history)
 
-            # Get signal based on current strategy
-            # For now, use RSI strategy as example
-            # TODO: Implement strategy selector to choose from 24 strategies
-
             indicators = self.strategy_engine.get_indicators()
-
             if not indicators:
                 return None
 
-            # RSI strategy (default)
-            if self.current_strategy == "rsi_strategy":
-                rsi = indicators.get("rsi")
-                if rsi is None:
-                    return None
-
-                if rsi < 30:
-                    return "BUY"
-                elif rsi > 70:
-                    return "SELL"
-
-            # SMA crossover strategy
-            elif self.current_strategy == "sma_crossover":
-                sma_short = indicators.get("sma_short")
-                sma_long = indicators.get("sma_long")
-
-                if sma_short is None or sma_long is None:
-                    return None
-
-                # Bullish crossover
-                if sma_short > sma_long:
-                    return "BUY"
-                # Bearish crossover
-                elif sma_short < sma_long:
-                    return "SELL"
-
-            # MACD strategy
-            elif self.current_strategy == "macd":
-                macd = indicators.get("macd")
-                macd_signal = indicators.get("macd_signal")
-
-                if macd is None or macd_signal is None:
-                    return None
-
-                # Bullish crossover
-                if macd > macd_signal:
-                    return "BUY"
-                # Bearish crossover
-                elif macd < macd_signal:
-                    return "SELL"
-
-            return None
+            # Get signal from strategy dispatcher
+            return self._dispatch_strategy_signal(indicators, price_history)
 
         except Exception as e:
             print(f"Error getting strategy signal: {e}")
             return None
+
+    def _dispatch_strategy_signal(
+        self,
+        indicators: Dict,
+        price_history: list
+    ) -> Optional[str]:
+        """
+        Dispatch signal generation to appropriate strategy.
+
+        Implements multiple trading strategies that can be selected by the
+        adaptive selector based on performance.
+
+        Args:
+            indicators: Calculated technical indicators
+            price_history: Recent price history
+
+        Returns:
+            "BUY", "SELL", or None
+        """
+        strategy = self.current_strategy
+
+        # RSI-based strategies
+        if strategy == "rsi_strategy":
+            return self._rsi_strategy(indicators)
+        elif strategy == "rsi_aggressive":
+            return self._rsi_aggressive_strategy(indicators)
+        elif strategy == "rsi_conservative":
+            return self._rsi_conservative_strategy(indicators)
+
+        # Moving average strategies
+        elif strategy == "sma_crossover":
+            return self._sma_crossover_strategy(indicators)
+        elif strategy == "ema_crossover":
+            return self._ema_crossover_strategy(indicators)
+        elif strategy == "triple_ma":
+            return self._triple_ma_strategy(indicators)
+
+        # MACD strategies
+        elif strategy == "macd":
+            return self._macd_strategy(indicators)
+        elif strategy == "macd_histogram":
+            return self._macd_histogram_strategy(indicators)
+
+        # Bollinger Band strategies
+        elif strategy == "bollinger_bounce":
+            return self._bollinger_bounce_strategy(indicators)
+        elif strategy == "bollinger_breakout":
+            return self._bollinger_breakout_strategy(indicators)
+
+        # Momentum strategies
+        elif strategy == "momentum":
+            return self._momentum_strategy(indicators, price_history)
+        elif strategy == "mean_reversion":
+            return self._mean_reversion_strategy(indicators, price_history)
+
+        # Combined strategies
+        elif strategy == "rsi_macd_combo":
+            return self._rsi_macd_combo_strategy(indicators)
+        elif strategy == "triple_confirmation":
+            return self._triple_confirmation_strategy(indicators)
+
+        # Default to RSI
+        return self._rsi_strategy(indicators)
+
+    def _rsi_strategy(self, indicators: Dict) -> Optional[str]:
+        """Standard RSI strategy: Buy < 30, Sell > 70"""
+        rsi = indicators.get("rsi")
+        if rsi is None:
+            return None
+        if rsi < 30:
+            return "BUY"
+        elif rsi > 70:
+            return "SELL"
+        return None
+
+    def _rsi_aggressive_strategy(self, indicators: Dict) -> Optional[str]:
+        """Aggressive RSI: Buy < 40, Sell > 60"""
+        rsi = indicators.get("rsi")
+        if rsi is None:
+            return None
+        if rsi < 40:
+            return "BUY"
+        elif rsi > 60:
+            return "SELL"
+        return None
+
+    def _rsi_conservative_strategy(self, indicators: Dict) -> Optional[str]:
+        """Conservative RSI: Buy < 20, Sell > 80"""
+        rsi = indicators.get("rsi")
+        if rsi is None:
+            return None
+        if rsi < 20:
+            return "BUY"
+        elif rsi > 80:
+            return "SELL"
+        return None
+
+    def _sma_crossover_strategy(self, indicators: Dict) -> Optional[str]:
+        """SMA crossover: Short SMA crosses Long SMA"""
+        sma_short = indicators.get("sma_short")
+        sma_long = indicators.get("sma_long")
+        if sma_short is None or sma_long is None:
+            return None
+        if sma_short > sma_long:
+            return "BUY"
+        elif sma_short < sma_long:
+            return "SELL"
+        return None
+
+    def _ema_crossover_strategy(self, indicators: Dict) -> Optional[str]:
+        """EMA crossover (faster response than SMA)"""
+        ema_short = indicators.get("ema_short", indicators.get("sma_short"))
+        ema_long = indicators.get("ema_long", indicators.get("sma_long"))
+        if ema_short is None or ema_long is None:
+            return None
+        if ema_short > ema_long * 1.005:  # 0.5% threshold
+            return "BUY"
+        elif ema_short < ema_long * 0.995:
+            return "SELL"
+        return None
+
+    def _triple_ma_strategy(self, indicators: Dict) -> Optional[str]:
+        """Triple MA: Fast, Medium, Slow alignment"""
+        sma_short = indicators.get("sma_short")
+        sma_long = indicators.get("sma_long")
+        rsi = indicators.get("rsi", 50)
+        if sma_short is None or sma_long is None:
+            return None
+        # Buy when short > long and RSI not overbought
+        if sma_short > sma_long and rsi < 65:
+            return "BUY"
+        elif sma_short < sma_long and rsi > 35:
+            return "SELL"
+        return None
+
+    def _macd_strategy(self, indicators: Dict) -> Optional[str]:
+        """MACD crossover strategy"""
+        macd = indicators.get("macd")
+        macd_signal = indicators.get("macd_signal")
+        if macd is None or macd_signal is None:
+            return None
+        if macd > macd_signal:
+            return "BUY"
+        elif macd < macd_signal:
+            return "SELL"
+        return None
+
+    def _macd_histogram_strategy(self, indicators: Dict) -> Optional[str]:
+        """MACD histogram momentum"""
+        macd = indicators.get("macd")
+        macd_signal = indicators.get("macd_signal")
+        if macd is None or macd_signal is None:
+            return None
+        histogram = macd - macd_signal
+        # Strong momentum signal
+        if histogram > 0.5:
+            return "BUY"
+        elif histogram < -0.5:
+            return "SELL"
+        return None
+
+    def _bollinger_bounce_strategy(self, indicators: Dict) -> Optional[str]:
+        """Bollinger Band bounce: Buy at lower, Sell at upper"""
+        bb_upper = indicators.get("bb_upper")
+        bb_lower = indicators.get("bb_lower")
+        bb_middle = indicators.get("bb_middle")
+        if bb_upper is None or bb_lower is None or bb_middle is None:
+            return None
+        # Approximate current price from middle band
+        current = bb_middle
+        if current <= bb_lower * 1.01:  # Near lower band
+            return "BUY"
+        elif current >= bb_upper * 0.99:  # Near upper band
+            return "SELL"
+        return None
+
+    def _bollinger_breakout_strategy(self, indicators: Dict) -> Optional[str]:
+        """Bollinger breakout: Trade the trend"""
+        bb_upper = indicators.get("bb_upper")
+        bb_lower = indicators.get("bb_lower")
+        bb_middle = indicators.get("bb_middle")
+        rsi = indicators.get("rsi", 50)
+        if bb_upper is None or bb_lower is None:
+            return None
+        # Breakout with momentum confirmation
+        if bb_middle and bb_middle > bb_upper * 0.98 and rsi > 50:
+            return "BUY"  # Bullish breakout
+        elif bb_middle and bb_middle < bb_lower * 1.02 and rsi < 50:
+            return "SELL"  # Bearish breakout
+        return None
+
+    def _momentum_strategy(
+        self, indicators: Dict, price_history: list
+    ) -> Optional[str]:
+        """Price momentum strategy"""
+        if len(price_history) < 10:
+            return None
+        recent_prices = price_history[-10:]
+        oldest = recent_prices[0]
+        newest = recent_prices[-1]
+        change_pct = (newest - oldest) / oldest * 100
+        # Strong momentum signals
+        if change_pct > 2:
+            return "BUY"
+        elif change_pct < -2:
+            return "SELL"
+        return None
+
+    def _mean_reversion_strategy(
+        self, indicators: Dict, price_history: list
+    ) -> Optional[str]:
+        """Mean reversion: Buy oversold, Sell overbought"""
+        if len(price_history) < 20:
+            return None
+        mean_price = sum(price_history[-20:]) / 20
+        current_price = price_history[-1]
+        deviation = (current_price - mean_price) / mean_price * 100
+        # Reversion signals
+        if deviation < -3:  # 3% below mean
+            return "BUY"
+        elif deviation > 3:  # 3% above mean
+            return "SELL"
+        return None
+
+    def _rsi_macd_combo_strategy(self, indicators: Dict) -> Optional[str]:
+        """Combined RSI + MACD confirmation"""
+        rsi = indicators.get("rsi")
+        macd = indicators.get("macd")
+        macd_signal = indicators.get("macd_signal")
+        if rsi is None or macd is None or macd_signal is None:
+            return None
+        # Both indicators must agree
+        if rsi < 40 and macd > macd_signal:
+            return "BUY"
+        elif rsi > 60 and macd < macd_signal:
+            return "SELL"
+        return None
+
+    def _triple_confirmation_strategy(self, indicators: Dict) -> Optional[str]:
+        """Requires RSI, MACD, and SMA alignment"""
+        rsi = indicators.get("rsi")
+        macd = indicators.get("macd")
+        macd_signal = indicators.get("macd_signal")
+        sma_short = indicators.get("sma_short")
+        sma_long = indicators.get("sma_long")
+
+        if any(v is None for v in [rsi, macd, macd_signal, sma_short, sma_long]):
+            return None
+
+        # All three must confirm
+        rsi_bullish = rsi < 50
+        macd_bullish = macd > macd_signal
+        sma_bullish = sma_short > sma_long
+
+        rsi_bearish = rsi > 50
+        macd_bearish = macd < macd_signal
+        sma_bearish = sma_short < sma_long
+
+        if rsi_bullish and macd_bullish and sma_bullish:
+            return "BUY"
+        elif rsi_bearish and macd_bearish and sma_bearish:
+            return "SELL"
+        return None
+
+    def record_trade(self, trade):
+        """Record trade and notify adaptive selector."""
+        self._save_trade_to_db(trade)
+
+        # Notify adaptive selector for re-evaluation
+        if self.adaptive_selector:
+            self.adaptive_selector.notify_trade()
 
     def _save_trade_to_db(self, trade):
         """Save completed trade to database"""

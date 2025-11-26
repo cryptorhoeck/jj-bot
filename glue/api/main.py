@@ -46,10 +46,44 @@ from websocket_manager import ws_manager
 # Lifespan context manager for startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    print("✅ Database initialized")
+    """
+    Application lifespan manager for startup and shutdown events.
+
+    Startup:
+    - Validates configuration
+    - Initializes database
+    - Starts auto-start services
+
+    Shutdown:
+    - Closes WebSocket connections
+    - Stops running services
+    - Cleans up database connections
+    """
+    # ========== STARTUP ==========
+    print("=" * 50)
+    print("  JJ-Bot API Starting...")
+    print("=" * 50)
+
+    # Validate configuration
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from config import startup_validation
+        startup_validation()
+    except Exception as e:
+        print(f"⚠️ Config validation error: {e}")
+
+    # Initialize database
+    print("📦 Initializing database...")
     engine.init_db()
 
+    # Initialize all module databases
+    try:
+        from modules.database.connection import init_all_databases
+        init_all_databases()
+    except Exception as e:
+        print(f"⚠️ Module database init error: {e}")
+
+    # Start auto-start services
     print("🚀 Starting auto-start services...")
     started = service_manager.start_auto_services()
     if started:
@@ -57,10 +91,46 @@ async def lifespan(app: FastAPI):
     else:
         print("ℹ️  No auto-start services configured")
 
+    print("=" * 50)
+    print("  JJ-Bot API Ready!")
+    print("=" * 50)
+
     yield
 
-    # Shutdown (add cleanup here if needed)
-    print("👋 Shutting down API...")
+    # ========== SHUTDOWN ==========
+    print("\n" + "=" * 50)
+    print("  JJ-Bot API Shutting Down...")
+    print("=" * 50)
+
+    # 1. Close WebSocket connections
+    print("📡 Closing WebSocket connections...")
+    try:
+        await ws_manager.shutdown()
+    except Exception as e:
+        print(f"⚠️ WebSocket shutdown error: {e}")
+
+    # 2. Stop all running services
+    print("🛑 Stopping services...")
+    try:
+        active_services = service_manager.get_status()
+        for service_name, status in active_services.items():
+            if status.get("running"):
+                service_manager.stop_service(service_name)
+                print(f"   Stopped: {service_name}")
+    except Exception as e:
+        print(f"⚠️ Service shutdown error: {e}")
+
+    # 3. Cleanup database connections
+    print("📦 Closing database connections...")
+    try:
+        from modules.database.connection import cleanup_connections
+        cleanup_connections()
+    except Exception as e:
+        print(f"⚠️ Database cleanup error: {e}")
+
+    print("=" * 50)
+    print("  JJ-Bot API Shutdown Complete")
+    print("=" * 50 + "\n")
 
 # Create FastAPI app with lifespan
 app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)
