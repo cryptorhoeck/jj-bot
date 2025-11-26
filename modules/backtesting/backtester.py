@@ -320,7 +320,7 @@ class Backtester:
             delta = exit - entry
             hours = delta.total_seconds() / 3600
             return f"{hours:.1f}h"
-        except:
+        except (ValueError, TypeError, AttributeError):
             return "Unknown"
 
     def _filter_by_date(self, history: List[Dict], start_date: Optional[str],

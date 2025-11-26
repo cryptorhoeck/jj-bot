@@ -385,7 +385,8 @@ class JJBotPro:
                 if data["trade_count"] % 2 == 1:  # Odd = open position
                     try:
                         entry_time = datetime.fromisoformat(data["entry_time"]) if data["entry_time"] else datetime.now()
-                    except:
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Invalid entry_time format for {symbol}: {e}")
                         entry_time = datetime.now()
 
                     # Determine side from the entry signal (BUY = long, SELL = short)

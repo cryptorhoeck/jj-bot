@@ -132,8 +132,56 @@ async def lifespan(app: FastAPI):
     print("  JJ-Bot API Shutdown Complete")
     print("=" * 50 + "\n")
 
-# Create FastAPI app with lifespan
-app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)
+# Create FastAPI app with proper documentation
+app = FastAPI(
+    title="JJ-Bot Trading API",
+    description="""
+## JJ-Bot Professional Trading System API
+
+A high-performance, production-ready algorithmic trading system.
+
+### Features
+- **Real-time Market Data**: Live crypto prices from Kraken (no API key required)
+- **Multiple Trading Strategies**: 14+ strategies with adaptive selection
+- **Paper & Live Trading**: Safe simulation mode with real price data
+- **Advanced Analytics**: Equity curves, P&L distribution, strategy performance
+- **WebSocket Streaming**: Real-time price updates and trade notifications
+
+### API Sections
+- **Trading**: Start/stop bot, execute trades, manage positions
+- **Market Data**: Live prices, OHLCV data, indicators
+- **Analytics**: Performance metrics, equity curves, strategy analysis
+- **Backtesting**: Historical strategy testing
+- **Streaming**: WebSocket endpoints for real-time data
+
+### Authentication
+Currently no authentication required. All endpoints are public.
+Configure API keys in `.env` for live trading with exchanges.
+    """,
+    version="2.5.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
+    contact={
+        "name": "JJ-Bot Support",
+    },
+    license_info={
+        "name": "Private - All Rights Reserved",
+    },
+    openapi_tags=[
+        {"name": "health", "description": "Health check and system status"},
+        {"name": "JJ-Bot Pro", "description": "Bot control and status"},
+        {"name": "trading", "description": "Trade execution and management"},
+        {"name": "market_data", "description": "Market prices and OHLCV data"},
+        {"name": "analytics", "description": "Trading analytics and metrics"},
+        {"name": "enhanced_analytics", "description": "Advanced visualizations"},
+        {"name": "backtesting", "description": "Strategy backtesting"},
+        {"name": "streaming", "description": "SSE streaming endpoints"},
+        {"name": "symbols", "description": "Trading pair management"},
+        {"name": "learning", "description": "Strategy learning and adaptation"},
+    ]
+)
 
 # Add CORS middleware for dashboard
 app.add_middleware(
@@ -164,10 +212,70 @@ except ImportError:
 # Global state
 simulator_process = None
 
-# ===== ROOT ENDPOINT =====
-@app.get("/")
+# ===== ROOT & HEALTH ENDPOINTS =====
+@app.get("/", tags=["health"])
 async def root():
-    return {"message": "JJ-Bot API v2.1", "status": "running"}
+    """API root endpoint with basic info"""
+    return {
+        "name": "JJ-Bot Trading API",
+        "version": "2.5.0",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+
+@app.get("/health", tags=["health"])
+async def global_health_check():
+    """
+    Global health check endpoint for monitoring.
+
+    Returns system health including:
+    - API status
+    - Database connectivity
+    - Memory usage
+    - Active connections
+    """
+    from datetime import datetime
+
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "2.5.0",
+        "components": {}
+    }
+
+    # Check database
+    try:
+        from modules.database.connection import get_connection, TRADES_DB_PATH
+        conn = get_connection(TRADES_DB_PATH)
+        conn.execute("SELECT 1")
+        health["components"]["database"] = "ok"
+    except Exception as e:
+        health["components"]["database"] = f"error: {str(e)}"
+        health["status"] = "degraded"
+
+    # Check WebSocket manager
+    try:
+        ws_stats = ws_manager.get_stats()
+        health["components"]["websocket"] = {
+            "status": "ok",
+            "connections": ws_stats.get("current_connections", 0)
+        }
+    except Exception:
+        health["components"]["websocket"] = "unavailable"
+
+    # Memory usage
+    try:
+        memory = psutil.Process().memory_info()
+        health["components"]["memory"] = {
+            "rss_mb": round(memory.rss / 1024 / 1024, 2),
+            "vms_mb": round(memory.vms / 1024 / 1024, 2)
+        }
+    except Exception:
+        health["components"]["memory"] = "unavailable"
+
+    return health
 
 # ===== TRADES ENDPOINTS - Uses unified bot when running =====
 @app.get("/api/trades")

@@ -137,7 +137,8 @@ class AnalyticsService(BaseService):
                     day = timestamp.split('T')[0]
                     trades_by_day[day]["count"] += 1
                     trades_by_day[day]["pnl"] += pnl
-                except:
+                except (AttributeError, IndexError, KeyError):
+                    # Skip trades with invalid timestamp format
                     pass
 
             # Calculate metrics

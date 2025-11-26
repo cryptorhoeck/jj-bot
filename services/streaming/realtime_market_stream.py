@@ -14,8 +14,9 @@ import websockets
 
 try:
     from modules.event_bus import event_bus
-except:
+except ImportError:
     # Fallback if event_bus not available
+    print("⚠️ Event bus not available, using dummy implementation")
     class DummyEventBus:
         def publish(self, event, data):
             pass
