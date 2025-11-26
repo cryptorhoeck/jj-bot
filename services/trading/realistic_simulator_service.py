@@ -50,47 +50,64 @@ except ImportError:
 
 def fetch_top_100_coins() -> Dict[str, float]:
     """
-    Fetch top 100 cryptocurrencies by market cap from CoinGecko API.
+    Fetch cryptocurrency prices from Kraken public API (no keys required).
 
     Returns:
         Dictionary mapping symbol -> current USD price
     """
     try:
-        # Fetch top 100 coins sorted by market cap
-        url = "https://api.coingecko.com/api/v3/coins/markets"
-        params = {
-            'vs_currency': 'usd',
-            'order': 'market_cap_desc',
-            'per_page': 100,
-            'page': 1,
-            'sparkline': False
+        # Kraken symbol mapping (Kraken pair -> standard symbol)
+        kraken_pairs = [
+            "XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD",
+            "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD", "UNIUSD",
+            "ATOMUSD", "LTCUSD", "XLMUSD", "ALGOUSD", "NEARUSD",
+            "ICPUSD", "FILUSD", "APTUSD", "ARBUSD", "OPUSD"
+        ]
+
+        pair_to_symbol = {
+            "XXBTZUSD": "BTC", "XETHZUSD": "ETH", "SOLUSD": "SOL",
+            "XXRPZUSD": "XRP", "ADAUSD": "ADA", "XDGUSD": "DOGE",
+            "AVAXUSD": "AVAX", "DOTUSD": "DOT", "LINKUSD": "LINK",
+            "UNIUSD": "UNI", "ATOMUSD": "ATOM", "XLTCZUSD": "LTC",
+            "XXLMZUSD": "XLM", "ALGOUSD": "ALGO", "NEARUSD": "NEAR",
+            "ICPUSD": "ICP", "FILUSD": "FIL", "APTUSD": "APT",
+            "ARBUSD": "ARB", "OPUSD": "OP"
         }
 
-        print("🌐 Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
+        print("🌐 Fetching cryptocurrency prices from Kraken (no API key required)...")
+
+        url = "https://api.kraken.com/0/public/Ticker"
+        params = {"pair": ",".join(kraken_pairs)}
+
         response = requests.get(url, params=params, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
+
+            if data.get("error") and len(data["error"]) > 0:
+                print(f"⚠️ Kraken API error: {data['error']}")
+                return {}
+
             prices = {}
+            for kraken_pair, ticker in data.get("result", {}).items():
+                symbol = pair_to_symbol.get(kraken_pair)
+                if symbol:
+                    # Kraken ticker 'c' = last trade closed [price, lot volume]
+                    price = float(ticker["c"][0])
+                    prices[symbol] = price
 
-            for coin in data:
-                symbol = coin['symbol'].upper()
-                price = coin['current_price']
-                market_cap = coin['market_cap']
-
-                prices[symbol] = price
-
-            print(f"✅ Fetched {len(prices)} cryptocurrencies")
-            print(f"   Top 5: {list(prices.keys())[:5]}")
-            print(f"   Price range: ${min(prices.values()):.6f} - ${max(prices.values()):,.2f}")
+            print(f"✅ Fetched {len(prices)} cryptocurrencies from Kraken")
+            print(f"   Symbols: {list(prices.keys())}")
+            if prices:
+                print(f"   Price range: ${min(prices.values()):.6f} - ${max(prices.values()):,.2f}")
 
             return prices
         else:
-            print(f"⚠️ CoinGecko API returned status {response.status_code}")
+            print(f"⚠️ Kraken API returned status {response.status_code}")
             return {}
 
     except Exception as e:
-        print(f"⚠️ Failed to fetch top 100 coins: {e}")
+        print(f"⚠️ Failed to fetch from Kraken: {e}")
         return {}
 
 
