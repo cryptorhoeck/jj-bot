@@ -308,6 +308,11 @@ class BotManager:
 _bot_manager = BotManager()
 
 
+def get_bot():
+    """Get the current bot instance for external access"""
+    return _bot_manager.bot
+
+
 # ===== Config Utilities =====
 
 def get_config_path() -> str:
