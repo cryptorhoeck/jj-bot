@@ -261,7 +261,7 @@ class BotManager:
                         "winning_trades": bot.stats.get("winning_trades", 0) if hasattr(bot, 'stats') else 0,
                         "total_pnl": bot.stats.get("total_pnl", 0) if hasattr(bot, 'stats') else 0,
                         "daily_pnl": getattr(bot, 'daily_pnl', 0),
-                        "start_time": bot.stats.get("start_time").isoformat() if hasattr(bot, 'stats') and bot.stats.get("start_time") else None,
+                        "start_time": (bot.stats.get("start_time").isoformat() if hasattr(bot.stats.get("start_time"), 'isoformat') else bot.stats.get("start_time")) if hasattr(bot, 'stats') and bot.stats.get("start_time") else None,
                     })
 
                     total_trades = status.get("total_trades", 0)
