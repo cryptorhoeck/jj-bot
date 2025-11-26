@@ -234,13 +234,8 @@ class JJBotPro:
             "avg_reward": 0.0
         }
 
-        # Training metrics for IQ calculation
-        self.training_metrics = {
-            "episode_count": 0,
-            "total_win_rate": 0.0,
-            "total_profit_factor": 0.0,
-            "total_reward": 0.0
-        }
+        # Training metrics for IQ calculation (load from file if exists)
+        self.training_metrics = self._load_training_metrics()
 
         # Components (initialized in start())
         self.exchange: Optional[CCXTConnector] = None
@@ -1098,6 +1093,48 @@ class JJBotPro:
             f"P&L: ${self.stats['total_pnl']:,.2f}"
         )
 
+    def _load_training_metrics(self) -> Dict:
+        """Load training metrics from file if exists, otherwise return defaults"""
+        metrics_path = "data/training_metrics.json"
+        default_metrics = {
+            "episode_count": 0,
+            "total_win_rate": 0.0,
+            "total_profit_factor": 0.0,
+            "total_reward": 0.0,
+            "total_trades": 0
+        }
+
+        if os.path.exists(metrics_path):
+            try:
+                with open(metrics_path) as f:
+                    loaded = json.load(f)
+                    # Merge with defaults to handle any missing fields
+                    for key in default_metrics:
+                        if key not in loaded:
+                            loaded[key] = default_metrics[key]
+                    logger.info(f"Loaded training metrics: {loaded['episode_count']} episodes, {loaded['total_trades']} total trades")
+                    return loaded
+            except Exception as e:
+                logger.warning(f"Failed to load training metrics: {e}")
+
+        return default_metrics
+
+    def _save_training_metrics(self):
+        """Save training metrics to file for persistence"""
+        metrics_path = "data/training_metrics.json"
+        try:
+            os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
+            with open(metrics_path, "w") as f:
+                json.dump(self.training_metrics, f, indent=2)
+
+            # Also update config with current IQ
+            iq, level = self._calculate_trading_iq()
+            self.config.trading_iq = iq
+            self.config.expertise_level = level
+            self.config.save()
+        except Exception as e:
+            logger.warning(f"Failed to save training metrics: {e}")
+
     def _calculate_trading_iq(self):
         """Calculate Trading IQ based on cumulative performance"""
         if self.training_metrics["episode_count"] == 0:
@@ -1160,14 +1197,18 @@ class JJBotPro:
 
             # Update cumulative metrics for IQ calculation
             win_rate = metrics.get('win_rate', 0)
-            total_wins = metrics.get('winning_trades', 0)
-            total_losses = metrics.get('losing_trades', 0)
-            profit_factor = (total_wins / max(1, total_losses)) if total_losses > 0 else 1.0
+            # Use actual profit_factor from metrics (not fake calculation from missing fields)
+            profit_factor = metrics.get('profit_factor', 1.0)
 
             self.training_metrics["episode_count"] += 1
             self.training_metrics["total_win_rate"] += win_rate
             self.training_metrics["total_profit_factor"] += profit_factor
             self.training_metrics["total_reward"] += metrics.get('episode_reward', 0)
+            self.training_metrics["total_trades"] += metrics.get('total_trades', 0)
+
+            # Persist training metrics every 10 episodes for durability
+            if episode % 10 == 0:
+                self._save_training_metrics()
 
             # Calculate Trading IQ
             iq, level = self._calculate_trading_iq()
@@ -1205,12 +1246,10 @@ class JJBotPro:
         # Switch back to paper mode
         self.config.mode = "paper"
 
-        # Persist Trading IQ to config
+        # Persist all training metrics and IQ
+        self._save_training_metrics()
         iq, level = self._calculate_trading_iq()
-        self.config.trading_iq = iq
-        self.config.expertise_level = level
-        self.config.save()
-        logger.info(f"Trading IQ saved: {iq} ({level})")
+        logger.info(f"Training IQ saved: {iq} ({level}) | Total episodes: {self.training_metrics['episode_count']} | Total trades: {self.training_metrics['total_trades']}")
 
         if completed_episodes == self.config.train_episodes:
             logger.info(f"Training complete! {completed_episodes} episodes. Model saved to {self.config.rl_model_path}")

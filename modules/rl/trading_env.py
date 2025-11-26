@@ -449,6 +449,8 @@ class TradingEnvironment:
 
         return {
             "total_trades": len(self.trade_history),
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
             "win_rate": len(wins) / len(self.trade_history) if self.trade_history else 0,
             "total_pnl": total_pnl,
             "avg_pnl": total_pnl / len(self.trade_history),
