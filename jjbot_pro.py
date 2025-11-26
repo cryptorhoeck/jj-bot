@@ -117,6 +117,10 @@ class BotConfig:
     log_level: str = "INFO"
     log_trades: bool = True
 
+    # Persisted Trading IQ (updated after training)
+    trading_iq: int = 0
+    expertise_level: str = "Untrained"
+
     @classmethod
     def load(cls, path: str = "config/bot_config.json") -> "BotConfig":
         """Load config from file"""
@@ -1200,6 +1204,13 @@ class JJBotPro:
 
         # Switch back to paper mode
         self.config.mode = "paper"
+
+        # Persist Trading IQ to config
+        iq, level = self._calculate_trading_iq()
+        self.config.trading_iq = iq
+        self.config.expertise_level = level
+        self.config.save()
+        logger.info(f"Trading IQ saved: {iq} ({level})")
 
         if completed_episodes == self.config.train_episodes:
             logger.info(f"Training complete! {completed_episodes} episodes. Model saved to {self.config.rl_model_path}")

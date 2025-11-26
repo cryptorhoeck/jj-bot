@@ -29,7 +29,9 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
     use_rl_agent: true,
     use_edge_strategies: true,
     use_alternative_data: true,
-    symbols: []
+    symbols: [],
+    trading_iq: 0,
+    expertise_level: 'Untrained'
   });
 
   const [botStats, setBotStats] = useState({
@@ -291,6 +293,11 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                         </span>
                         {proConfig.mode === 'live' && (
                           <span className="badge badge-danger">⚠️ LIVE MONEY</span>
+                        )}
+                        {(proConfig.trading_iq > 0 || proConfig.expertise_level !== 'Untrained') && (
+                          <span className="badge badge-info" title={`Expertise: ${proConfig.expertise_level || 'Untrained'}`}>
+                            🧠 {proConfig.trading_iq || 0} IQ
+                          </span>
                         )}
                         <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
                       </>

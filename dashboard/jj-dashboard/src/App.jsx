@@ -80,7 +80,9 @@ function App() {
     running: false,
     mode: 'paper',
     training: null,
-    apiConnected: false
+    apiConnected: false,
+    trading_iq: 0,
+    expertise_level: 'Untrained'
   });
 
   // API connection state
@@ -206,7 +208,9 @@ function App() {
         running: data.running || false,
         mode: data.mode || 'paper',
         training: data.training || null,
-        apiConnected: true
+        apiConnected: true,
+        trading_iq: data.trading_iq || 0,
+        expertise_level: data.expertise_level || 'Untrained'
       });
 
       setSimulatorRunning(data.running || false); // For backward compatibility
@@ -524,6 +528,12 @@ function App() {
                 ) : (
                   <span className="badge badge-warning">
                     ⏹ Stopped
+                  </span>
+                )}
+                {/* Always show Trading IQ when not training */}
+                {!botStatus.training?.is_training && (botStatus.trading_iq > 0 || botStatus.expertise_level !== 'Untrained') && (
+                  <span className="badge badge-info" title={`Expertise: ${botStatus.expertise_level || 'Untrained'}`}>
+                    🧠 {botStatus.trading_iq || 0} IQ
                   </span>
                 )}
               </div>

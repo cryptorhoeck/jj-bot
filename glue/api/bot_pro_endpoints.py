@@ -410,6 +410,19 @@ async def get_bot_status() -> Dict[str, Any]:
     model_path = os.path.join(get_project_root(), 'models', 'ppo_agent.pt')
     response["rl_model_trained"] = os.path.exists(model_path)
 
+    # Always include Trading IQ (from config or live training)
+    if bot_status.get("running") and "training" in bot_status and bot_status["training"].get("is_training"):
+        # Use live training IQ
+        response["trading_iq"] = bot_status["training"].get("trading_iq", 0)
+        response["expertise_level"] = bot_status["training"].get("expertise_level", "Untrained")
+    elif config:
+        # Use persisted IQ from config
+        response["trading_iq"] = config.get("trading_iq", 0)
+        response["expertise_level"] = config.get("expertise_level", "Untrained")
+    else:
+        response["trading_iq"] = 0
+        response["expertise_level"] = "Untrained"
+
     return response
 
 

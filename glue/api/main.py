@@ -519,8 +519,14 @@ async def bot_status():
             "total_pnl": bot.stats["total_pnl"],
             "symbols": list(bot.prices.keys()) if bot.prices else [],
             "prices": bot.prices,
+            "trading_iq": config.get("trading_iq", 0) if config else 0,
+            "expertise_level": config.get("expertise_level", "Untrained") if config else "Untrained",
         }
-    return {"running": False}
+    return {
+        "running": False,
+        "trading_iq": config.get("trading_iq", 0) if config else 0,
+        "expertise_level": config.get("expertise_level", "Untrained") if config else "Untrained",
+    }
 
 @app.post("/api/bot/start")
 @app.post("/api/simulator/start")  # Keep old endpoint for compatibility
