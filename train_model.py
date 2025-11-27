@@ -120,7 +120,20 @@ def update_training_status(status: dict):
 
 
 def calculate_trading_iq(metrics: dict) -> tuple:
-    """Calculate Trading IQ from metrics"""
+    """Calculate Trading IQ from metrics - Calibrated for meaningful progression
+
+    Scoring Philosophy:
+    - Win Rate: 45% baseline (0 pts), 70% excellence (35 pts max)
+      A 50% win rate is just slightly above baseline, not mastery
+    - Profit Factor: 1.0 breakeven (0 pts), 4.0 exceptional (35 pts max)
+      Requires consistently winning more than losing
+    - Reward: 0 baseline (0 pts), 150+ strong performance (30 pts max)
+      No free points for merely not losing
+
+    Human IQ Mapping (in dashboard):
+    - Uses sqrt curve so high scores are progressively harder
+    - Genius (145+) requires internal IQ 75+ (exceptional across all metrics)
+    """
     if metrics["episode_count"] == 0:
         return 0, "Untrained"
 
@@ -128,22 +141,34 @@ def calculate_trading_iq(metrics: dict) -> tuple:
     avg_profit_factor = metrics["total_profit_factor"] / metrics["episode_count"]
     avg_reward = metrics["total_reward"] / metrics["episode_count"]
 
-    # Score calculation
-    win_rate_score = min(40, (avg_win_rate / 0.5) * 40)
-    profit_factor_score = min(30, (avg_profit_factor / 3.0) * 30)
-    reward_normalized = max(0, min(100, avg_reward + 100)) / 100
-    reward_score = reward_normalized * 30
+    # Win Rate Score (0-35 points)
+    # 45% = 0 pts (baseline), 70% = 35 pts (excellence)
+    # A coin-flip 50% only gets ~7 pts now
+    win_rate_score = max(0, min(35, ((avg_win_rate - 0.45) / 0.25) * 35))
+
+    # Profit Factor Score (0-35 points)
+    # 1.0 = 0 pts (breakeven), 4.0 = 35 pts (exceptional)
+    # Requires significant edge to score well
+    profit_factor_score = max(0, min(35, ((avg_profit_factor - 1.0) / 3.0) * 35))
+
+    # Reward Score (0-30 points)
+    # 0 = 0 pts, 150 = 30 pts (strong positive performance)
+    # No more free points from the +100 offset
+    reward_score = max(0, min(30, (avg_reward / 150) * 30))
 
     iq = int(win_rate_score + profit_factor_score + reward_score)
 
-    if iq < 20:
+    # Expertise levels based on internal IQ
+    if iq < 15:
         level = "Novice"
-    elif iq < 40:
+    elif iq < 30:
         level = "Beginner"
+    elif iq < 45:
+        level = "Developing"
     elif iq < 60:
-        level = "Intermediate"
+        level = "Competent"
     elif iq < 75:
-        level = "Advanced"
+        level = "Proficient"
     elif iq < 90:
         level = "Expert"
     else:

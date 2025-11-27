@@ -1154,7 +1154,13 @@ class JJBotPro:
             logger.warning(f"Failed to save training metrics: {e}")
 
     def _calculate_trading_iq(self):
-        """Calculate Trading IQ based on cumulative performance"""
+        """Calculate Trading IQ based on cumulative performance - Calibrated for meaningful progression
+
+        Scoring Philosophy:
+        - Win Rate: 45% baseline (0 pts), 70% excellence (35 pts max)
+        - Profit Factor: 1.0 breakeven (0 pts), 4.0 exceptional (35 pts max)
+        - Reward: 0 baseline (0 pts), 150+ strong performance (30 pts max)
+        """
         if self.training_metrics["episode_count"] == 0:
             return 0, "Untrained"
 
@@ -1163,29 +1169,32 @@ class JJBotPro:
         avg_profit_factor = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
         avg_reward = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
 
-        # Normalize and score (0-100 scale)
-        # Win rate: 0-50% = 0-40 points
-        win_rate_score = min(40, (avg_win_rate / 0.5) * 40)
+        # Win Rate Score (0-35 points)
+        # 45% = 0 pts (baseline), 70% = 35 pts (excellence)
+        win_rate_score = max(0, min(35, ((avg_win_rate - 0.45) / 0.25) * 35))
 
-        # Profit factor: 0-3 = 0-30 points
-        profit_factor_score = min(30, (avg_profit_factor / 3.0) * 30)
+        # Profit Factor Score (0-35 points)
+        # 1.0 = 0 pts (breakeven), 4.0 = 35 pts (exceptional)
+        profit_factor_score = max(0, min(35, ((avg_profit_factor - 1.0) / 3.0) * 35))
 
-        # Reward: normalize to 0-30 points (assuming rewards typically -100 to +100)
-        reward_normalized = max(0, min(100, avg_reward + 100)) / 100
-        reward_score = reward_normalized * 30
+        # Reward Score (0-30 points)
+        # 0 = 0 pts, 150 = 30 pts (strong positive performance)
+        reward_score = max(0, min(30, (avg_reward / 150) * 30))
 
         # Total IQ (0-100)
         iq = int(win_rate_score + profit_factor_score + reward_score)
 
-        # Determine expertise level
-        if iq < 20:
+        # Expertise levels based on internal IQ
+        if iq < 15:
             level = "Novice"
-        elif iq < 40:
+        elif iq < 30:
             level = "Beginner"
+        elif iq < 45:
+            level = "Developing"
         elif iq < 60:
-            level = "Intermediate"
+            level = "Competent"
         elif iq < 75:
-            level = "Advanced"
+            level = "Proficient"
         elif iq < 90:
             level = "Expert"
         else:

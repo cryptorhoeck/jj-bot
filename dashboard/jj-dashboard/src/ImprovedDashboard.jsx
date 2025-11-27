@@ -2,19 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Map internal IQ (0-100) to human IQ scale (70-160)
+// Uses sqrt curve - higher scores are progressively harder to achieve
+// This makes Genius (145+) require internal IQ 75+ (truly exceptional performance)
 const mapToHumanIQ = (internalIQ) => {
-  // Scale: 0 → 70, 100 → 160
-  return Math.round(70 + (internalIQ * 0.9));
+  // Sqrt scaling compresses high scores, making top tiers harder
+  // Internal 0 → 70, Internal 25 → 115, Internal 50 → 134, Internal 75 → 148, Internal 100 → 160
+  const normalized = Math.sqrt(Math.max(0, internalIQ) / 100);
+  return Math.round(70 + (normalized * 90));
 };
 
 // Get IQ classification based on human scale
+// Calibrated to real IQ distribution where Genius is extremely rare
 const getIQClassification = (humanIQ) => {
-  if (humanIQ < 80) return { label: 'Developing', color: 'text-muted' };
-  if (humanIQ < 90) return { label: 'Low Average', color: 'text-muted' };
-  if (humanIQ < 100) return { label: 'Average', color: 'text-info' };
-  if (humanIQ < 110) return { label: 'Average', color: 'text-info' };
-  if (humanIQ < 120) return { label: 'Above Average', color: 'text-success' };
-  if (humanIQ < 130) return { label: 'Superior', color: 'text-success' };
+  if (humanIQ < 85) return { label: 'Developing', color: 'text-muted' };
+  if (humanIQ < 95) return { label: 'Below Average', color: 'text-muted' };
+  if (humanIQ < 105) return { label: 'Average', color: 'text-info' };
+  if (humanIQ < 115) return { label: 'Above Average', color: 'text-info' };
+  if (humanIQ < 125) return { label: 'High', color: 'text-success' };
+  if (humanIQ < 135) return { label: 'Superior', color: 'text-success' };
   if (humanIQ < 145) return { label: 'Gifted', color: 'text-warning' };
   return { label: 'Genius', color: 'text-danger' };
 };
