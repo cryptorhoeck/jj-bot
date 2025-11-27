@@ -29,12 +29,15 @@ const formatCurrency = (amount, currencyCode = 'CAD', options = {}) => {
   // For JPY, no decimals
   const decimals = currencyCode === 'JPY' ? 0 : (options.decimals ?? 2);
 
-  if (options.compact) {
+  // Auto-compact for values >= 100K (unless explicitly disabled)
+  const autoCompact = options.compact !== false && Math.abs(value) >= 100000;
+
+  if (options.compact || autoCompact) {
     // Compact format for large numbers
     if (Math.abs(value) >= 1000000) {
       return `${currency.symbol}${(value / 1000000).toFixed(1)}M`;
     }
-    if (Math.abs(value) >= 1000) {
+    if (Math.abs(value) >= 100000) {
       return `${currency.symbol}${(value / 1000).toFixed(1)}K`;
     }
   }
