@@ -1,7 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
+// Map internal IQ (0-100) to human IQ scale (70-160)
+const mapToHumanIQ = (internalIQ) => {
+  // Scale: 0 → 70, 100 → 160
+  return Math.round(70 + (internalIQ * 0.9));
+};
+
+// Get IQ classification based on human scale
+const getIQClassification = (humanIQ) => {
+  if (humanIQ < 80) return { label: 'Developing', color: 'text-muted' };
+  if (humanIQ < 90) return { label: 'Low Average', color: 'text-muted' };
+  if (humanIQ < 100) return { label: 'Average', color: 'text-info' };
+  if (humanIQ < 110) return { label: 'Average', color: 'text-info' };
+  if (humanIQ < 120) return { label: 'Above Average', color: 'text-success' };
+  if (humanIQ < 130) return { label: 'Superior', color: 'text-success' };
+  if (humanIQ < 145) return { label: 'Gifted', color: 'text-warning' };
+  return { label: 'Genius', color: 'text-danger' };
+};
+
+export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
   const [equityCurve, setEquityCurve] = useState([]);
   const [openPositions, setOpenPositions] = useState([]);
   const [riskStatus, setRiskStatus] = useState(null);
@@ -255,49 +273,133 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
           )}
         </div>
 
-        {/* Risk Management */}
-        {riskStatus && riskStatus.status === 'success' && (
-          <div className={`card p-6 ${riskStatus.risk_status?.circuit_breaker_active ? 'card-danger' : ''}`}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                Risk Management
-              </h3>
-              <span className={`badge ${riskStatus.risk_status?.circuit_breaker_active ? 'badge-danger' : 'badge-success'}`}>
-                {riskStatus.risk_status?.circuit_breaker_active ? 'Alert' : 'Normal'}
-              </span>
-            </div>
+        {/* Risk Management & Trading Intelligence */}
+        <div className="space-y-6">
+          {/* Risk Management */}
+          {riskStatus && riskStatus.status === 'success' && (
+            <div className={`card p-6 ${riskStatus.risk_status?.circuit_breaker_active ? 'card-danger' : ''}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  Risk Management
+                </h3>
+                <span className={`badge ${riskStatus.risk_status?.circuit_breaker_active ? 'badge-danger' : 'badge-success'}`}>
+                  {riskStatus.risk_status?.circuit_breaker_active ? 'Alert' : 'Normal'}
+                </span>
+              </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Circuit Breaker</p>
-                <p className={`text-lg font-semibold ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
-                  {riskStatus.risk_status?.circuit_breaker_active ? 'ACTIVE' : 'OK'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Daily P&L</p>
-                <p className={`text-lg font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                  ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Loss Remaining</p>
-                <p className="text-lg font-semibold">
-                  ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Consecutive Losses</p>
-                <p className={`text-lg font-semibold ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
-                  {riskStatus.risk_status?.consecutive_losses || 0}
-                </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-1">Circuit Breaker</p>
+                  <p className={`text-lg font-semibold ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
+                    {riskStatus.risk_status?.circuit_breaker_active ? 'ACTIVE' : 'OK'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-1">Daily P&L</p>
+                  <p className={`text-lg font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-1">Loss Remaining</p>
+                  <p className="text-lg font-semibold">
+                    ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-1">Consecutive Losses</p>
+                  <p className={`text-lg font-semibold ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
+                    {riskStatus.risk_status?.consecutive_losses || 0}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Trading Intelligence */}
+          {botStatus && (botStatus.trading_iq > 0 || botStatus.expertise_level !== 'Untrained') && (() => {
+            const internalIQ = botStatus.trading_iq || 0;
+            const humanIQ = mapToHumanIQ(internalIQ);
+            const classification = getIQClassification(humanIQ);
+            const iqProgress = Math.min(100, ((humanIQ - 70) / 90) * 100); // 70-160 range to 0-100%
+
+            return (
+              <div className="card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Trading Intelligence
+                  </h3>
+                  <span className={`badge badge-info`}>
+                    {botStatus.expertise_level || 'Untrained'}
+                  </span>
+                </div>
+
+                {/* IQ Display */}
+                <div className="flex items-center gap-6 mb-4">
+                  {/* IQ Score Circle */}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-24 h-24 rounded-full border-4 border-[var(--bg-tertiary)] flex items-center justify-center"
+                      style={{
+                        background: `conic-gradient(var(--accent) ${iqProgress * 3.6}deg, var(--bg-tertiary) 0deg)`
+                      }}>
+                      <div className="w-20 h-20 rounded-full bg-[var(--bg-primary)] flex flex-col items-center justify-center">
+                        <span className="text-2xl font-bold">{humanIQ}</span>
+                        <span className="text-xs text-muted">IQ</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* IQ Details */}
+                  <div className="flex-1">
+                    <p className={`text-lg font-semibold ${classification.color} mb-1`}>
+                      {classification.label}
+                    </p>
+                    <p className="text-sm text-muted mb-2">
+                      Human IQ Scale (70-160)
+                    </p>
+                    {/* IQ Progress Bar */}
+                    <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 via-green-500 to-yellow-500 rounded-full transition-all duration-500"
+                        style={{ width: `${iqProgress}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted mt-1">
+                      <span>70</span>
+                      <span>100</span>
+                      <span>130</span>
+                      <span>160</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Training Stats */}
+                {botStatus.training && (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--bg-tertiary)]">
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Episodes</p>
+                      <p className="text-lg font-semibold">
+                        {botStatus.training.completed_episodes || 0} / {botStatus.training.total_episodes || 0}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Avg Win Rate</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training.avg_win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
+                        {(botStatus.training.avg_win_rate || 0).toFixed(1)}%
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Recent Trades */}

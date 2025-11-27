@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+// Map internal IQ (0-100) to human IQ scale (70-160)
+const mapToHumanIQ = (internalIQ) => Math.round(70 + ((internalIQ || 0) * 0.9));
+
+// Get IQ classification based on human scale
+const getIQClassification = (humanIQ) => {
+  if (humanIQ < 80) return 'Developing';
+  if (humanIQ < 90) return 'Low Average';
+  if (humanIQ < 110) return 'Average';
+  if (humanIQ < 120) return 'Above Average';
+  if (humanIQ < 130) return 'Superior';
+  if (humanIQ < 145) return 'Gifted';
+  return 'Genius';
+};
+
 // Available symbols for selection
 const AVAILABLE_SYMBOLS = [
   'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'AVAX', 'LINK',
@@ -396,13 +410,13 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
               <div className="flex items-center justify-between mb-4 pb-4 border-b border-[var(--border-color)]">
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                    <span className="text-3xl font-bold text-white">{trainingProgress.trading_iq || 0}</span>
+                    <span className="text-3xl font-bold text-white">{mapToHumanIQ(trainingProgress.trading_iq)}</span>
                   </div>
                   <div>
                     <h3 className="font-bold text-lg">Trading IQ</h3>
                     <p className="text-sm">
-                      <span className="font-semibold text-info">{trainingProgress.expertise_level || 'Untrained'}</span>
-                      {' '}<span className="text-muted">Level</span>
+                      <span className="font-semibold text-info">{getIQClassification(mapToHumanIQ(trainingProgress.trading_iq))}</span>
+                      {' '}<span className="text-muted">• {trainingProgress.expertise_level || 'Untrained'}</span>
                     </p>
                   </div>
                 </div>

@@ -7,6 +7,9 @@ import { MarketChart } from "./MarketChart.jsx";
 import { ConfirmModal } from './components';
 import './App.css';
 
+// Map internal IQ (0-100) to human IQ scale (70-160)
+const mapToHumanIQ = (internalIQ) => Math.round(70 + ((internalIQ || 0) * 0.9));
+
 // Configurable API endpoints via environment variables
 // In production, set VITE_API_BASE and VITE_WS_URL in .env
 const getApiBase = () => {
@@ -519,7 +522,7 @@ function App() {
                 </span>
                 {botStatus.training?.is_training ? (
                   <span className="badge badge-info">
-                    🧠 Training ({botStatus.training.trading_iq || 0} IQ)
+                    🧠 Training ({mapToHumanIQ(botStatus.training.trading_iq)} IQ)
                   </span>
                 ) : botStatus.running ? (
                   <span className="badge badge-success">
@@ -533,7 +536,7 @@ function App() {
                 {/* Always show Trading IQ when not training */}
                 {!botStatus.training?.is_training && (botStatus.trading_iq > 0 || botStatus.expertise_level !== 'Untrained') && (
                   <span className="badge badge-info" title={`Expertise: ${botStatus.expertise_level || 'Untrained'}`}>
-                    🧠 {botStatus.trading_iq || 0} IQ
+                    🧠 {mapToHumanIQ(botStatus.trading_iq)} IQ
                   </span>
                 )}
               </div>
@@ -608,6 +611,7 @@ function App() {
               summary={summary}
               trades={trades}
               API_BASE={API_BASE}
+              botStatus={botStatus}
             />
           )}
 
