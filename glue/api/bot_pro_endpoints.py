@@ -11,7 +11,10 @@ import json
 import asyncio
 import threading
 import logging
+import subprocess
+import signal
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, List, Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, validator
@@ -313,6 +316,183 @@ def get_bot():
     return _bot_manager.bot
 
 
+# ===== Training Process Manager =====
+
+class TrainingProcessManager:
+    """
+    Manages training as a separate process so the API stays responsive.
+
+    Training runs in a subprocess using train_model.py, which writes progress
+    to data/training_status.json for the API to poll.
+    """
+
+    def __init__(self):
+        self._process: Optional[subprocess.Popen] = None
+        self._lock = threading.Lock()
+
+    @property
+    def is_training(self) -> bool:
+        """Check if training process is running"""
+        with self._lock:
+            if self._process is None:
+                return False
+            # Check if process is still alive
+            poll = self._process.poll()
+            if poll is not None:
+                # Process finished
+                self._process = None
+                return False
+            return True
+
+    def start_training(self, episodes: int, fresh: bool = False) -> Dict[str, Any]:
+        """
+        Start training in a separate process.
+
+        Args:
+            episodes: Number of training episodes
+            fresh: If True, start fresh (ignore existing model/metrics)
+
+        Returns:
+            Dict with status and message
+        """
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:
+                return {
+                    "status": "already_running",
+                    "message": "Training is already in progress"
+                }
+
+            try:
+                project_root = Path(__file__).parent.parent.parent
+                train_script = project_root / "train_model.py"
+
+                if not train_script.exists():
+                    return {
+                        "status": "error",
+                        "message": f"Training script not found: {train_script}"
+                    }
+
+                # Build command
+                cmd = [sys.executable, str(train_script), "--episodes", str(episodes)]
+                if fresh:
+                    cmd.append("--fresh")
+
+                # Start subprocess
+                self._process = subprocess.Popen(
+                    cmd,
+                    cwd=str(project_root),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    # Don't use shell to allow proper signal handling
+                    shell=False,
+                    # Create new process group on Unix for clean termination
+                    preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+                )
+
+                logger.info(f"Training process started with PID {self._process.pid}")
+
+                return {
+                    "status": "started",
+                    "message": f"Training started in background ({episodes} episodes)",
+                    "pid": self._process.pid,
+                    "episodes": episodes
+                }
+
+            except Exception as e:
+                logger.exception(f"Failed to start training: {e}")
+                return {
+                    "status": "error",
+                    "message": str(e)
+                }
+
+    def stop_training(self) -> Dict[str, Any]:
+        """
+        Stop the training process gracefully.
+
+        Returns:
+            Dict with status and message
+        """
+        with self._lock:
+            if self._process is None or self._process.poll() is not None:
+                return {
+                    "status": "not_running",
+                    "message": "Training is not running"
+                }
+
+            try:
+                pid = self._process.pid
+
+                # Send SIGTERM for graceful shutdown (allows saving progress)
+                if hasattr(os, 'killpg'):
+                    # Kill the process group on Unix
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                else:
+                    # Windows
+                    self._process.terminate()
+
+                # Wait for process to finish (with timeout)
+                try:
+                    self._process.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't stop
+                    if hasattr(os, 'killpg'):
+                        os.killpg(os.getpgid(pid), signal.SIGKILL)
+                    else:
+                        self._process.kill()
+
+                self._process = None
+                logger.info(f"Training process {pid} stopped")
+
+                return {
+                    "status": "stopped",
+                    "message": "Training stopped (progress saved)"
+                }
+
+            except Exception as e:
+                logger.exception(f"Error stopping training: {e}")
+                return {
+                    "status": "error",
+                    "message": str(e)
+                }
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get training status from the status file.
+
+        Returns:
+            Dict with training status
+        """
+        project_root = Path(__file__).parent.parent.parent
+        status_path = project_root / "data" / "training_status.json"
+
+        # Check if process is running
+        is_running = self.is_training
+
+        if status_path.exists():
+            try:
+                with open(status_path) as f:
+                    status = json.load(f)
+                    # Override is_training based on actual process state
+                    status["process_running"] = is_running
+                    if not is_running and status.get("is_training"):
+                        # Process died but status wasn't updated
+                        status["is_training"] = False
+                        status["status"] = "stopped"
+                    return status
+            except Exception as e:
+                logger.warning(f"Failed to read training status: {e}")
+
+        return {
+            "is_training": False,
+            "process_running": is_running,
+            "status": "idle"
+        }
+
+
+# Global training manager instance
+_training_manager = TrainingProcessManager()
+
+
 # ===== Config Utilities =====
 
 def get_config_path() -> str:
@@ -390,8 +570,14 @@ async def get_bot_status() -> Dict[str, Any]:
             "win_rate": bot_status.get("win_rate"),
         })
 
-    # Add training progress
-    if "training" in bot_status:
+    # Add training progress (from subprocess or in-process)
+    training_status = _training_manager.get_status()
+    if training_status.get("is_training") or training_status.get("process_running"):
+        # Training running in separate process
+        response["training"] = training_status
+        response["mode"] = "training"
+    elif "training" in bot_status:
+        # Legacy: training in same process
         response["training"] = bot_status["training"]
 
     # Add config summary
@@ -410,9 +596,13 @@ async def get_bot_status() -> Dict[str, Any]:
     model_path = os.path.join(get_project_root(), 'models', 'ppo_agent.pt')
     response["rl_model_trained"] = os.path.exists(model_path)
 
-    # Always include Trading IQ (from config or live training)
-    if bot_status.get("running") and "training" in bot_status and bot_status["training"].get("is_training"):
-        # Use live training IQ
+    # Always include Trading IQ (from training subprocess, in-process training, or config)
+    if training_status.get("is_training"):
+        # Use live training IQ from subprocess
+        response["trading_iq"] = training_status.get("trading_iq", 0)
+        response["expertise_level"] = training_status.get("expertise_level", "Untrained")
+    elif bot_status.get("running") and "training" in bot_status and bot_status["training"].get("is_training"):
+        # Legacy: Use live training IQ from in-process training
         response["trading_iq"] = bot_status["training"].get("trading_iq", 0)
         response["expertise_level"] = bot_status["training"].get("expertise_level", "Untrained")
     elif config:
@@ -518,12 +708,16 @@ async def stop_bot() -> Dict[str, Any]:
 
 
 @router.post("/train")
-async def start_training(episodes: int = 100) -> Dict[str, Any]:
+async def start_training(episodes: int = 100, fresh: bool = False) -> Dict[str, Any]:
     """
-    Start RL agent training.
+    Start RL agent training in a separate process.
+
+    Training runs in the background so the dashboard stays responsive.
+    Progress can be monitored via /api/pro/training/status.
 
     Args:
-        episodes: Number of training episodes (default: 100)
+        episodes: Number of training episodes (default: 100, max: 10000)
+        fresh: If True, start with a fresh model (ignore existing)
 
     Bot must be stopped before training can begin.
     """
@@ -539,12 +733,66 @@ async def start_training(episodes: int = 100) -> Dict[str, Any]:
             detail="Stop the bot before training"
         )
 
+    if _training_manager.is_training:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Training is already in progress"
+        )
+
+    # Update config
     config = load_config() or {}
-    config["mode"] = "training"
     config["train_episodes"] = episodes
     save_config(config)
 
-    return await start_bot(mode="training")
+    # Start training in separate process
+    result = _training_manager.start_training(episodes, fresh=fresh)
+
+    if result["status"] == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result["message"]
+        )
+
+    return result
+
+
+@router.get("/training/status")
+async def get_training_status() -> Dict[str, Any]:
+    """
+    Get current training status and progress.
+
+    Returns real-time training metrics including:
+    - Current episode / total episodes
+    - Progress percentage
+    - Trading IQ and expertise level
+    - Average win rate and profit factor
+    - Total simulated trades
+    """
+    return _training_manager.get_status()
+
+
+@router.post("/training/stop")
+async def stop_training() -> Dict[str, Any]:
+    """
+    Stop training gracefully.
+
+    The current episode will complete and all progress will be saved.
+    """
+    if not _training_manager.is_training:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Training is not running"
+        )
+
+    result = _training_manager.stop_training()
+
+    if result["status"] == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result["message"]
+        )
+
+    return result
 
 
 @router.get("/positions")
