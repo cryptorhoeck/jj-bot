@@ -24,7 +24,9 @@ const AVAILABLE_SYMBOLS = [
   'SUSHI', 'YFI', '1INCH', 'BAL', 'LDO', 'RPL', 'SSV', 'GMX', 'DYDX', 'WOO'
 ];
 
-export function TradingTab({ darkMode, API_BASE, learningData }) {
+export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD', formatCurrency }) {
+  // Fallback formatter if not provided
+  const fmt = formatCurrency || ((amount) => `$${Number(amount || 0).toFixed(2)}`);
   const [botRunning, setBotRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('control'); // control, config, symbols, strategies
@@ -359,7 +361,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-4 border-t border-[var(--border-color)]">
                 <div className="text-center">
                   <p className="text-xs text-muted uppercase">Equity</p>
-                  <p className="text-lg font-bold">${botStats.equity?.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
+                  <p className="text-lg font-bold">{fmt(botStats.equity, currency)}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-xs text-muted uppercase">Positions</p>
@@ -372,7 +374,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                 <div className="text-center">
                   <p className="text-xs text-muted uppercase">P&L</p>
                   <p className={`text-lg font-bold ${botStats.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${botStats.total_pnl?.toFixed(2)}
+                    {fmt(botStats.total_pnl, currency)}
                   </p>
                 </div>
                 <div className="text-center">
@@ -457,7 +459,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                 <div className="text-center">
                   <p className="text-xs text-muted uppercase">Last Episode</p>
                   <p className={`text-sm font-bold ${trainingProgress.last_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${trainingProgress.last_pnl?.toFixed(2)}
+                    {fmt(trainingProgress.last_pnl, currency)}
                   </p>
                 </div>
               </div>
@@ -473,6 +475,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   <thead>
                     <tr className="text-muted text-left border-b border-[var(--border-color)]">
                       <th className="pb-2">Symbol</th>
+                      <th className="pb-2">Opened</th>
                       <th className="pb-2">Side</th>
                       <th className="pb-2">Entry</th>
                       <th className="pb-2">Current</th>
@@ -484,13 +487,16 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                     {positions.map((pos, idx) => (
                       <tr key={idx} className="border-b border-[var(--border-color)]">
                         <td className="py-2 font-semibold">{pos.symbol}</td>
+                        <td className="text-muted">
+                          {pos.entry_time ? new Date(pos.entry_time).toLocaleString() : pos.timestamp ? new Date(pos.timestamp).toLocaleString() : '-'}
+                        </td>
                         <td className={pos.side === 'long' ? 'text-success' : 'text-danger'}>
                           {pos.side?.toUpperCase()}
                         </td>
-                        <td>${pos.entry_price?.toFixed(2)}</td>
-                        <td>${pos.current_price?.toFixed(2)}</td>
+                        <td>{fmt(pos.entry_price, currency)}</td>
+                        <td>{fmt(pos.current_price, currency)}</td>
                         <td className={pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}>
-                          ${pos.unrealized_pnl?.toFixed(2)}
+                          {fmt(pos.unrealized_pnl, currency)}
                         </td>
                         <td className="text-muted">{pos.signal_source || pos.source || 'restored'}</td>
                       </tr>
@@ -551,7 +557,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                   onChange={(e) => updateConfig('max_position_pct', parseFloat(e.target.value) / 100)}
                   className="input"
                 />
-                <p className="text-xs text-muted mt-1">${(proConfig.initial_capital * proConfig.max_position_pct).toFixed(0)} per trade</p>
+                <p className="text-xs text-muted mt-1">{fmt(proConfig.initial_capital * proConfig.max_position_pct, currency, {decimals: 0})} per trade</p>
               </div>
               <div>
                 <label className="input-label">Max Concurrent Positions</label>
@@ -816,7 +822,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
                       <div className="flex justify-between">
                         <span className="text-muted">P&L</span>
                         <span className={strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}>
-                          ${strat.total_pnl?.toFixed(2)}
+                          {fmt(strat.total_pnl, currency)}
                         </span>
                       </div>
                     </div>

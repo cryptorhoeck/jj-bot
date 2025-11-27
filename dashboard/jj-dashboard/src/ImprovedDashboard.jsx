@@ -19,7 +19,9 @@ const getIQClassification = (humanIQ) => {
   return { label: 'Genius', color: 'text-danger' };
 };
 
-export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
+export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, currency = 'CAD', formatCurrency }) {
+  // Fallback formatter if not provided
+  const fmt = formatCurrency || ((amount) => `$${Number(amount || 0).toFixed(2)}`);
   const [equityCurve, setEquityCurve] = useState([]);
   const [openPositions, setOpenPositions] = useState([]);
   const [riskStatus, setRiskStatus] = useState(null);
@@ -115,7 +117,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         <div className="stat-card">
           <p className="stat-label">Current Equity</p>
           <p className="stat-value text-info">
-            ${(summary.current_equity || 10000).toLocaleString()}
+            {fmt(summary.current_equity || 10000, currency)}
           </p>
           <p className={`stat-change ${summary.return_pct >= 0 ? 'positive' : 'negative'}`}>
             {summary.return_pct >= 0 ? '+' : ''}{summary.return_pct?.toFixed(2) || '0.00'}% return
@@ -126,7 +128,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         <div className={`stat-card ${summary.total_pnl >= 0 ? 'success' : 'danger'}`}>
           <p className="stat-label">Total P&L</p>
           <p className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-            {summary.total_pnl >= 0 ? '+' : ''}${summary.total_pnl?.toFixed(2) || '0.00'}
+            {summary.total_pnl >= 0 ? '+' : ''}{fmt(summary.total_pnl || 0, currency)}
           </p>
           <p className="stat-change text-muted">
             {summary.winning_trades || 0}W / {summary.losing_trades || 0}L
@@ -155,7 +157,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         <div className={`stat-card ${Math.abs(summary.max_drawdown || 0) > 500 ? 'danger' : ''}`}>
           <p className="stat-label">Max Drawdown</p>
           <p className="stat-value text-danger">
-            ${Math.abs(summary.max_drawdown || 0).toFixed(2)}
+            {fmt(Math.abs(summary.max_drawdown || 0), currency)}
           </p>
           <p className="stat-change text-muted">Peak to trough</p>
         </div>
@@ -198,7 +200,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
               <YAxis
                 stroke={chartColors.text}
                 tick={{ fill: chartColors.text, fontSize: 12 }}
-                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                tickFormatter={(value) => fmt(value, currency)}
               />
               <Tooltip
                 contentStyle={{
@@ -207,7 +209,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                   borderRadius: '8px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
                 }}
-                formatter={(value) => [`$${value.toFixed(2)}`, 'Equity']}
+                formatter={(value) => [fmt(value, currency), 'Equity']}
                 labelFormatter={(value) => new Date(value).toLocaleString()}
               />
               <Area
@@ -242,6 +244,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 <thead>
                   <tr>
                     <th>Symbol</th>
+                    <th>Opened</th>
                     <th className="text-right">Entry</th>
                     <th className="text-right">Current</th>
                     <th className="text-right">P&L</th>
@@ -251,10 +254,13 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                   {openPositions.map((pos, idx) => (
                     <tr key={idx}>
                       <td className="font-semibold">{pos.symbol}</td>
-                      <td className="text-right text-muted">${pos.entry_price?.toFixed(2)}</td>
-                      <td className="text-right text-muted">${pos.current_price?.toFixed(2)}</td>
+                      <td className="text-muted text-sm">
+                        {pos.entry_time ? new Date(pos.entry_time).toLocaleString() : pos.timestamp ? new Date(pos.timestamp).toLocaleString() : '-'}
+                      </td>
+                      <td className="text-right text-muted">{fmt(pos.entry_price, currency)}</td>
+                      <td className="text-right text-muted">{fmt(pos.current_price, currency)}</td>
                       <td className={`text-right font-semibold ${pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {pos.unrealized_pnl >= 0 ? '+' : ''}${pos.unrealized_pnl?.toFixed(2)}
+                        {pos.unrealized_pnl >= 0 ? '+' : ''}{fmt(pos.unrealized_pnl, currency)}
                       </td>
                     </tr>
                   ))}
@@ -300,13 +306,13 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-1">Daily P&L</p>
                   <p className={`text-lg font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
+                    {fmt(riskStatus.risk_status?.daily_pnl || 0, currency)}
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-1">Loss Remaining</p>
                   <p className="text-lg font-semibold">
-                    ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
+                    {fmt(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
@@ -430,7 +436,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 {recentTrades.map((trade, idx) => (
                   <tr key={idx}>
                     <td className="text-muted text-sm">
-                      {new Date(trade.timestamp).toLocaleTimeString()}
+                      {new Date(trade.timestamp).toLocaleString()}
                     </td>
                     <td className="font-semibold">{trade.symbol}</td>
                     <td>
@@ -438,9 +444,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                         {trade.signal}
                       </span>
                     </td>
-                    <td className="text-right text-muted">${trade.last_price?.toFixed(2)}</td>
+                    <td className="text-right text-muted">{fmt(trade.last_price, currency)}</td>
                     <td className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                      {trade.pnl >= 0 ? '+' : ''}${trade.pnl?.toFixed(2)}
+                      {trade.pnl >= 0 ? '+' : ''}{fmt(trade.pnl, currency)}
                     </td>
                   </tr>
                 ))}

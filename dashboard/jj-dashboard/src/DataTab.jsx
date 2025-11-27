@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { ConfirmModal } from './components';
 
-export function DataTab({ darkMode, API_BASE, trades, summary }) {
+export function DataTab({ darkMode, API_BASE, trades, summary, currency = 'CAD', formatCurrency }) {
+  // Fallback formatter if not provided
+  const fmt = formatCurrency || ((amount) => `$${Number(amount || 0).toFixed(2)}`);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState('trades');
 
@@ -159,7 +161,7 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                 <div>
                   <p className="text-xs text-muted uppercase tracking-wide">Total P&L</p>
                   <p className={`text-xl font-bold ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${summary.total_pnl?.toFixed(2) || '0.00'}
+                    {fmt(summary.total_pnl || 0, currency)}
                   </p>
                 </div>
                 <div>
@@ -203,9 +205,9 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                             {trade.signal}
                           </span>
                         </td>
-                        <td className="text-right text-muted">${parseFloat(trade.last_price).toFixed(2)}</td>
+                        <td className="text-right text-muted">{fmt(parseFloat(trade.last_price), currency)}</td>
                         <td className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                          {trade.pnl >= 0 ? '+' : ''}${trade.pnl?.toFixed(2)}
+                          {trade.pnl >= 0 ? '+' : ''}{fmt(trade.pnl, currency)}
                         </td>
                         <td className="text-muted text-sm">{trade.strategy || 'N/A'}</td>
                       </tr>
@@ -258,13 +260,13 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                     <div className="flex justify-between">
                       <span className="text-muted">Total P&L</span>
                       <span className={`font-semibold ${stat.totalPnL >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ${stat.totalPnL.toFixed(2)}
+                        {fmt(stat.totalPnL, currency)}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">Avg P&L</span>
                       <span className={`font-semibold ${stat.avgPnL >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ${stat.avgPnL.toFixed(2)}
+                        {fmt(stat.avgPnL, currency)}
                       </span>
                     </div>
                   </div>
@@ -305,7 +307,7 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                     <div className="flex justify-between">
                       <span className="text-muted">Total P&L</span>
                       <span className={`font-semibold ${stat.totalPnL >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ${stat.totalPnL.toFixed(2)}
+                        {fmt(stat.totalPnL, currency)}
                       </span>
                     </div>
                   </div>
@@ -332,7 +334,7 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                       <p className="font-semibold">{trade.symbol} {trade.signal}</p>
                       <p className="text-xs text-muted">{new Date(trade.timestamp).toLocaleString()}</p>
                     </div>
-                    <p className="text-lg font-bold text-success">+${trade.pnl.toFixed(2)}</p>
+                    <p className="text-lg font-bold text-success">+{fmt(trade.pnl, currency)}</p>
                   </div>
                 ))}
               </div>
@@ -354,7 +356,7 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                       <p className="font-semibold">{trade.symbol} {trade.signal}</p>
                       <p className="text-xs text-muted">{new Date(trade.timestamp).toLocaleString()}</p>
                     </div>
-                    <p className="text-lg font-bold text-danger">${trade.pnl.toFixed(2)}</p>
+                    <p className="text-lg font-bold text-danger">{fmt(trade.pnl, currency)}</p>
                   </div>
                 ))}
               </div>

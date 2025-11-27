@@ -10,6 +10,41 @@ import './App.css';
 // Map internal IQ (0-100) to human IQ scale (70-160)
 const mapToHumanIQ = (internalIQ) => Math.round(70 + ((internalIQ || 0) * 0.9));
 
+// Supported currencies with symbols
+const CURRENCIES = {
+  CAD: { symbol: '$', name: 'Canadian Dollar', code: 'CAD', locale: 'en-CA' },
+  USD: { symbol: '$', name: 'US Dollar', code: 'USD', locale: 'en-US' },
+  GBP: { symbol: '£', name: 'British Pound', code: 'GBP', locale: 'en-GB' },
+  EUR: { symbol: '€', name: 'Euro', code: 'EUR', locale: 'de-DE' },
+  AUD: { symbol: '$', name: 'Australian Dollar', code: 'AUD', locale: 'en-AU' },
+  JPY: { symbol: '¥', name: 'Japanese Yen', code: 'JPY', locale: 'ja-JP' },
+  CHF: { symbol: 'Fr', name: 'Swiss Franc', code: 'CHF', locale: 'de-CH' },
+};
+
+// Currency formatting utility
+const formatCurrency = (amount, currencyCode = 'CAD', options = {}) => {
+  const currency = CURRENCIES[currencyCode] || CURRENCIES.CAD;
+  const value = Number(amount) || 0;
+
+  // For JPY, no decimals
+  const decimals = currencyCode === 'JPY' ? 0 : (options.decimals ?? 2);
+
+  if (options.compact) {
+    // Compact format for large numbers
+    if (Math.abs(value) >= 1000000) {
+      return `${currency.symbol}${(value / 1000000).toFixed(1)}M`;
+    }
+    if (Math.abs(value) >= 1000) {
+      return `${currency.symbol}${(value / 1000).toFixed(1)}K`;
+    }
+  }
+
+  return `${currency.symbol}${value.toLocaleString(currency.locale, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  })}`;
+};
+
 // Configurable API endpoints via environment variables
 // In production, set VITE_API_BASE and VITE_WS_URL in .env
 const getApiBase = () => {
@@ -68,6 +103,10 @@ function App() {
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true); // Default to dark mode for trading
+  const [currency, setCurrency] = useState(() => {
+    // Load from localStorage, default to CAD
+    return localStorage.getItem('jj-bot-currency') || 'CAD';
+  });
   const [wsConnected, setWsConnected] = useState(false);
   const [realtimeEvents, setRealtimeEvents] = useState([]);
   const [symbols, setSymbols] = useState([]);
@@ -547,7 +586,7 @@ function App() {
               <div className="text-right">
                 <p className="text-xs text-muted uppercase tracking-wide">Total P&L</p>
                 <p className={`text-lg font-bold ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {summary.total_pnl >= 0 ? '+' : ''}${summary.total_pnl?.toFixed(2) || '0.00'}
+                  {summary.total_pnl >= 0 ? '+' : ''}{formatCurrency(summary.total_pnl || 0, currency)}
                 </p>
               </div>
               <div className="w-px h-8 bg-[var(--border-color)]" />
@@ -564,6 +603,23 @@ function App() {
 
             {/* Controls */}
             <div className="flex items-center gap-3">
+              {/* Currency Selector */}
+              <select
+                value={currency}
+                onChange={(e) => {
+                  setCurrency(e.target.value);
+                  localStorage.setItem('jj-bot-currency', e.target.value);
+                }}
+                className="select select-sm bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg px-2 py-1 text-sm"
+                title="Select currency"
+              >
+                {Object.entries(CURRENCIES).map(([code, info]) => (
+                  <option key={code} value={code}>
+                    {info.symbol} {code}
+                  </option>
+                ))}
+              </select>
+
               {/* Dark Mode Toggle */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -612,6 +668,8 @@ function App() {
               trades={trades}
               API_BASE={API_BASE}
               botStatus={botStatus}
+              currency={currency}
+              formatCurrency={formatCurrency}
             />
           )}
 
@@ -620,6 +678,8 @@ function App() {
               darkMode={darkMode}
               API_BASE={API_BASE}
               learningData={learningData}
+              currency={currency}
+              formatCurrency={formatCurrency}
             />
           )}
 
@@ -627,6 +687,8 @@ function App() {
             <MarketChart
               darkMode={darkMode}
               API_BASE={API_BASE}
+              currency={currency}
+              formatCurrency={formatCurrency}
             />
           )}
 
@@ -636,6 +698,8 @@ function App() {
               API_BASE={API_BASE}
               trades={trades}
               summary={summary}
+              currency={currency}
+              formatCurrency={formatCurrency}
             />
           )}
         </div>
