@@ -122,16 +122,26 @@ class BotConfig:
     expertise_level: str = "Untrained"
 
     @classmethod
-    def load(cls, path: str = "config/bot_config.json") -> "BotConfig":
+    def _get_config_path(cls) -> str:
+        """Get absolute path to config file"""
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(project_root, "config", "bot_config.json")
+
+    @classmethod
+    def load(cls, path: str = None) -> "BotConfig":
         """Load config from file"""
+        if path is None:
+            path = cls._get_config_path()
         if os.path.exists(path):
             with open(path) as f:
                 data = json.load(f)
                 return cls(**data)
         return cls()
 
-    def save(self, path: str = "config/bot_config.json"):
+    def save(self, path: str = None):
         """Save config to file"""
+        if path is None:
+            path = self._get_config_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(asdict(self), f, indent=2)
@@ -416,20 +426,23 @@ class JJBotPro:
 
     def _save_state(self):
         """Save bot state to file"""
-        state_file = Path("data/bot_state.json")
-        os.makedirs("data", exist_ok=True)
+        project_root = Path(__file__).parent
+        state_file = project_root / "data" / "bot_state.json"
+        os.makedirs(state_file.parent, exist_ok=True)
         try:
+            # Create a copy of stats to avoid mutating self.stats when serializing
+            stats_copy = self.stats.copy()
+            if stats_copy.get("start_time") and isinstance(stats_copy["start_time"], datetime):
+                stats_copy["start_time"] = stats_copy["start_time"].isoformat()
+
             state = {
                 "equity": self.equity,
                 "peak_equity": self.peak_equity,
                 "daily_pnl": self.daily_pnl,
                 "daily_start_equity": self.daily_start_equity,
-                "stats": self.stats,
+                "stats": stats_copy,
                 "last_updated": datetime.now().isoformat()
             }
-            # Handle datetime in stats
-            if state["stats"].get("start_time"):
-                state["stats"]["start_time"] = state["stats"]["start_time"].isoformat() if isinstance(state["stats"]["start_time"], datetime) else state["stats"]["start_time"]
             with open(state_file, "w") as f:
                 json.dump(state, f, indent=2)
         except Exception as e:
@@ -1093,9 +1106,14 @@ class JJBotPro:
             f"P&L: ${self.stats['total_pnl']:,.2f}"
         )
 
+    def _get_metrics_path(self) -> str:
+        """Get absolute path to training metrics file"""
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(project_root, "data", "training_metrics.json")
+
     def _load_training_metrics(self) -> Dict:
         """Load training metrics from file if exists, otherwise return defaults"""
-        metrics_path = "data/training_metrics.json"
+        metrics_path = self._get_metrics_path()
         default_metrics = {
             "episode_count": 0,
             "total_win_rate": 0.0,
@@ -1121,7 +1139,7 @@ class JJBotPro:
 
     def _save_training_metrics(self):
         """Save training metrics to file for persistence"""
-        metrics_path = "data/training_metrics.json"
+        metrics_path = self._get_metrics_path()
         try:
             os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
             with open(metrics_path, "w") as f:
@@ -1392,7 +1410,7 @@ class JJBotPro:
 
 
 # Simple entry point
-def run_bot(config_path: str = "config/bot_config.json"):
+def run_bot(config_path: str = None):
     """Run the trading bot"""
     config = BotConfig.load(config_path)
     bot = JJBotPro(config)
