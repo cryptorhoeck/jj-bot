@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
+export function MarketChart({ colors: propColors, darkMode, API_BASE, currency = 'CAD', formatCurrency }) {
+  // Currency formatter - use provided or fallback
+  const fmt = formatCurrency || ((amount) => `$${Number(amount || 0).toFixed(2)}`);
+
   // Default colors based on dark mode if not provided
   const colors = propColors || {
     text: darkMode ? '#f1f5f9' : '#0f172a',
@@ -415,7 +418,7 @@ export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
               {coin.symbol}
             </div>
             <div style={{ fontSize: '0.75rem', color: colors.textMuted }}>
-              ${coin.price?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {fmt(coin.price, currency)}
             </div>
           </div>
 
@@ -863,7 +866,7 @@ export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
                 lineHeight: 1.4
               }}>
                 Predictions based on 47 technical features using machine learning.
-                For {selectedSymbol}/USD on {timeframe} timeframe.
+                For {selectedSymbol}/{currency} on {timeframe} timeframe.
               </div>
             </>
           ) : mlPrediction && !mlPrediction.success ? (
@@ -947,7 +950,7 @@ export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
                 fill={colors.textMuted}
                 fontSize="11"
               >
-                ${(minPrice + (priceRange * (1 - percent))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {fmt(minPrice + (priceRange * (1 - percent)), currency)}
               </text>
             </g>
           ))}
@@ -1290,7 +1293,7 @@ export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
                 alignItems: 'center',
                 gap: '0.5rem'
               }}>
-                {selectedSymbol}/USD
+                {selectedSymbol}/{currency}
                 <span style={{
                   fontSize: '0.75rem',
                   fontWeight: '600',
@@ -1307,7 +1310,7 @@ export function MarketChart({ colors: propColors, darkMode, API_BASE }) {
             {currentCoin && priceData && (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem' }}>
                 <span style={{ fontSize: '1.25rem', fontWeight: '700', color: colors.text }}>
-                  ${priceData[priceData.length - 1].price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {fmt(priceData[priceData.length - 1].price, currency)}
                 </span>
                 <span style={{
                   fontSize: '0.875rem',
