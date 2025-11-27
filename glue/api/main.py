@@ -294,6 +294,7 @@ async def get_summary():
     bot = get_bot()
     if bot and bot.running:
         win_rate = (bot.stats["winning_trades"] / max(bot.stats["total_trades"], 1)) * 100
+        return_pct = ((bot.total_equity - bot.config.initial_capital) / bot.config.initial_capital) * 100
         return {
             "total_trades": bot.stats["total_trades"],
             "winning_trades": bot.stats["winning_trades"],
@@ -302,6 +303,7 @@ async def get_summary():
             "total_pnl": bot.stats["total_pnl"],
             "current_equity": bot.total_equity,
             "starting_capital": bot.config.initial_capital,
+            "return_pct": round(return_pct, 2),
             "daily_pnl": bot.daily_pnl,
             "open_positions": len(bot.positions),
             "mode": bot.config.mode,
@@ -310,7 +312,7 @@ async def get_summary():
     return engine.get_summary()
 
 @app.get("/api/equity-curve")
-async def get_equity_curve(starting_capital: float = 10000.0):
+async def get_equity_curve(starting_capital: float = 100000.0):
     """Get equity curve over time for portfolio visualization"""
     bot = get_bot()
     if bot and bot.running:

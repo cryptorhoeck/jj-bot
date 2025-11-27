@@ -195,8 +195,8 @@ def get_summary() -> Dict[str, Any]:
         }
 
         # Calculate current equity (starting capital + total PnL)
-        # Assume starting capital of 10,000 (should be configurable)
-        starting_capital = 10000.0
+        # Default starting capital matches bot config (100,000)
+        starting_capital = 100000.0
         current_equity = starting_capital + total_pnl
 
         # Get latest trade timestamp
@@ -237,7 +237,7 @@ def clear_trades() -> None:
         conn.commit()
         return True
 
-def get_equity_curve(starting_capital: float = 10000.0) -> List[Dict[str, Any]]:
+def get_equity_curve(starting_capital: float = 100000.0) -> List[Dict[str, Any]]:
     """
     Calculate equity curve over time
 
