@@ -495,6 +495,30 @@ _training_manager = TrainingProcessManager()
 
 # ===== Config Utilities =====
 
+def get_training_metrics_path() -> str:
+    """Get path to training metrics file"""
+    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
+    return os.path.join(project_root, 'data', 'training_metrics.json')
+
+
+def load_training_metrics() -> Optional[Dict]:
+    """Load historical training metrics from saved file"""
+    metrics_path = get_training_metrics_path()
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path) as f:
+                metrics = json.load(f)
+                # Calculate averages if we have episodes
+                if metrics.get("episode_count", 0) > 0:
+                    metrics["avg_win_rate"] = (metrics["total_win_rate"] / metrics["episode_count"]) * 100
+                    metrics["avg_profit_factor"] = metrics["total_profit_factor"] / metrics["episode_count"]
+                    metrics["avg_reward"] = metrics["total_reward"] / metrics["episode_count"]
+                return metrics
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to load training metrics: {e}")
+    return None
+
+
 def get_config_path() -> str:
     """Get path to bot config"""
     project_root = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -579,6 +603,17 @@ async def get_bot_status() -> Dict[str, Any]:
     elif "training" in bot_status:
         # Legacy: training in same process
         response["training"] = bot_status["training"]
+
+    # Add historical training stats (always include if available)
+    historical_metrics = load_training_metrics()
+    if historical_metrics and historical_metrics.get("episode_count", 0) > 0:
+        response["training_history"] = {
+            "total_episodes": historical_metrics.get("episode_count", 0),
+            "total_trades": historical_metrics.get("total_trades", 0),
+            "avg_win_rate": historical_metrics.get("avg_win_rate", 0),
+            "avg_profit_factor": historical_metrics.get("avg_profit_factor", 0),
+            "avg_reward": historical_metrics.get("avg_reward", 0),
+        }
 
     # Add config summary
     if config:

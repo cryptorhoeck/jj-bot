@@ -330,12 +330,14 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
             </div>
           )}
 
-          {/* Trading Intelligence */}
-          {botStatus && (botStatus.trading_iq > 0 || botStatus.expertise_level !== 'Untrained') && (() => {
+          {/* Trading Intelligence - Always visible */}
+          {botStatus && (() => {
             const internalIQ = botStatus.trading_iq || 0;
             const humanIQ = mapToHumanIQ(internalIQ);
             const classification = getIQClassification(humanIQ);
             const iqProgress = Math.min(100, ((humanIQ - 70) / 90) * 100); // 70-160 range to 0-100%
+            const hasTrainingHistory = botStatus.training_history && botStatus.training_history.total_episodes > 0;
+            const isActivelyTraining = botStatus.training && botStatus.training.is_training;
 
             return (
               <div className="card p-6">
@@ -346,8 +348,8 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
                     </svg>
                     Trading Intelligence
                   </h3>
-                  <span className={`badge badge-info`}>
-                    {botStatus.expertise_level || 'Untrained'}
+                  <span className={`badge ${isActivelyTraining ? 'badge-warning' : 'badge-info'}`}>
+                    {isActivelyTraining ? 'Training...' : (botStatus.expertise_level || 'Untrained')}
                   </span>
                 </div>
 
@@ -390,8 +392,8 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
                   </div>
                 </div>
 
-                {/* Training Stats */}
-                {botStatus.training && (
+                {/* Active Training Stats */}
+                {isActivelyTraining && (
                   <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--bg-tertiary)]">
                     <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
                       <p className="text-xs text-muted uppercase tracking-wide mb-1">Episodes</p>
@@ -429,6 +431,43 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
                         {(botStatus.training.last_win_rate || 0).toFixed(1)}%
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {/* Historical Training Stats (when not actively training) */}
+                {!isActivelyTraining && hasTrainingHistory && (
+                  <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[var(--bg-tertiary)]">
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Total Episodes</p>
+                      <p className="text-lg font-semibold">
+                        {(botStatus.training_history.total_episodes || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Total Trades</p>
+                      <p className="text-lg font-semibold">
+                        {(botStatus.training_history.total_trades || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Avg Win Rate</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training_history.avg_win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
+                        {(botStatus.training_history.avg_win_rate || 0).toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Profit Factor</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training_history.avg_profit_factor || 0) >= 1.0 ? 'text-success' : 'text-danger'}`}>
+                        {(botStatus.training_history.avg_profit_factor || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* No Training Yet */}
+                {!isActivelyTraining && !hasTrainingHistory && (
+                  <div className="pt-4 border-t border-[var(--bg-tertiary)] text-center">
+                    <p className="text-sm text-muted">No training data yet. Start training to see stats.</p>
                   </div>
                 )}
               </div>
