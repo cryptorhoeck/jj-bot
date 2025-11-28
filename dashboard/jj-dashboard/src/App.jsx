@@ -8,7 +8,14 @@ import { ConfirmModal } from './components';
 import './App.css';
 
 // Map internal IQ (0-100) to human IQ scale (70-160)
-const mapToHumanIQ = (internalIQ) => Math.round(70 + ((internalIQ || 0) * 0.9));
+// Uses sqrt curve - higher scores are progressively harder to achieve
+// This makes Genius (145+) require internal IQ 75+ (truly exceptional performance)
+const mapToHumanIQ = (internalIQ) => {
+  // Sqrt scaling compresses high scores, making top tiers harder
+  // Internal 0 → 70, Internal 25 → 115, Internal 50 → 134, Internal 75 → 148, Internal 100 → 160
+  const normalized = Math.sqrt(Math.max(0, internalIQ || 0) / 100);
+  return Math.round(70 + (normalized * 90));
+};
 
 // Supported currencies with symbols
 const CURRENCIES = {

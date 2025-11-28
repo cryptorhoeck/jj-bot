@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
 // Map internal IQ (0-100) to human IQ scale (70-160)
-const mapToHumanIQ = (internalIQ) => Math.round(70 + ((internalIQ || 0) * 0.9));
+// Uses sqrt curve - higher scores are progressively harder to achieve
+// This makes Genius (145+) require internal IQ 75+ (truly exceptional performance)
+const mapToHumanIQ = (internalIQ) => {
+  // Sqrt scaling compresses high scores, making top tiers harder
+  // Internal 0 → 70, Internal 25 → 115, Internal 50 → 134, Internal 75 → 148, Internal 100 → 160
+  const normalized = Math.sqrt(Math.max(0, internalIQ || 0) / 100);
+  return Math.round(70 + (normalized * 90));
+};
 
 // Get IQ classification based on human scale
 const getIQClassification = (humanIQ) => {
@@ -298,7 +305,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD',
                     {trainingProgress?.is_training ? (
                       <>
                         <span className="badge badge-info">
-                          🧠 Training AI ({trainingProgress.trading_iq || 0} IQ)
+                          🧠 Training AI ({mapToHumanIQ(trainingProgress.trading_iq)} IQ)
                         </span>
                         <span className="text-sm text-muted">{trainingProgress.progress_pct?.toFixed(0) || 0}% complete</span>
                       </>
@@ -312,7 +319,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD',
                         )}
                         {(proConfig.trading_iq > 0 || proConfig.expertise_level !== 'Untrained') && (
                           <span className="badge badge-info" title={`Expertise: ${proConfig.expertise_level || 'Untrained'}`}>
-                            🧠 {proConfig.trading_iq || 0} IQ
+                            🧠 {mapToHumanIQ(proConfig.trading_iq)} IQ
                           </span>
                         )}
                         <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
