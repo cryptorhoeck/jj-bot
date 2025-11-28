@@ -15,6 +15,9 @@ torch>=2.0.0
 scikit-learn>=1.3.0
 xgboost>=2.0.0
 
+# AI Integration (Phase 1)
+anthropic>=0.39.0
+
 # Exchange Integration (CCXT)
 ccxt>=4.0.0
 
