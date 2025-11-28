@@ -242,8 +242,9 @@ class CCXTConnector:
                 if self.credentials.password:
                     config["password"] = self.credentials.password
 
-            if self.sandbox:
-                config["sandbox"] = True
+            # Note: Don't use sandbox for WebSocket - public streams work fine on live
+            # Binance testnet WebSocket is often unreliable or has stricter limits
+            # For paper trading, we use live public data (prices) without executing real trades
 
             self.ws_exchange = ws_class(config)
             self._running = True
@@ -427,10 +428,16 @@ class CCXTConnector:
             await self.connect_websocket()
 
         async def ticker_loop():
+            backoff = 1
+            last_error_time = 0
+
             while self._running:
                 try:
                     for symbol in symbols:
                         ticker = await self.ws_exchange.watch_ticker(symbol)
+
+                        # Reset backoff on successful receive
+                        backoff = 1
 
                         ticker_obj = Ticker(
                             symbol=symbol,
@@ -454,8 +461,16 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"Ticker stream error: {e}")
-                    await asyncio.sleep(1)
+                    import time
+                    current_time = time.time()
+                    # Only log error once per 30 seconds to avoid spam
+                    if current_time - last_error_time > 30:
+                        logger.warning(f"Ticker stream disconnected, reconnecting in {backoff}s...")
+                        last_error_time = current_time
+
+                    await asyncio.sleep(backoff)
+                    # Exponential backoff (1s, 2s, 4s, 8s, max 30s)
+                    backoff = min(backoff * 2, 30)
 
         task = asyncio.create_task(ticker_loop())
         self._ws_tasks.append(task)
@@ -466,9 +481,15 @@ class CCXTConnector:
             await self.connect_websocket()
 
         async def ohlcv_loop():
+            backoff = 1
+            last_error_time = 0
+
             while self._running:
                 try:
                     ohlcv = await self.ws_exchange.watch_ohlcv(symbol, timeframe)
+
+                    # Reset backoff on successful receive
+                    backoff = 1
 
                     if ohlcv:
                         latest = ohlcv[-1]
@@ -490,12 +511,16 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OHLCV stream error: {e}")
-                    # Exponential backoff on errors (1s, 2s, 4s, 8s, max 30s)
-                    if not hasattr(ohlcv_loop, '_backoff'):
-                        ohlcv_loop._backoff = 1
-                    await asyncio.sleep(ohlcv_loop._backoff)
-                    ohlcv_loop._backoff = min(ohlcv_loop._backoff * 2, 30)
+                    import time
+                    current_time = time.time()
+                    # Only log error once per 30 seconds to avoid spam
+                    if current_time - last_error_time > 30:
+                        logger.warning(f"OHLCV stream {symbol}/{timeframe} disconnected, reconnecting in {backoff}s...")
+                        last_error_time = current_time
+
+                    await asyncio.sleep(backoff)
+                    # Exponential backoff (1s, 2s, 4s, 8s, max 30s)
+                    backoff = min(backoff * 2, 30)
 
         task = asyncio.create_task(ohlcv_loop())
         self._ws_tasks.append(task)
@@ -506,9 +531,15 @@ class CCXTConnector:
             await self.connect_websocket()
 
         async def orderbook_loop():
+            backoff = 1
+            last_error_time = 0
+
             while self._running:
                 try:
                     book = await self.ws_exchange.watch_order_book(symbol, limit)
+
+                    # Reset backoff on successful receive
+                    backoff = 1
 
                     orderbook = OrderBook(
                         symbol=symbol,
@@ -526,8 +557,16 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OrderBook stream error: {e}")
-                    await asyncio.sleep(1)
+                    import time
+                    current_time = time.time()
+                    # Only log error once per 30 seconds to avoid spam
+                    if current_time - last_error_time > 30:
+                        logger.warning(f"OrderBook stream {symbol} disconnected, reconnecting in {backoff}s...")
+                        last_error_time = current_time
+
+                    await asyncio.sleep(backoff)
+                    # Exponential backoff (1s, 2s, 4s, 8s, max 30s)
+                    backoff = min(backoff * 2, 30)
 
         task = asyncio.create_task(orderbook_loop())
         self._ws_tasks.append(task)
