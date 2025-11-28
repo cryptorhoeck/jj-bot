@@ -392,17 +392,41 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
 
                 {/* Training Stats */}
                 {botStatus.training && (
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--bg-tertiary)]">
+                  <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--bg-tertiary)]">
                     <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
                       <p className="text-xs text-muted uppercase tracking-wide mb-1">Episodes</p>
                       <p className="text-lg font-semibold">
-                        {botStatus.training.completed_episodes || 0} / {botStatus.training.total_episodes || 0}
+                        {botStatus.training.completed_episodes || botStatus.training.current_episode || 0} / {botStatus.training.total_episodes || 0}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Total Trades</p>
+                      <p className="text-lg font-semibold">
+                        {(botStatus.training.total_simulated_trades || 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
                       <p className="text-xs text-muted uppercase tracking-wide mb-1">Avg Win Rate</p>
                       <p className={`text-lg font-semibold ${(botStatus.training.avg_win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
                         {(botStatus.training.avg_win_rate || 0).toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Profit Factor</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training.avg_profit_factor || 0) >= 1.0 ? 'text-success' : 'text-danger'}`}>
+                        {(botStatus.training.avg_profit_factor || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Last P&L</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training.last_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                        ${(botStatus.training.last_pnl || 0).toFixed(0)}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs text-muted uppercase tracking-wide mb-1">Last Win Rate</p>
+                      <p className={`text-lg font-semibold ${(botStatus.training.last_win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
+                        {(botStatus.training.last_win_rate || 0).toFixed(1)}%
                       </p>
                     </div>
                   </div>
