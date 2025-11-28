@@ -41,6 +41,7 @@ from analytics_endpoints import router as analytics_router
 from alerts_endpoints import router as alerts_router
 from execution_endpoints import router as execution_router
 from bot_pro_endpoints import router as bot_pro_router
+from ai_endpoints import router as ai_router
 from websocket_manager import ws_manager
 
 # Lifespan context manager for startup/shutdown
@@ -756,6 +757,7 @@ app.include_router(analytics_router)
 app.include_router(alerts_router)
 app.include_router(execution_router)
 app.include_router(bot_pro_router)
+app.include_router(ai_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")

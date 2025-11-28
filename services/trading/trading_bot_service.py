@@ -23,6 +23,14 @@ except ImportError:
     RISK_MANAGER_AVAILABLE = False
     print("⚠️ Risk manager not available - trading without risk limits!")
 
+# Import AI inference service
+try:
+    from services.ai.inference_service import ai_inference_service
+    AI_SERVICE_AVAILABLE = True
+except ImportError:
+    AI_SERVICE_AVAILABLE = False
+    print("⚠️ AI inference service not available")
+
 
 class TradingBotService(BaseService):
     """Automated trading bot service"""
@@ -38,7 +46,12 @@ class TradingBotService(BaseService):
             "risk_per_trade": 0.02,  # 2% risk per trade
             "symbols_to_trade": ["BTC", "ETH", "BNB", "SOL", "ADA"],
             "min_signal_strength": 0.7,  # Minimum signal strength (0-1)
-            "cooldown_seconds": 300  # 5 minutes between trades on same symbol
+            "cooldown_seconds": 300,  # 5 minutes between trades on same symbol
+            # AI Integration settings
+            "use_ai_enhancement": True,  # Use AI to enhance trading signals
+            "require_ai_confirmation": False,  # Require AI to confirm signals before executing
+            "ai_min_confidence": 0.6,  # Minimum AI confidence to proceed
+            "ai_weight_in_signal": 0.3  # Weight of AI confidence in final signal strength
         }
 
         # Stats tracking
@@ -54,7 +67,12 @@ class TradingBotService(BaseService):
             "loss_count": 0,
             "last_signal": None,
             "last_trade": None,
-            "bot_state": "idle"
+            "bot_state": "idle",
+            # AI-related stats
+            "ai_enhanced_signals": 0,
+            "ai_confirmed_signals": 0,
+            "ai_rejected_signals": 0,
+            "last_ai_analysis": None
         }
 
         # Internal state
@@ -154,6 +172,58 @@ class TradingBotService(BaseService):
                 print(f"🔒 Max positions reached ({len(self.open_positions)}/{self.config['max_open_positions']})")
                 return
 
+            # AI Enhancement (if enabled and available)
+            final_signal = signal.copy()
+            ai_analysis = None
+
+            if self.config["use_ai_enhancement"] and AI_SERVICE_AVAILABLE:
+                try:
+                    enhanced = ai_inference_service.enhance_signal(signal)
+                    if enhanced:
+                        self.stats["ai_enhanced_signals"] += 1
+                        self.stats["last_ai_analysis"] = {
+                            "timestamp": datetime.now().isoformat(),
+                            "symbol": symbol,
+                            "original_action": action,
+                            "enhanced_action": enhanced.enhanced_action,
+                            "ai_confidence": enhanced.ai_confidence,
+                            "recommendation": enhanced.recommendation,
+                            "reasoning": enhanced.reasoning
+                        }
+
+                        # Check AI confirmation if required
+                        if self.config["require_ai_confirmation"]:
+                            if enhanced.recommendation != "execute":
+                                print(f"🤖 AI rejected {symbol} signal: {enhanced.reasoning}")
+                                self.stats["ai_rejected_signals"] += 1
+                                return
+
+                            if enhanced.ai_confidence < self.config["ai_min_confidence"]:
+                                print(f"🤖 AI confidence too low for {symbol}: {enhanced.ai_confidence:.1%}")
+                                self.stats["ai_rejected_signals"] += 1
+                                return
+
+                        # Apply AI weight to signal strength
+                        if enhanced.ai_confidence > 0:
+                            ai_weight = self.config["ai_weight_in_signal"]
+                            combined_strength = (
+                                strength * (1 - ai_weight) +
+                                enhanced.ai_confidence * ai_weight
+                            )
+                            final_signal["strength"] = combined_strength
+                            final_signal["ai_enhanced"] = True
+                            final_signal["ai_confidence"] = enhanced.ai_confidence
+                            final_signal["ai_reasoning"] = enhanced.reasoning
+
+                            self.stats["ai_confirmed_signals"] += 1
+                            print(f"🤖 AI enhanced {symbol}: strength {strength:.1%} -> {combined_strength:.1%}")
+
+                        ai_analysis = enhanced.to_dict()
+
+                except Exception as ai_error:
+                    print(f"⚠️  AI enhancement failed for {symbol}: {ai_error}")
+                    # Continue without AI if it fails
+
             # Risk management checks
             if RISK_MANAGER_AVAILABLE:
                 # Get current equity and drawdown (simplified - would query from DB)
@@ -177,11 +247,13 @@ class TradingBotService(BaseService):
                     return
 
             # Signal looks good - publish for risk evaluation
-            print(f"✅ {symbol} {action} signal approved (strength: {strength:.1%})")
+            final_strength = final_signal.get("strength", strength)
+            ai_note = " (AI enhanced)" if final_signal.get("ai_enhanced") else ""
+            print(f"✅ {symbol} {action} signal approved (strength: {final_strength:.1%}){ai_note}")
             self.stats["signals_approved"] += 1
 
             # Execute trade with risk-based position sizing
-            self._execute_trade(signal)
+            self._execute_trade(final_signal)
 
         except Exception as e:
             print(f"❌ Signal processing error: {e}")

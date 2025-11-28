@@ -15,6 +15,15 @@ from pydantic import BaseModel
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Import AI modules
+try:
+    from modules.ai.config import get_ai_config
+    from modules.ai.llm_client import get_llm_client
+    from services.ai.inference_service import ai_inference_service
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+
 router = APIRouter(prefix="/api/pro", tags=["JJ-Bot Pro"])
 
 
@@ -119,6 +128,35 @@ async def get_bot_status():
     project_root = os.path.join(os.path.dirname(__file__), '..', '..')
     model_path = os.path.join(project_root, 'models', 'ppo_agent.pt')
     status["rl_model_trained"] = os.path.exists(model_path)
+
+    # Add AI status
+    if AI_AVAILABLE:
+        try:
+            ai_config = get_ai_config()
+            llm_client = get_llm_client()
+            ai_service_status = ai_inference_service.get_status()
+
+            status["ai"] = {
+                "enabled": ai_config.enabled,
+                "available": llm_client.is_available,
+                "model": ai_config.model,
+                "service_running": ai_service_status.get("status") == "running",
+                "stats": {
+                    "signals_enhanced": ai_service_status.get("stats", {}).get("signals_enhanced", 0),
+                    "signals_confirmed": ai_service_status.get("stats", {}).get("signals_confirmed", 0),
+                    "signals_rejected": ai_service_status.get("stats", {}).get("ai_rejected_signals", 0),
+                    "avg_latency_ms": llm_client.get_stats().get("avg_latency_ms", 0)
+                },
+                "features": {
+                    "sentiment_analysis": ai_config.sentiment_analysis_enabled,
+                    "signal_enhancement": ai_config.signal_enhancement_enabled,
+                    "risk_assessment": ai_config.risk_assessment_enabled
+                }
+            }
+        except Exception as e:
+            status["ai"] = {"available": False, "error": str(e)}
+    else:
+        status["ai"] = {"available": False, "message": "AI module not installed"}
 
     return status
 
