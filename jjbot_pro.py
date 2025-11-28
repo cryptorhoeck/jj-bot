@@ -1154,15 +1154,16 @@ class JJBotPro:
             logger.warning(f"Failed to save training metrics: {e}")
 
     def _calculate_trading_iq(self):
-        """Calculate Trading IQ based on cumulative performance - Calibrated for meaningful progression
+        """Calculate Trading IQ directly on 70-160 scale (human IQ scale)
 
         Scoring Philosophy:
-        - Win Rate: 45% baseline (0 pts), 70% excellence (35 pts max)
-        - Profit Factor: 1.0 breakeven (0 pts), 4.0 exceptional (35 pts max)
-        - Reward: 0 baseline (0 pts), 150+ strong performance (30 pts max)
+        - Win Rate: 45% baseline, 70% excellence (35 pts max)
+        - Profit Factor: 1.0 breakeven, 4.0 exceptional (35 pts max)
+        - Reward: 0 baseline, 150+ strong performance (30 pts max)
+        - Raw score (0-100) converted to 70-160 using sqrt curve
         """
         if self.training_metrics["episode_count"] == 0:
-            return 0, "Untrained"
+            return 70, "Untrained"
 
         # Calculate averages
         avg_win_rate = self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]
@@ -1181,21 +1182,25 @@ class JJBotPro:
         # 0 = 0 pts, 150 = 30 pts (strong positive performance)
         reward_score = max(0, min(30, (avg_reward / 150) * 30))
 
-        # Total IQ (0-100)
-        iq = int(win_rate_score + profit_factor_score + reward_score)
+        raw_score = win_rate_score + profit_factor_score + reward_score
 
-        # Expertise levels based on internal IQ
-        if iq < 15:
+        # Convert to 70-160 scale using sqrt curve (higher scores are harder)
+        import math
+        normalized = math.sqrt(max(0, raw_score) / 100)
+        iq = int(70 + (normalized * 90))
+
+        # Expertise levels on 70-160 scale
+        if iq < 85:
             level = "Novice"
-        elif iq < 30:
+        elif iq < 100:
             level = "Beginner"
-        elif iq < 45:
+        elif iq < 115:
             level = "Developing"
-        elif iq < 60:
+        elif iq < 130:
             level = "Competent"
-        elif iq < 75:
+        elif iq < 145:
             level = "Proficient"
-        elif iq < 90:
+        elif iq < 155:
             level = "Expert"
         else:
             level = "Master"

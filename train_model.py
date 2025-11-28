@@ -120,22 +120,17 @@ def update_training_status(status: dict):
 
 
 def calculate_trading_iq(metrics: dict) -> tuple:
-    """Calculate Trading IQ from metrics - Calibrated for meaningful progression
+    """Calculate Trading IQ directly on 70-160 scale (human IQ scale)
 
     Scoring Philosophy:
-    - Win Rate: 45% baseline (0 pts), 70% excellence (35 pts max)
-      A 50% win rate is just slightly above baseline, not mastery
-    - Profit Factor: 1.0 breakeven (0 pts), 4.0 exceptional (35 pts max)
-      Requires consistently winning more than losing
-    - Reward: 0 baseline (0 pts), 150+ strong performance (30 pts max)
-      No free points for merely not losing
-
-    Human IQ Mapping (in dashboard):
-    - Uses sqrt curve so high scores are progressively harder
-    - Genius (145+) requires internal IQ 75+ (exceptional across all metrics)
+    - Win Rate: 45% baseline, 70% excellence (35 pts max)
+    - Profit Factor: 1.0 breakeven, 4.0 exceptional (35 pts max)
+    - Reward: 0 baseline, 150+ strong performance (30 pts max)
+    - Raw score (0-100) converted to 70-160 using sqrt curve
+    - Sqrt curve makes higher scores progressively harder to achieve
     """
     if metrics["episode_count"] == 0:
-        return 0, "Untrained"
+        return 70, "Untrained"
 
     avg_win_rate = metrics["total_win_rate"] / metrics["episode_count"]
     avg_profit_factor = metrics["total_profit_factor"] / metrics["episode_count"]
@@ -143,33 +138,36 @@ def calculate_trading_iq(metrics: dict) -> tuple:
 
     # Win Rate Score (0-35 points)
     # 45% = 0 pts (baseline), 70% = 35 pts (excellence)
-    # A coin-flip 50% only gets ~7 pts now
     win_rate_score = max(0, min(35, ((avg_win_rate - 0.45) / 0.25) * 35))
 
     # Profit Factor Score (0-35 points)
     # 1.0 = 0 pts (breakeven), 4.0 = 35 pts (exceptional)
-    # Requires significant edge to score well
     profit_factor_score = max(0, min(35, ((avg_profit_factor - 1.0) / 3.0) * 35))
 
     # Reward Score (0-30 points)
     # 0 = 0 pts, 150 = 30 pts (strong positive performance)
-    # No more free points from the +100 offset
     reward_score = max(0, min(30, (avg_reward / 150) * 30))
 
-    iq = int(win_rate_score + profit_factor_score + reward_score)
+    raw_score = win_rate_score + profit_factor_score + reward_score
 
-    # Expertise levels based on internal IQ
-    if iq < 15:
+    # Convert to 70-160 scale using sqrt curve (higher scores are harder)
+    # Raw 0 → 70, Raw 25 → 115, Raw 50 → 134, Raw 75 → 148, Raw 100 → 160
+    import math
+    normalized = math.sqrt(max(0, raw_score) / 100)
+    iq = int(70 + (normalized * 90))
+
+    # Expertise levels on 70-160 scale
+    if iq < 85:
         level = "Novice"
-    elif iq < 30:
+    elif iq < 100:
         level = "Beginner"
-    elif iq < 45:
+    elif iq < 115:
         level = "Developing"
-    elif iq < 60:
+    elif iq < 130:
         level = "Competent"
-    elif iq < 75:
+    elif iq < 145:
         level = "Proficient"
-    elif iq < 90:
+    elif iq < 155:
         level = "Expert"
     else:
         level = "Master"

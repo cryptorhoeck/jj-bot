@@ -1,25 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-// Map internal IQ (0-100) to human IQ scale (70-160)
-// Uses sqrt curve - higher scores are progressively harder to achieve
-// This makes Genius (145+) require internal IQ 75+ (truly exceptional performance)
-const mapToHumanIQ = (internalIQ) => {
-  // Sqrt scaling compresses high scores, making top tiers harder
-  // Internal 0 → 70, Internal 25 → 115, Internal 50 → 134, Internal 75 → 148, Internal 100 → 160
-  const normalized = Math.sqrt(Math.max(0, internalIQ || 0) / 100);
-  return Math.round(70 + (normalized * 90));
-};
-
-// Get IQ classification based on human scale
-const getIQClassification = (humanIQ) => {
-  if (humanIQ < 80) return 'Developing';
-  if (humanIQ < 90) return 'Low Average';
-  if (humanIQ < 110) return 'Average';
-  if (humanIQ < 120) return 'Above Average';
-  if (humanIQ < 130) return 'Superior';
-  if (humanIQ < 145) return 'Gifted';
-  return 'Genius';
+// Get IQ classification based on 70-160 scale (matches backend)
+const getIQClassification = (iq) => {
+  if (iq < 85) return 'Novice';
+  if (iq < 100) return 'Beginner';
+  if (iq < 115) return 'Developing';
+  if (iq < 130) return 'Competent';
+  if (iq < 145) return 'Proficient';
+  if (iq < 155) return 'Expert';
+  return 'Master';
 };
 
 // Available symbols for selection
@@ -305,7 +295,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD',
                     {trainingProgress?.is_training ? (
                       <>
                         <span className="badge badge-info">
-                          🧠 Training AI ({mapToHumanIQ(trainingProgress.trading_iq)} IQ)
+                          🧠 Training AI ({trainingProgress.trading_iq || 70} IQ)
                         </span>
                         <span className="text-sm text-muted">{trainingProgress.progress_pct?.toFixed(0) || 0}% complete</span>
                       </>
@@ -317,9 +307,9 @@ export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD',
                         {proConfig.mode === 'live' && (
                           <span className="badge badge-danger">⚠️ LIVE MONEY</span>
                         )}
-                        {(proConfig.trading_iq > 0 || proConfig.expertise_level !== 'Untrained') && (
+                        {(proConfig.trading_iq > 70 || proConfig.expertise_level !== 'Untrained') && (
                           <span className="badge badge-info" title={`Expertise: ${proConfig.expertise_level || 'Untrained'}`}>
-                            🧠 {mapToHumanIQ(proConfig.trading_iq)} IQ
+                            🧠 {proConfig.trading_iq || 70} IQ
                           </span>
                         )}
                         <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
@@ -419,12 +409,12 @@ export function TradingTab({ darkMode, API_BASE, learningData, currency = 'CAD',
               <div className="flex items-center justify-between mb-4 pb-4 border-b border-[var(--border-color)]">
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                    <span className="text-3xl font-bold text-white">{mapToHumanIQ(trainingProgress.trading_iq)}</span>
+                    <span className="text-3xl font-bold text-white">{trainingProgress.trading_iq || 70}</span>
                   </div>
                   <div>
                     <h3 className="font-bold text-lg">Trading IQ</h3>
                     <p className="text-sm">
-                      <span className="font-semibold text-info">{getIQClassification(mapToHumanIQ(trainingProgress.trading_iq))}</span>
+                      <span className="font-semibold text-info">{getIQClassification(trainingProgress.trading_iq || 70)}</span>
                       {' '}<span className="text-muted">• {trainingProgress.expertise_level || 'Untrained'}</span>
                     </p>
                   </div>

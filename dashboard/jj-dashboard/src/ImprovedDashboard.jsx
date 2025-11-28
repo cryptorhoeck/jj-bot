@@ -1,27 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-// Map internal IQ (0-100) to human IQ scale (70-160)
-// Uses sqrt curve - higher scores are progressively harder to achieve
-// This makes Genius (145+) require internal IQ 75+ (truly exceptional performance)
-const mapToHumanIQ = (internalIQ) => {
-  // Sqrt scaling compresses high scores, making top tiers harder
-  // Internal 0 → 70, Internal 25 → 115, Internal 50 → 134, Internal 75 → 148, Internal 100 → 160
-  const normalized = Math.sqrt(Math.max(0, internalIQ) / 100);
-  return Math.round(70 + (normalized * 90));
-};
-
-// Get IQ classification based on human scale
-// Calibrated to real IQ distribution where Genius is extremely rare
-const getIQClassification = (humanIQ) => {
-  if (humanIQ < 85) return { label: 'Developing', color: 'text-muted' };
-  if (humanIQ < 95) return { label: 'Below Average', color: 'text-muted' };
-  if (humanIQ < 105) return { label: 'Average', color: 'text-info' };
-  if (humanIQ < 115) return { label: 'Above Average', color: 'text-info' };
-  if (humanIQ < 125) return { label: 'High', color: 'text-success' };
-  if (humanIQ < 135) return { label: 'Superior', color: 'text-success' };
-  if (humanIQ < 145) return { label: 'Gifted', color: 'text-warning' };
-  return { label: 'Genius', color: 'text-danger' };
+// Get IQ classification based on 70-160 scale (matches backend)
+const getIQClassification = (iq) => {
+  if (iq < 85) return { label: 'Novice', color: 'text-muted' };
+  if (iq < 100) return { label: 'Beginner', color: 'text-muted' };
+  if (iq < 115) return { label: 'Developing', color: 'text-info' };
+  if (iq < 130) return { label: 'Competent', color: 'text-info' };
+  if (iq < 145) return { label: 'Proficient', color: 'text-success' };
+  if (iq < 155) return { label: 'Expert', color: 'text-warning' };
+  return { label: 'Master', color: 'text-danger' };
 };
 
 export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, currency = 'CAD', formatCurrency }) {
@@ -332,10 +320,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
 
           {/* Trading Intelligence - Always visible */}
           {botStatus && (() => {
-            const internalIQ = botStatus.trading_iq || 0;
-            const humanIQ = mapToHumanIQ(internalIQ);
-            const classification = getIQClassification(humanIQ);
-            const iqProgress = Math.min(100, ((humanIQ - 70) / 90) * 100); // 70-160 range to 0-100%
+            const iq = botStatus.trading_iq || 70;
+            const classification = getIQClassification(iq);
+            const iqProgress = Math.min(100, ((iq - 70) / 90) * 100); // 70-160 range to 0-100%
             const hasTrainingHistory = botStatus.training_history && botStatus.training_history.total_episodes > 0;
             const isActivelyTraining = botStatus.training && botStatus.training.is_training;
 
@@ -362,7 +349,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
                         background: `conic-gradient(var(--accent) ${iqProgress * 3.6}deg, var(--bg-tertiary) 0deg)`
                       }}>
                       <div className="w-20 h-20 rounded-full bg-[var(--bg-primary)] flex flex-col items-center justify-center">
-                        <span className="text-2xl font-bold">{humanIQ}</span>
+                        <span className="text-2xl font-bold">{iq}</span>
                         <span className="text-xs text-muted">IQ</span>
                       </div>
                     </div>
