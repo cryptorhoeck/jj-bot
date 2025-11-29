@@ -11,6 +11,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
   // Trading IQ state
   const [tradingIQ, setTradingIQ] = useState({ iq: 0, level: 'Untrained' });
   const [trainingHistory, setTrainingHistory] = useState({});
+  const [trainingProgress, setTrainingProgress] = useState(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -45,6 +46,12 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
           });
           if (proData.training_history) {
             setTrainingHistory(proData.training_history);
+          }
+          // Store training progress for live updates
+          if (proData.training) {
+            setTrainingProgress(proData.training);
+          } else {
+            setTrainingProgress(null);
           }
         }
 
@@ -318,27 +325,65 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
         )}
 
         {/* Trading IQ Card - Separate from Risk Management */}
-        <div className="card p-6">
+        <div className={`card p-6 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <span className="text-xl">🧠</span>
               Trading IQ
             </h3>
-            <span className="badge badge-info">{tradingIQ.level}</span>
+            <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : 'badge-info'}`}>
+              {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.level}
+            </span>
           </div>
 
           <div className="flex items-center gap-4 mb-4">
             <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
-              <span className="text-2xl font-bold text-white">{tradingIQ.iq}</span>
+              <span className="text-2xl font-bold text-white">
+                {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
+              </span>
             </div>
             <div className="flex-1">
-              <p className="text-sm text-muted">
-                {tradingIQ.iq === 0
-                  ? 'Train the AI to improve trading decisions'
-                  : 'AI-powered trading intelligence'}
-              </p>
+              {trainingProgress?.is_training ? (
+                <div>
+                  <p className="text-sm font-semibold text-info mb-1">
+                    {trainingProgress.expertise_level || tradingIQ.level}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Episode {trainingProgress.current_episode} of {trainingProgress.total_episodes}
+                    <span className="ml-2">
+                      ({trainingProgress.total_episodes - trainingProgress.current_episode} remaining)
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  {tradingIQ.iq === 0
+                    ? 'Train the AI to improve trading decisions'
+                    : 'AI-powered trading intelligence'}
+                </p>
+              )}
             </div>
           </div>
+
+          {/* Live Training Progress Bar */}
+          {trainingProgress?.is_training && (
+            <div className="mb-4">
+              <div className="flex justify-between text-xs text-muted mb-1">
+                <span>Training Progress</span>
+                <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
+              </div>
+              <div className="w-full h-3 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
+                  style={{ width: `${trainingProgress.progress_pct || 0}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted mt-1">
+                <span>Win Rate: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
+                <span>Avg Reward: {trainingProgress.avg_reward?.toFixed(1) || 0}</span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">

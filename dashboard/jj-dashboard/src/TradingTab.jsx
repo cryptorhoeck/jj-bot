@@ -501,46 +501,65 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
           )}
 
           {/* Trading IQ - Main Dashboard Card */}
-          <div className="card p-6">
+          <div className={`card p-6 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">🧠 Trading IQ</h3>
-              {tradingIQ.iq > 0 && (
-                <span className="badge badge-success">Trained</span>
-              )}
+              <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : tradingIQ.iq > 0 ? 'badge-success' : 'badge-warning'}`}>
+                {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.iq > 0 ? 'Trained' : 'Untrained'}
+              </span>
             </div>
             <div className="flex items-center gap-6">
               <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg">
-                <span className="text-3xl font-bold text-white">{tradingIQ.iq}</span>
+                <span className="text-3xl font-bold text-white">
+                  {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
+                </span>
               </div>
               <div className="flex-1">
                 <p className="text-xl font-semibold">
-                  <span className="text-info">{tradingIQ.level}</span>
+                  <span className="text-info">
+                    {trainingProgress?.is_training ? trainingProgress.expertise_level || tradingIQ.level : tradingIQ.level}
+                  </span>
                 </p>
-                <p className="text-sm text-muted mt-1">
-                  {tradingIQ.iq === 0
-                    ? 'Train the AI to improve trading decisions'
-                    : tradingIQ.iq < 50
-                      ? 'Continue training to improve performance'
-                      : tradingIQ.iq < 80
-                        ? 'Good progress! More training will help'
-                        : 'Excellent! AI is well-trained'}
-                </p>
-                {trainingProgress?.is_training && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-xs text-muted mb-1">
-                      <span>Training...</span>
-                      <span>{trainingProgress.progress_pct?.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
-                        style={{ width: `${trainingProgress.progress_pct}%` }}
-                      />
-                    </div>
-                  </div>
+                {trainingProgress?.is_training ? (
+                  <p className="text-sm text-muted mt-1">
+                    Episode {trainingProgress.current_episode} of {trainingProgress.total_episodes}
+                    <span className="ml-2 text-info font-medium">
+                      ({trainingProgress.total_episodes - trainingProgress.current_episode} remaining)
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted mt-1">
+                    {tradingIQ.iq === 0
+                      ? 'Train the AI to improve trading decisions'
+                      : tradingIQ.iq < 50
+                        ? 'Continue training to improve performance'
+                        : tradingIQ.iq < 80
+                          ? 'Good progress! More training will help'
+                          : 'Excellent! AI is well-trained'}
+                  </p>
                 )}
               </div>
             </div>
+
+            {/* Live Training Progress Bar */}
+            {trainingProgress?.is_training && (
+              <div className="mt-4">
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Training Progress</span>
+                  <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-3 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
+                    style={{ width: `${trainingProgress.progress_pct || 0}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted mt-1">
+                  <span>Win Rate: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
+                  <span>Avg Reward: {trainingProgress.avg_reward?.toFixed(1) || 0}</span>
+                </div>
+              </div>
+            )}
 
             {/* Training History Stats */}
             {(trainingHistory.training_sessions > 0 || tradingIQ.iq > 0) && (
@@ -706,46 +725,65 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
           </div>
 
           {/* Trading IQ - Always visible */}
-          <div className="card p-6">
+          <div className={`card p-6 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">🧠 Trading IQ</h3>
-              {tradingIQ.iq > 0 && (
-                <span className="badge badge-success">Trained</span>
-              )}
+              <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : tradingIQ.iq > 0 ? 'badge-success' : 'badge-warning'}`}>
+                {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.iq > 0 ? 'Trained' : 'Untrained'}
+              </span>
             </div>
             <div className="flex items-center gap-6">
               <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg">
-                <span className="text-3xl font-bold text-white">{tradingIQ.iq}</span>
+                <span className="text-3xl font-bold text-white">
+                  {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
+                </span>
               </div>
               <div className="flex-1">
                 <p className="text-xl font-semibold">
-                  <span className="text-info">{tradingIQ.level}</span>
+                  <span className="text-info">
+                    {trainingProgress?.is_training ? trainingProgress.expertise_level || tradingIQ.level : tradingIQ.level}
+                  </span>
                 </p>
-                <p className="text-sm text-muted mt-1">
-                  {tradingIQ.iq === 0
-                    ? 'Train the AI to improve trading decisions'
-                    : tradingIQ.iq < 50
-                      ? 'Continue training to improve performance'
-                      : tradingIQ.iq < 80
-                        ? 'Good progress! More training will help'
-                        : 'Excellent! AI is well-trained'}
-                </p>
-                {trainingProgress?.is_training && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-xs text-muted mb-1">
-                      <span>Training...</span>
-                      <span>{trainingProgress.progress_pct?.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
-                        style={{ width: `${trainingProgress.progress_pct}%` }}
-                      />
-                    </div>
-                  </div>
+                {trainingProgress?.is_training ? (
+                  <p className="text-sm text-muted mt-1">
+                    Episode {trainingProgress.current_episode} of {trainingProgress.total_episodes}
+                    <span className="ml-2 text-info font-medium">
+                      ({trainingProgress.total_episodes - trainingProgress.current_episode} remaining)
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted mt-1">
+                    {tradingIQ.iq === 0
+                      ? 'Train the AI to improve trading decisions'
+                      : tradingIQ.iq < 50
+                        ? 'Continue training to improve performance'
+                        : tradingIQ.iq < 80
+                          ? 'Good progress! More training will help'
+                          : 'Excellent! AI is well-trained'}
+                  </p>
                 )}
               </div>
             </div>
+
+            {/* Live Training Progress Bar */}
+            {trainingProgress?.is_training && (
+              <div className="mt-4">
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Training Progress</span>
+                  <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-3 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
+                    style={{ width: `${trainingProgress.progress_pct || 0}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted mt-1">
+                  <span>Win Rate: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
+                  <span>Avg Reward: {trainingProgress.avg_reward?.toFixed(1) || 0}</span>
+                </div>
+              </div>
+            )}
 
             {/* Training History Stats - Always show if we have training data */}
             {(trainingHistory.training_sessions > 0 || tradingIQ.iq > 0) && (
