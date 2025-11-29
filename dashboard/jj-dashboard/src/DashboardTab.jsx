@@ -113,6 +113,16 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
     text: darkMode ? '#94a3b8' : '#64748b'
   };
 
+  // Auto-scale font size based on number length
+  const getScaledFontSize = (value) => {
+    const str = String(value);
+    const len = str.replace(/[^0-9.-]/g, '').length; // Count digits only
+    if (len <= 4) return 'text-lg';
+    if (len <= 6) return 'text-base';
+    if (len <= 8) return 'text-sm';
+    return 'text-xs';
+  };
+
   return (
     <div className="space-y-6">
       {/* Performance Stats Grid */}
@@ -228,9 +238,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
         </div>
       )}
 
-      {/* Two Column Layout */}
+      {/* Two Column Layout - Open Positions left, Risk + IQ stacked on right */}
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Open Positions */}
+        {/* Open Positions - Full height on left */}
         <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -279,132 +289,138 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
           )}
         </div>
 
-        {/* Risk Management */}
-        {riskStatus && riskStatus.status === 'success' && (
-          <div className={`card p-6 ${riskStatus.risk_status?.circuit_breaker_active ? 'card-danger' : ''}`}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                Risk Management
-              </h3>
-              <span className={`badge ${riskStatus.risk_status?.circuit_breaker_active ? 'badge-danger' : 'badge-success'}`}>
-                {riskStatus.risk_status?.circuit_breaker_active ? 'Alert' : 'Normal'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Circuit Breaker</p>
-                <p className={`text-base font-semibold ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
-                  {riskStatus.risk_status?.circuit_breaker_active ? 'ACTIVE' : 'OK'}
-                </p>
+        {/* Right column - Risk Management + Trading IQ stacked */}
+        <div className="flex flex-col gap-6">
+          {/* Risk Management - Compact */}
+          {riskStatus && riskStatus.status === 'success' && (
+            <div className={`card p-4 ${riskStatus.risk_status?.circuit_breaker_active ? 'card-danger' : ''}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-semibold flex items-center gap-2">
+                  <svg className="w-4 h-4 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  Risk Management
+                </h3>
+                <span className={`badge ${riskStatus.risk_status?.circuit_breaker_active ? 'badge-danger' : 'badge-success'}`}>
+                  {riskStatus.risk_status?.circuit_breaker_active ? 'Alert' : 'Normal'}
+                </span>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Daily P&L</p>
-                <p className={`text-base font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                  ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Loss Remaining</p>
-                <p className="text-base font-semibold">
-                  ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="text-xs text-muted uppercase tracking-wide mb-1">Consecutive Losses</p>
-                <p className={`text-base font-semibold ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
-                  {riskStatus.risk_status?.consecutive_losses || 0}
-                </p>
-              </div>
-            </div>
 
-          </div>
-        )}
-
-        {/* Trading IQ Card - Separate from Risk Management */}
-        <div className={`card p-6 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <span className="text-xl">🧠</span>
-              Trading IQ
-            </h3>
-            <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : 'badge-info'}`}>
-              {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.level}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
-              <span className="text-2xl font-bold text-white">
-                {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
-              </span>
-            </div>
-            <div className="flex-1">
-              {trainingProgress?.is_training ? (
-                <div>
-                  <p className="text-sm font-semibold text-info mb-1">
-                    {trainingProgress.expertise_level || tradingIQ.level}
-                  </p>
-                  <p className="text-xs text-muted">
-                    Episode {trainingProgress.current_episode} of {trainingProgress.total_episodes}
-                    <span className="ml-2">
-                      ({trainingProgress.total_episodes - trainingProgress.current_episode} remaining)
-                    </span>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Circuit Breaker</p>
+                  <p className={`${getScaledFontSize('OK')} font-semibold ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
+                    {riskStatus.risk_status?.circuit_breaker_active ? 'ACTIVE' : 'OK'}
                   </p>
                 </div>
-              ) : (
-                <p className="text-sm text-muted">
-                  {tradingIQ.iq === 0
-                    ? 'Train the AI to improve trading decisions'
-                    : 'AI-powered trading intelligence'}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Live Training Progress Bar */}
-          {trainingProgress?.is_training && (
-            <div className="mb-4">
-              <div className="flex justify-between text-xs text-muted mb-1">
-                <span>Training Progress</span>
-                <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
-              </div>
-              <div className="w-full h-3 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
-                  style={{ width: `${trainingProgress.progress_pct || 0}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-muted mt-1">
-                <span>Win Rate: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
-                <span>Avg Reward: {trainingProgress.avg_reward?.toFixed(1) || 0}</span>
+                <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Daily P&L</p>
+                  <p className={`${getScaledFontSize(riskStatus.risk_status?.daily_pnl || 0)} font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+                <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Loss Remaining</p>
+                  <p className={`${getScaledFontSize(riskStatus.risk_status?.daily_loss_remaining || 0)} font-semibold`}>
+                    ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+                <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Consecutive Losses</p>
+                  <p className={`${getScaledFontSize(riskStatus.risk_status?.consecutive_losses || 0)} font-semibold ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
+                    {riskStatus.risk_status?.consecutive_losses || 0}
+                  </p>
+                </div>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-              <p className="text-xs text-muted uppercase tracking-wide mb-1">Sessions</p>
-              <p className="text-base font-semibold">{trainingHistory.training_sessions || 0}</p>
+          {/* Trading IQ Card */}
+          <div className={`card p-4 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <span className="text-lg">🧠</span>
+                Trading IQ
+              </h3>
+              <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : 'badge-info'}`}>
+                {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.level}
+              </span>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-              <p className="text-xs text-muted uppercase tracking-wide mb-1">Episodes</p>
-              <p className="text-base font-semibold">{trainingHistory.total_training_episodes || 0}</p>
+
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
+                <span className="text-xl font-bold text-white">
+                  {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
+                </span>
+              </div>
+              <div className="flex-1">
+                {trainingProgress?.is_training ? (
+                  <div>
+                    <p className="text-sm font-semibold text-info mb-0.5">
+                      {trainingProgress.expertise_level || tradingIQ.level}
+                    </p>
+                    <p className="text-xs text-muted">
+                      Episode {trainingProgress.current_episode}/{trainingProgress.total_episodes}
+                      <span className="ml-1">
+                        ({trainingProgress.total_episodes - trainingProgress.current_episode} left)
+                      </span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted">
+                    {tradingIQ.iq === 0
+                      ? 'Train AI to improve decisions'
+                      : 'AI-powered trading intelligence'}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-              <p className="text-xs text-muted uppercase tracking-wide mb-1">Avg Win Rate</p>
-              <p className="text-base font-semibold text-success">
-                {trainingHistory.avg_win_rate?.toFixed(1) || '0'}%
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-              <p className="text-xs text-muted uppercase tracking-wide mb-1">Profit Factor</p>
-              <p className="text-base font-semibold text-success">
-                {trainingHistory.avg_profit_factor?.toFixed(2) || '0.00'}
-              </p>
+
+            {/* Live Training Progress Bar */}
+            {trainingProgress?.is_training && (
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Progress</span>
+                  <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
+                    style={{ width: `${trainingProgress.progress_pct || 0}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted mt-1">
+                  <span>Win: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
+                  <span>Reward: {trainingProgress.avg_reward?.toFixed(0) || 0}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Sessions</p>
+                <p className={`${getScaledFontSize(trainingHistory.training_sessions || 0)} font-semibold`}>
+                  {trainingHistory.training_sessions || 0}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Episodes</p>
+                <p className={`${getScaledFontSize(trainingHistory.total_training_episodes || 0)} font-semibold`}>
+                  {trainingHistory.total_training_episodes || 0}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Avg Win Rate</p>
+                <p className={`${getScaledFontSize(trainingHistory.avg_win_rate || 0)} font-semibold text-success`}>
+                  {trainingHistory.avg_win_rate?.toFixed(1) || '0'}%
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Profit Factor</p>
+                <p className={`${getScaledFontSize(trainingHistory.avg_profit_factor || 0)} font-semibold text-success`}>
+                  {trainingHistory.avg_profit_factor?.toFixed(2) || '0.00'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
