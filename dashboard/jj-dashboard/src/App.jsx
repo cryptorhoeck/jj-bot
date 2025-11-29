@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { DashboardTab } from "./ImprovedDashboard.jsx";
+import { DashboardTab } from "./DashboardTab.jsx";
 import { TradingTab } from "./TradingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
 import { MarketChart } from "./MarketChart.jsx";
