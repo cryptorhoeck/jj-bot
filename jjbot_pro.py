@@ -183,6 +183,7 @@ class JJBotPro:
 
         # State - try to load from saved state first
         self.running = False
+        self._started_in_training_mode = False  # Track if bot was started in training mode
         saved_state = self._load_state()
 
         if saved_state:
@@ -505,6 +506,7 @@ class JJBotPro:
 
         self.running = True
         self.stats["start_time"] = datetime.now()
+        self._started_in_training_mode = (self.config.mode == "training")
 
         # Initialize components
         await self._initialize_components()
@@ -1290,7 +1292,7 @@ class JJBotPro:
             await asyncio.sleep(2)
 
         # Close all positions (paper/live trading mode only - not during training)
-        if self.config.mode == "paper" and not was_training:
+        if not self._started_in_training_mode:
             for symbol in list(self.positions.keys()):
                 price = self.prices.get(symbol, self.positions[symbol].entry_price)
                 await self._close_position(symbol, price, "shutdown")
@@ -1320,21 +1322,42 @@ class JJBotPro:
             runtime = datetime.now() - start_time
         else:
             runtime = timedelta(0)
-        win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
-        return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
 
         logger.info("=" * 50)
-        logger.info("FINAL STATISTICS")
-        logger.info("=" * 50)
-        logger.info(f"Runtime: {runtime}")
-        logger.info(f"Initial Capital: ${self.config.initial_capital:,.2f}")
-        logger.info(f"Final Equity: ${self.equity:,.2f}")
-        logger.info(f"Total Return: {return_pct:.2f}%")
-        logger.info(f"Total Trades: {self.stats['total_trades']}")
-        logger.info(f"Winning Trades: {self.stats['winning_trades']}")
-        logger.info(f"Win Rate: {win_rate:.1f}%")
-        logger.info(f"Total P&L: ${self.stats['total_pnl']:,.2f}")
-        logger.info(f"Signals Analyzed: {self.stats['signals_analyzed']}")
+
+        if self._started_in_training_mode:
+            # Show training-specific statistics
+            logger.info("TRAINING STATISTICS")
+            logger.info("=" * 50)
+            logger.info(f"Runtime: {runtime}")
+            logger.info(f"Episodes Completed: {self.training_progress['current_episode']}/{self.training_progress['total_episodes']}")
+            logger.info(f"Trading IQ: {self.training_progress['trading_iq']}")
+            logger.info(f"Expertise Level: {self.training_progress['expertise_level']}")
+            logger.info(f"Avg Win Rate: {self.training_progress['avg_win_rate']:.1f}%")
+            logger.info(f"Avg Profit Factor: {self.training_progress['avg_profit_factor']:.2f}")
+            logger.info(f"Avg Reward: {self.training_progress['avg_reward']:.2f}")
+            logger.info(f"Last Episode Reward: {self.training_progress['last_reward']:.2f}")
+            logger.info(f"Last Episode P&L: ${self.training_progress['last_pnl']:.2f}")
+            logger.info(f"Last Episode Win Rate: {self.training_progress['last_win_rate']:.1f}%")
+            logger.info(f"Total Training Sessions: {self.stats.get('training_sessions', 1)}")
+            logger.info(f"Total Episodes (All Sessions): {self.stats.get('total_training_episodes', self.training_progress['current_episode'])}")
+        else:
+            # Show trading statistics
+            win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
+            return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
+
+            logger.info("FINAL STATISTICS")
+            logger.info("=" * 50)
+            logger.info(f"Runtime: {runtime}")
+            logger.info(f"Initial Capital: ${self.config.initial_capital:,.2f}")
+            logger.info(f"Final Equity: ${self.equity:,.2f}")
+            logger.info(f"Total Return: {return_pct:.2f}%")
+            logger.info(f"Total Trades: {self.stats['total_trades']}")
+            logger.info(f"Winning Trades: {self.stats['winning_trades']}")
+            logger.info(f"Win Rate: {win_rate:.1f}%")
+            logger.info(f"Total P&L: ${self.stats['total_pnl']:,.2f}")
+            logger.info(f"Signals Analyzed: {self.stats['signals_analyzed']}")
+
         logger.info("=" * 50)
 
     def run(self):
