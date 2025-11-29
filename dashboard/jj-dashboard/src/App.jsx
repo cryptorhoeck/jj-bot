@@ -39,7 +39,9 @@ function App() {
     running: false,
     mode: 'paper',
     training: null,
-    apiConnected: false
+    apiConnected: false,
+    trading_iq: 0,
+    expertise_level: 'Untrained'
   });
 
   // API connection state
@@ -165,7 +167,9 @@ function App() {
         running: data.running || false,
         mode: data.mode || 'paper',
         training: data.training || null,
-        apiConnected: true
+        apiConnected: true,
+        trading_iq: data.trading_iq || 0,
+        expertise_level: data.expertise_level || 'Untrained'
       });
 
       setSimulatorRunning(data.running || false); // For backward compatibility
@@ -420,13 +424,18 @@ function App() {
                 <span className={`badge ${botStatus.apiConnected ? 'badge-live' : 'badge-danger'}`}>
                   {botStatus.apiConnected ? '🟢 API' : '🔴 API'}
                 </span>
+                {/* Persistent IQ Score Badge */}
+                <span className="badge" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)', color: 'white' }}>
+                  🧠 {botStatus.trading_iq} IQ
+                </span>
+                {/* Bot Status Badge */}
                 {botStatus.training?.is_training ? (
                   <span className="badge badge-info">
-                    🧠 Training ({botStatus.training.trading_iq || 0} IQ)
+                    ⚡ Training
                   </span>
                 ) : botStatus.running ? (
-                  <span className="badge badge-success">
-                    ▶ Trading
+                  <span className={`badge ${botStatus.mode === 'live' ? 'badge-danger' : 'badge-success'}`}>
+                    {botStatus.mode === 'live' ? '🔴 Live Trading' : '▶ Paper Trading'}
                   </span>
                 ) : (
                   <span className="badge badge-warning">

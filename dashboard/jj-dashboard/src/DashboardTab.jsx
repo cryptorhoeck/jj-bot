@@ -314,28 +314,55 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
               </div>
             </div>
 
-            {/* Trading IQ - inside Risk Management card */}
-            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
-                  <span className="text-xl font-bold text-white">{tradingIQ.iq}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🧠</span>
-                    <p className="text-sm font-semibold">Trading IQ</p>
-                    <span className="text-info font-medium">{tradingIQ.level}</span>
-                  </div>
-                  <p className="text-xs text-muted mt-1 truncate">
-                    {tradingIQ.iq === 0
-                      ? 'Train the AI to improve decisions'
-                      : `${trainingHistory.training_sessions || 0} sessions • ${trainingHistory.total_training_episodes || 0} episodes`}
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         )}
+
+        {/* Trading IQ Card - Separate from Risk Management */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <span className="text-xl">🧠</span>
+              Trading IQ
+            </h3>
+            <span className="badge badge-info">{tradingIQ.level}</span>
+          </div>
+
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
+              <span className="text-2xl font-bold text-white">{tradingIQ.iq}</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-muted">
+                {tradingIQ.iq === 0
+                  ? 'Train the AI to improve trading decisions'
+                  : 'AI-powered trading intelligence'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted uppercase tracking-wide mb-1">Sessions</p>
+              <p className="text-base font-semibold">{trainingHistory.training_sessions || 0}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted uppercase tracking-wide mb-1">Episodes</p>
+              <p className="text-base font-semibold">{trainingHistory.total_training_episodes || 0}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted uppercase tracking-wide mb-1">Avg Win Rate</p>
+              <p className="text-base font-semibold text-success">
+                {trainingHistory.avg_win_rate?.toFixed(1) || '0'}%
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted uppercase tracking-wide mb-1">Profit Factor</p>
+              <p className="text-base font-semibold text-success">
+                {trainingHistory.avg_profit_factor?.toFixed(2) || '0.00'}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Recent Trades */}
