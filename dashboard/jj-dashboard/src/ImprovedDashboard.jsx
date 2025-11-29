@@ -8,6 +8,10 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Trading IQ state
+  const [tradingIQ, setTradingIQ] = useState({ iq: 0, level: 'Untrained' });
+  const [trainingHistory, setTrainingHistory] = useState({});
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -29,6 +33,19 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
         if (riskRes.ok) {
           const riskData = await riskRes.json();
           setRiskStatus(riskData);
+        }
+
+        // Fetch Trading IQ from pro status
+        const proStatusRes = await fetch(`${API_BASE}/api/pro/status`);
+        if (proStatusRes.ok) {
+          const proData = await proStatusRes.json();
+          setTradingIQ({
+            iq: proData.trading_iq || 0,
+            level: proData.expertise_level || 'Untrained'
+          });
+          if (proData.training_history) {
+            setTrainingHistory(proData.training_history);
+          }
         }
 
         setLoading(false);
@@ -298,6 +315,67 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
             </div>
           </div>
         )}
+
+        {/* Trading IQ */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <span className="text-xl">🧠</span>
+              Trading IQ
+            </h3>
+            {tradingIQ.iq > 0 && (
+              <span className="badge badge-success">Trained</span>
+            )}
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg">
+              <span className="text-3xl font-bold text-white">{tradingIQ.iq}</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-xl font-semibold">
+                <span className="text-info">{tradingIQ.level}</span>
+              </p>
+              <p className="text-sm text-muted mt-1">
+                {tradingIQ.iq === 0
+                  ? 'Train the AI to improve trading decisions'
+                  : tradingIQ.iq < 50
+                    ? 'Continue training to improve performance'
+                    : tradingIQ.iq < 80
+                      ? 'Good progress! More training will help'
+                      : 'Excellent! AI is well-trained'}
+              </p>
+            </div>
+          </div>
+
+          {/* Training History Stats */}
+          {(trainingHistory.training_sessions > 0 || tradingIQ.iq > 0) && (
+            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Sessions</p>
+                  <p className="text-sm font-bold">{trainingHistory.training_sessions || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Episodes</p>
+                  <p className="text-sm font-bold">{trainingHistory.total_training_episodes || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Avg Win Rate</p>
+                  <p className="text-sm font-bold">{trainingHistory.avg_win_rate?.toFixed(1) || 0}%</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted uppercase">Profit Factor</p>
+                  <p className="text-sm font-bold">{trainingHistory.avg_profit_factor?.toFixed(2) || 0}</p>
+                </div>
+              </div>
+              {trainingHistory.last_training_date && (
+                <p className="text-xs text-muted text-center mt-3">
+                  Last trained: {new Date(trainingHistory.last_training_date).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Recent Trades */}
