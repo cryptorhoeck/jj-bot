@@ -211,6 +211,15 @@ class JJBotPro:
                 "total_pnl": 0.0,
                 "signals_analyzed": 0,
                 "start_time": None,
+                "trading_iq": 0,
+                "expertise_level": "Untrained",
+                # Training history
+                "training_sessions": 0,
+                "total_training_episodes": 0,
+                "last_training_date": None,
+                "avg_win_rate": 0.0,
+                "avg_profit_factor": 0.0,
+                "avg_reward": 0.0,
             }
 
         # Positions and history
@@ -277,15 +286,65 @@ class JJBotPro:
         )
 
     def _load_state(self) -> Optional[Dict]:
-        """Load saved bot state from trades database (same source as dashboard)"""
+        """Load saved bot state from trades database and bot_state.json for IQ"""
         import sqlite3
         # Use absolute path relative to this file (same as engine.py does)
         project_root = Path(__file__).parent
         db_path = project_root / "data" / "trades.db"
+        state_file = project_root / "data" / "bot_state.json"
+
+        # First, try to load IQ and training history from bot_state.json
+        saved_iq = 0
+        saved_level = "Untrained"
+        saved_training_history = {
+            "training_sessions": 0,
+            "total_training_episodes": 0,
+            "last_training_date": None,
+            "avg_win_rate": 0.0,
+            "avg_profit_factor": 0.0,
+            "avg_reward": 0.0,
+        }
+        if state_file.exists():
+            try:
+                with open(state_file) as f:
+                    saved_data = json.load(f)
+                    saved_stats = saved_data.get("stats", {})
+                    saved_iq = saved_stats.get("trading_iq", 0)
+                    saved_level = saved_stats.get("expertise_level", "Untrained")
+                    # Load training history
+                    saved_training_history = {
+                        "training_sessions": saved_stats.get("training_sessions", 0),
+                        "total_training_episodes": saved_stats.get("total_training_episodes", 0),
+                        "last_training_date": saved_stats.get("last_training_date"),
+                        "avg_win_rate": saved_stats.get("avg_win_rate", 0.0),
+                        "avg_profit_factor": saved_stats.get("avg_profit_factor", 0.0),
+                        "avg_reward": saved_stats.get("avg_reward", 0.0),
+                    }
+                    logger.info(f"Loaded IQ from state file: IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
+            except Exception as e:
+                logger.warning(f"Failed to load IQ from state file: {e}")
 
         logger.info(f"Looking for trades database at: {db_path}")
 
         if not db_path.exists():
+            # If we have IQ but no trades, return state with just IQ
+            if saved_iq > 0 or saved_training_history["training_sessions"] > 0:
+                return {
+                    "equity": self.config.initial_capital,
+                    "peak_equity": self.config.initial_capital,
+                    "daily_pnl": 0.0,
+                    "daily_start_equity": self.config.initial_capital,
+                    "stats": {
+                        "total_trades": 0,
+                        "winning_trades": 0,
+                        "total_pnl": 0.0,
+                        "signals_analyzed": 0,
+                        "start_time": None,
+                        "trading_iq": saved_iq,
+                        "expertise_level": saved_level,
+                        **saved_training_history,
+                    }
+                }
             logger.info("No trades database found, starting fresh")
             return None
 
@@ -305,7 +364,7 @@ class JJBotPro:
 
             conn.close()
 
-            if total_trades > 0:
+            if total_trades > 0 or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
                 # Calculate equity from initial capital + total P&L
                 equity = self.config.initial_capital + total_pnl
 
@@ -320,9 +379,12 @@ class JJBotPro:
                         "total_pnl": total_pnl,
                         "signals_analyzed": 0,
                         "start_time": None,
+                        "trading_iq": saved_iq,
+                        "expertise_level": saved_level,
+                        **saved_training_history,
                     }
                 }
-                logger.info(f"Loaded state from database: {total_trades} trades, equity=${equity:.2f}")
+                logger.info(f"Loaded state from database: {total_trades} trades, equity=${equity:.2f}, IQ={saved_iq}")
                 return state
             else:
                 logger.info("Trades database exists but is empty, starting fresh")
@@ -1193,6 +1255,20 @@ class JJBotPro:
         os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
         self.rl_agent.save(self.config.rl_model_path)
         self.training_progress["is_training"] = False
+
+        # Save IQ and training history to persistent stats
+        self.stats["trading_iq"] = self.training_progress["trading_iq"]
+        self.stats["expertise_level"] = self.training_progress["expertise_level"]
+
+        # Update training history
+        self.stats["training_sessions"] = self.stats.get("training_sessions", 0) + 1
+        self.stats["total_training_episodes"] = self.stats.get("total_training_episodes", 0) + completed_episodes
+        self.stats["last_training_date"] = datetime.now().isoformat()
+        self.stats["avg_win_rate"] = self.training_progress.get("avg_win_rate", 0)
+        self.stats["avg_profit_factor"] = self.training_progress.get("avg_profit_factor", 0)
+        self.stats["avg_reward"] = self.training_progress.get("avg_reward", 0)
+
+        self._save_state()  # Persist IQ and training history to file
 
         # Switch back to paper mode
         self.config.mode = "paper"

@@ -86,6 +86,7 @@ async def get_bot_status():
     """Get JJ-Bot Pro status and statistics"""
     global _bot_instance
 
+    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
     config = load_config()
     bot = get_bot()
 
@@ -112,6 +113,43 @@ async def get_bot_status():
     # Include training progress if bot exists
     if bot:
         status["training"] = bot.training_progress
+        # Include persistent IQ and training history from bot stats
+        status["trading_iq"] = bot.stats.get("trading_iq", 0)
+        status["expertise_level"] = bot.stats.get("expertise_level", "Untrained")
+        status["training_history"] = {
+            "training_sessions": bot.stats.get("training_sessions", 0),
+            "total_training_episodes": bot.stats.get("total_training_episodes", 0),
+            "last_training_date": bot.stats.get("last_training_date"),
+            "avg_win_rate": bot.stats.get("avg_win_rate", 0),
+            "avg_profit_factor": bot.stats.get("avg_profit_factor", 0),
+            "avg_reward": bot.stats.get("avg_reward", 0),
+        }
+    else:
+        # Load persistent IQ and training history from state file when bot is not running
+        state_file = os.path.join(project_root, 'data', 'bot_state.json')
+        if os.path.exists(state_file):
+            try:
+                with open(state_file) as f:
+                    saved_state = json.load(f)
+                    saved_stats = saved_state.get("stats", {})
+                    status["trading_iq"] = saved_stats.get("trading_iq", 0)
+                    status["expertise_level"] = saved_stats.get("expertise_level", "Untrained")
+                    status["training_history"] = {
+                        "training_sessions": saved_stats.get("training_sessions", 0),
+                        "total_training_episodes": saved_stats.get("total_training_episodes", 0),
+                        "last_training_date": saved_stats.get("last_training_date"),
+                        "avg_win_rate": saved_stats.get("avg_win_rate", 0),
+                        "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),
+                        "avg_reward": saved_stats.get("avg_reward", 0),
+                    }
+            except Exception:
+                status["trading_iq"] = 0
+                status["expertise_level"] = "Untrained"
+                status["training_history"] = {}
+        else:
+            status["trading_iq"] = 0
+            status["expertise_level"] = "Untrained"
+            status["training_history"] = {}
 
     if config:
         status["config"] = {
@@ -125,7 +163,6 @@ async def get_bot_status():
         }
 
     # Check for existing model
-    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
     model_path = os.path.join(project_root, 'models', 'ppo_agent.pt')
     status["rl_model_trained"] = os.path.exists(model_path)
 
