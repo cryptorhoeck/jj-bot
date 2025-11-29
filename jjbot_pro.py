@@ -15,7 +15,7 @@ import logging
 import json
 import os
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -119,11 +119,14 @@ class BotConfig:
 
     @classmethod
     def load(cls, path: str = "config/bot_config.json") -> "BotConfig":
-        """Load config from file"""
+        """Load config from file, ignoring unknown fields"""
         if os.path.exists(path):
             with open(path) as f:
                 data = json.load(f)
-                return cls(**data)
+                # Filter to only known fields to avoid errors from old config files
+                valid_fields = {f.name for f in fields(cls)}
+                filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+                return cls(**filtered_data)
         return cls()
 
     def save(self, path: str = "config/bot_config.json"):
