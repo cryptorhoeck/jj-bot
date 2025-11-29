@@ -213,8 +213,13 @@ async def start_bot(mode: Optional[str] = None):
     try:
         # Import and create bot
         from jjbot_pro import JJBotPro, BotConfig
+        from dataclasses import fields
 
-        bot_config = BotConfig(**config)
+        # Filter config to only known BotConfig fields (handles old config files with extra fields)
+        valid_fields = {f.name for f in fields(BotConfig)}
+        filtered_config = {k: v for k, v in config.items() if k in valid_fields}
+
+        bot_config = BotConfig(**filtered_config)
         _bot_instance = JJBotPro(bot_config)
 
         # Start bot as background task
