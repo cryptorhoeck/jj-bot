@@ -1236,7 +1236,14 @@ class JJBotPro:
 
     def _log_final_stats(self):
         """Log final performance statistics"""
-        runtime = datetime.now() - self.stats["start_time"] if self.stats["start_time"] else timedelta(0)
+        start_time = self.stats["start_time"]
+        if start_time:
+            # Handle both datetime and string formats
+            if isinstance(start_time, str):
+                start_time = datetime.fromisoformat(start_time)
+            runtime = datetime.now() - start_time
+        else:
+            runtime = timedelta(0)
         win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
         return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
 
