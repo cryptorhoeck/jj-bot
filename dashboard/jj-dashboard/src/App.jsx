@@ -429,9 +429,9 @@ function App() {
                   🧠 {botStatus.trading_iq} IQ
                 </span>
                 {/* Bot Status Badge */}
-                {botStatus.training?.is_training ? (
+                {(botStatus.training?.is_training || (botStatus.mode === 'training' && botStatus.running)) ? (
                   <span className="badge badge-info">
-                    ⚡ Training
+                    ⚡ Training {botStatus.training?.progress_pct ? `(${botStatus.training.progress_pct.toFixed(0)}%)` : ''}
                   </span>
                 ) : botStatus.running ? (
                   <span className={`badge ${botStatus.mode === 'live' ? 'badge-danger' : 'badge-success'}`}>
@@ -514,6 +514,7 @@ function App() {
               summary={summary}
               trades={trades}
               API_BASE={API_BASE}
+              botStatus={botStatus}
             />
           )}
 

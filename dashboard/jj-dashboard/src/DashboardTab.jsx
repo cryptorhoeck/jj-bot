@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
+export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
   const [equityCurve, setEquityCurve] = useState([]);
   const [openPositions, setOpenPositions] = useState([]);
   const [riskStatus, setRiskStatus] = useState(null);
@@ -12,6 +12,10 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
   const [tradingIQ, setTradingIQ] = useState({ iq: 0, level: 'Untrained' });
   const [trainingHistory, setTrainingHistory] = useState({});
   const [trainingProgress, setTrainingProgress] = useState(null);
+
+  // Use botStatus from props as fallback for training detection
+  const isTraining = trainingProgress?.is_training || (botStatus?.mode === 'training' && botStatus?.running);
+  const currentTrainingProgress = trainingProgress || botStatus?.training;
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -336,33 +340,33 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
           )}
 
           {/* Trading IQ Card */}
-          <div className={`card p-4 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
+          <div className={`card p-4 ${isTraining ? 'card-info' : ''}`}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold flex items-center gap-2">
                 <span className="text-lg">🧠</span>
                 Trading IQ
               </h3>
-              <span className={`badge ${trainingProgress?.is_training ? 'badge-info' : 'badge-info'}`}>
-                {trainingProgress?.is_training ? '⚡ Training' : tradingIQ.level}
+              <span className={`badge ${isTraining ? 'badge-info' : 'badge-info'}`}>
+                {isTraining ? '⚡ Training' : tradingIQ.level}
               </span>
             </div>
 
             <div className="flex items-center gap-3 mb-3">
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
                 <span className="text-xl font-bold text-white">
-                  {trainingProgress?.is_training ? trainingProgress.trading_iq || tradingIQ.iq : tradingIQ.iq}
+                  {isTraining ? currentTrainingProgress?.trading_iq || tradingIQ.iq : tradingIQ.iq}
                 </span>
               </div>
               <div className="flex-1">
-                {trainingProgress?.is_training ? (
+                {isTraining ? (
                   <div>
                     <p className="text-sm font-semibold text-info mb-0.5">
-                      {trainingProgress.expertise_level || tradingIQ.level}
+                      {currentTrainingProgress?.expertise_level || tradingIQ.level}
                     </p>
                     <p className="text-xs text-muted">
-                      Episode {trainingProgress.current_episode}/{trainingProgress.total_episodes}
+                      Episode {currentTrainingProgress?.current_episode || 0}/{currentTrainingProgress?.total_episodes || 0}
                       <span className="ml-1">
-                        ({trainingProgress.total_episodes - trainingProgress.current_episode} left)
+                        ({(currentTrainingProgress?.total_episodes || 0) - (currentTrainingProgress?.current_episode || 0)} left)
                       </span>
                     </p>
                   </div>
@@ -377,21 +381,21 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE }) {
             </div>
 
             {/* Live Training Progress Bar */}
-            {trainingProgress?.is_training && (
+            {isTraining && (
               <div className="mb-3">
                 <div className="flex justify-between text-xs text-muted mb-1">
                   <span>Progress</span>
-                  <span className="font-semibold">{trainingProgress.progress_pct?.toFixed(1)}%</span>
+                  <span className="font-semibold">{currentTrainingProgress?.progress_pct?.toFixed(1) || 0}%</span>
                 </div>
                 <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
-                    style={{ width: `${trainingProgress.progress_pct || 0}%` }}
+                    style={{ width: `${currentTrainingProgress?.progress_pct || 0}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-muted mt-1">
-                  <span>Win: {trainingProgress.avg_win_rate?.toFixed(1) || 0}%</span>
-                  <span>Reward: {trainingProgress.avg_reward?.toFixed(0) || 0}</span>
+                  <span>Win: {currentTrainingProgress?.avg_win_rate?.toFixed(1) || 0}%</span>
+                  <span>Reward: {currentTrainingProgress?.avg_reward?.toFixed(0) || 0}</span>
                 </div>
               </div>
             )}

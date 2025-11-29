@@ -514,6 +514,9 @@ class JJBotPro:
         # Main loop
         try:
             if self.config.mode == "training":
+                # Set training state immediately so API reflects it
+                self.training_progress["is_training"] = True
+                self.training_progress["total_episodes"] = self.config.train_episodes
                 await self._training_loop()
             else:
                 await self._trading_loop()
