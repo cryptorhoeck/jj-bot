@@ -119,6 +119,7 @@ async def get_bot_status():
         status["training_history"] = {
             "training_sessions": bot.stats.get("training_sessions", 0),
             "total_training_episodes": bot.stats.get("total_training_episodes", 0),
+            "total_training_trades": bot.stats.get("total_training_trades", 0),
             "last_training_date": bot.stats.get("last_training_date"),
             "avg_win_rate": bot.stats.get("avg_win_rate", 0),
             "avg_profit_factor": bot.stats.get("avg_profit_factor", 0),
@@ -137,6 +138,7 @@ async def get_bot_status():
                     status["training_history"] = {
                         "training_sessions": saved_stats.get("training_sessions", 0),
                         "total_training_episodes": saved_stats.get("total_training_episodes", 0),
+                        "total_training_trades": saved_stats.get("total_training_trades", 0),
                         "last_training_date": saved_stats.get("last_training_date"),
                         "avg_win_rate": saved_stats.get("avg_win_rate", 0),
                         "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),

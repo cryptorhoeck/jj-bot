@@ -50,6 +50,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   const [trainingHistory, setTrainingHistory] = useState({
     training_sessions: 0,
     total_training_episodes: 0,
+    total_training_trades: 0,
     last_training_date: null,
     avg_win_rate: 0,
     avg_profit_factor: 0,
@@ -564,14 +565,18 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
             {/* Training History Stats */}
             {(trainingHistory.training_sessions > 0 || tradingIQ.iq > 0) && (
               <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Sessions</p>
-                    <p className="text-sm font-bold">{trainingHistory.training_sessions || 0}</p>
+                    <p className="text-sm font-bold">{(trainingHistory.training_sessions || 0).toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Episodes</p>
-                    <p className="text-sm font-bold">{trainingHistory.total_training_episodes || 0}</p>
+                    <p className="text-sm font-bold">{(trainingHistory.total_training_episodes || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-muted uppercase">Trades</p>
+                    <p className="text-sm font-bold">{(trainingHistory.total_training_trades || 0).toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Avg Win Rate</p>
@@ -788,14 +793,18 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
             {/* Training History Stats - Always show if we have training data */}
             {(trainingHistory.training_sessions > 0 || tradingIQ.iq > 0) && (
               <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Sessions</p>
-                    <p className="text-sm font-bold">{trainingHistory.training_sessions || 0}</p>
+                    <p className="text-sm font-bold">{(trainingHistory.training_sessions || 0).toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Episodes</p>
-                    <p className="text-sm font-bold">{trainingHistory.total_training_episodes || 0}</p>
+                    <p className="text-sm font-bold">{(trainingHistory.total_training_episodes || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-muted uppercase">Trades</p>
+                    <p className="text-sm font-bold">{(trainingHistory.total_training_trades || 0).toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted uppercase">Avg Win Rate</p>

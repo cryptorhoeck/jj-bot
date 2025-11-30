@@ -217,6 +217,7 @@ class JJBotPro:
                 # Training history
                 "training_sessions": 0,
                 "total_training_episodes": 0,
+                "total_training_trades": 0,
                 "last_training_date": None,
                 "avg_win_rate": 0.0,
                 "avg_profit_factor": 0.0,
@@ -240,7 +241,8 @@ class JJBotPro:
             "expertise_level": "Untrained",
             "avg_win_rate": 0.0,
             "avg_profit_factor": 0.0,
-            "avg_reward": 0.0
+            "avg_reward": 0.0,
+            "total_trades": 0
         }
 
         # Training metrics for IQ calculation
@@ -248,7 +250,8 @@ class JJBotPro:
             "episode_count": 0,
             "total_win_rate": 0.0,
             "total_profit_factor": 0.0,
-            "total_reward": 0.0
+            "total_reward": 0.0,
+            "total_trades": 0
         }
 
         # Components (initialized in start())
@@ -1227,6 +1230,7 @@ class JJBotPro:
             self.training_metrics["total_win_rate"] += win_rate
             self.training_metrics["total_profit_factor"] += profit_factor
             self.training_metrics["total_reward"] += metrics.get('episode_reward', 0)
+            self.training_metrics["total_trades"] += metrics.get('total_trades', 0)
 
             # Calculate Trading IQ
             iq, level = self._calculate_trading_iq()
@@ -1242,6 +1246,7 @@ class JJBotPro:
             self.training_progress["avg_win_rate"] = (self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]) * 100
             self.training_progress["avg_profit_factor"] = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
             self.training_progress["avg_reward"] = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
+            self.training_progress["total_trades"] = self.training_metrics["total_trades"]
 
             if episode % 10 == 0:
                 logger.info(
@@ -1268,6 +1273,7 @@ class JJBotPro:
         # Update training history
         self.stats["training_sessions"] = self.stats.get("training_sessions", 0) + 1
         self.stats["total_training_episodes"] = self.stats.get("total_training_episodes", 0) + completed_episodes
+        self.stats["total_training_trades"] = self.stats.get("total_training_trades", 0) + self.training_metrics.get("total_trades", 0)
         self.stats["last_training_date"] = datetime.now().isoformat()
         self.stats["avg_win_rate"] = self.training_progress.get("avg_win_rate", 0)
         self.stats["avg_profit_factor"] = self.training_progress.get("avg_profit_factor", 0)

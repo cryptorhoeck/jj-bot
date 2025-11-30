@@ -117,16 +117,6 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
     text: darkMode ? '#94a3b8' : '#64748b'
   };
 
-  // Auto-scale font size based on number length
-  const getScaledFontSize = (value) => {
-    const str = String(value);
-    const len = str.replace(/[^0-9.-]/g, '').length; // Count digits only
-    if (len <= 4) return 'text-lg';
-    if (len <= 6) return 'text-base';
-    if (len <= 8) return 'text-sm';
-    return 'text-xs';
-  };
-
   return (
     <div className="space-y-6">
       {/* Performance Stats Grid */}
@@ -313,25 +303,25 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Circuit Breaker</p>
-                  <p className={`${getScaledFontSize('OK')} font-semibold ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
+                  <p className={`text-base font-semibold truncate ${riskStatus.risk_status?.circuit_breaker_active ? 'text-danger' : 'text-success'}`}>
                     {riskStatus.risk_status?.circuit_breaker_active ? 'ACTIVE' : 'OK'}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Daily P&L</p>
-                  <p className={`${getScaledFontSize(riskStatus.risk_status?.daily_pnl || 0)} font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${riskStatus.risk_status?.daily_pnl?.toFixed(2) || '0.00'}
+                  <p className={`text-base font-semibold truncate ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                    ${(riskStatus.risk_status?.daily_pnl || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Loss Remaining</p>
-                  <p className={`${getScaledFontSize(riskStatus.risk_status?.daily_loss_remaining || 0)} font-semibold`}>
-                    ${riskStatus.risk_status?.daily_loss_remaining?.toFixed(2) || '0.00'}
+                  <p className="text-base font-semibold truncate">
+                    ${(riskStatus.risk_status?.daily_loss_remaining || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Consecutive Losses</p>
-                  <p className={`${getScaledFontSize(riskStatus.risk_status?.consecutive_losses || 0)} font-semibold ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
+                  <p className={`text-base font-semibold truncate ${riskStatus.risk_status?.consecutive_losses >= 3 ? 'text-danger' : ''}`}>
                     {riskStatus.risk_status?.consecutive_losses || 0}
                   </p>
                 </div>
@@ -395,33 +385,40 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 </div>
                 <div className="flex justify-between text-xs text-muted mt-1">
                   <span>Win: {currentTrainingProgress?.avg_win_rate?.toFixed(1) || 0}%</span>
+                  <span>Trades: {(currentTrainingProgress?.total_trades || 0).toLocaleString()}</span>
                   <span>Reward: {currentTrainingProgress?.avg_reward?.toFixed(0) || 0}</span>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                 <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Sessions</p>
-                <p className={`${getScaledFontSize(trainingHistory.training_sessions || 0)} font-semibold`}>
-                  {trainingHistory.training_sessions || 0}
+                <p className="text-base font-semibold truncate">
+                  {(trainingHistory.training_sessions || 0).toLocaleString()}
                 </p>
               </div>
               <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                 <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Episodes</p>
-                <p className={`${getScaledFontSize(trainingHistory.total_training_episodes || 0)} font-semibold`}>
-                  {trainingHistory.total_training_episodes || 0}
+                <p className="text-base font-semibold truncate">
+                  {(trainingHistory.total_training_episodes || 0).toLocaleString()}
                 </p>
               </div>
               <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Trades</p>
+                <p className="text-base font-semibold truncate">
+                  {(trainingHistory.total_training_trades || 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)] col-span-1">
                 <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Avg Win Rate</p>
-                <p className={`${getScaledFontSize(trainingHistory.avg_win_rate || 0)} font-semibold text-success`}>
+                <p className="text-base font-semibold text-success truncate">
                   {trainingHistory.avg_win_rate?.toFixed(1) || '0'}%
                 </p>
               </div>
-              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <div className="p-2 rounded-lg bg-[var(--bg-tertiary)] col-span-2">
                 <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Profit Factor</p>
-                <p className={`${getScaledFontSize(trainingHistory.avg_profit_factor || 0)} font-semibold text-success`}>
+                <p className="text-base font-semibold text-success truncate">
                   {trainingHistory.avg_profit_factor?.toFixed(2) || '0.00'}
                 </p>
               </div>
