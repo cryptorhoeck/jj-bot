@@ -228,7 +228,7 @@ class JJBotPro:
         self.positions: Dict[str, Position] = self._load_positions()
         self.trade_history: List[TradeRecord] = []
 
-        # Training state
+        # Training state - initialize from loaded stats if available
         self.training_progress = {
             "is_training": False,
             "current_episode": 0,
@@ -237,12 +237,12 @@ class JJBotPro:
             "last_pnl": 0.0,
             "last_win_rate": 0.0,
             "progress_pct": 0.0,
-            "trading_iq": 0,
-            "expertise_level": "Untrained",
-            "avg_win_rate": 0.0,
-            "avg_profit_factor": 0.0,
-            "avg_reward": 0.0,
-            "total_trades": 0
+            "trading_iq": self.stats.get("trading_iq", 0),
+            "expertise_level": self.stats.get("expertise_level", "Untrained"),
+            "avg_win_rate": self.stats.get("avg_win_rate", 0.0),
+            "avg_profit_factor": self.stats.get("avg_profit_factor", 0.0),
+            "avg_reward": self.stats.get("avg_reward", 0.0),
+            "total_trades": self.stats.get("total_training_trades", 0)
         }
 
         # Training metrics for IQ calculation
@@ -479,8 +479,10 @@ class JJBotPro:
 
     def _save_state(self):
         """Save bot state to file"""
-        state_file = Path("data/bot_state.json")
-        os.makedirs("data", exist_ok=True)
+        # Use absolute path relative to this file (same as _load_state does)
+        project_root = Path(__file__).parent
+        state_file = project_root / "data" / "bot_state.json"
+        os.makedirs(project_root / "data", exist_ok=True)
         try:
             state = {
                 "equity": self.equity,
