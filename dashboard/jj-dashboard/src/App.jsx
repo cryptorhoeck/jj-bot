@@ -179,6 +179,36 @@ function App() {
     }
   };
 
+  // Global stop function for bot/training
+  const stopBot = async () => {
+    const isTraining = botStatus.training?.is_training;
+    setLoading(true);
+
+    if (isTraining) {
+      toast.loading('Stopping training and saving progress...', { id: 'stopping' });
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      const data = await response.json();
+
+      if (data.status === 'stopped') {
+        setBotStatus(prev => ({ ...prev, running: false, training: null }));
+        setSimulatorRunning(false);
+        toast.dismiss('stopping');
+        toast.success(isTraining ? 'Training stopped - progress saved!' : 'Bot stopped');
+        checkBotStatus(); // Refresh status
+      } else {
+        toast.dismiss('stopping');
+        toast.error(data.message || 'Failed to stop');
+      }
+    } catch (error) {
+      toast.dismiss('stopping');
+      toast.error('Error stopping: ' + error.message);
+    }
+    setLoading(false);
+  };
+
   const checkSimulatorStatus = async () => {
     // Legacy function - now calls unified bot status
     await checkBotStatus();
@@ -467,6 +497,27 @@ function App() {
 
             {/* Controls */}
             <div className="flex items-center gap-3">
+              {/* Stop Button - Always visible when running */}
+              {(botStatus.running || botStatus.training?.is_training) && (
+                <button
+                  onClick={stopBot}
+                  disabled={loading}
+                  className="btn btn-danger flex items-center gap-2 px-4 py-2"
+                  title={botStatus.training?.is_training ? "Stop training and save progress" : "Stop trading bot"}
+                >
+                  {loading ? (
+                    <div className="spinner w-4 h-4 border-2" />
+                  ) : (
+                    <>
+                      <span>⏹</span>
+                      <span className="hidden sm:inline">
+                        {botStatus.training?.is_training ? 'Stop Training' : 'Stop Bot'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+
               {/* Dark Mode Toggle */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
