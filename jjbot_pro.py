@@ -500,6 +500,21 @@ class JJBotPro:
         except Exception as e:
             logger.warning(f"Failed to save state: {e}")
 
+    def _save_mode_to_config(self, mode: str):
+        """Save mode to bot_config.json so next start uses correct mode"""
+        project_root = Path(__file__).parent
+        config_path = project_root / "config" / "bot_config.json"
+        try:
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+                config["mode"] = mode
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+                logger.info(f"Config mode updated to '{mode}'")
+        except Exception as e:
+            logger.warning(f"Failed to update config mode: {e}")
+
     async def start(self):
         """Start the trading bot"""
         logger.info("=" * 50)
@@ -1283,8 +1298,9 @@ class JJBotPro:
 
         self._save_state()  # Persist IQ and training history to file
 
-        # Switch back to paper mode
+        # Switch back to paper mode (both in-memory and config file)
         self.config.mode = "paper"
+        self._save_mode_to_config("paper")
 
         if completed_episodes == self.config.train_episodes:
             logger.info(f"Training complete! {completed_episodes} episodes. Model saved to {self.config.rl_model_path}")
