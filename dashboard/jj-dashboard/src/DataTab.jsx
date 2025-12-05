@@ -4,6 +4,7 @@ import { ConfirmModal } from './components';
 
 export function DataTab({ darkMode, API_BASE, trades, summary }) {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [trainingConfirmOpen, setTrainingConfirmOpen] = useState(false);
   const [viewMode, setViewMode] = useState('trades');
 
   const analytics = useMemo(() => {
@@ -71,11 +72,23 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
 
   const handleClearDatabaseConfirm = async () => {
     try {
-      await fetch(`${API_BASE}/api/data/clear`, { method: 'POST' });
-      toast.success('Database cleared!');
+      const response = await fetch(`${API_BASE}/api/data/clear`, { method: 'POST' });
+      const data = await response.json();
+      toast.success(data.message || 'Trading data cleared!');
       window.location.reload();
     } catch (error) {
       toast.error('Error clearing database');
+    }
+  };
+
+  const handleClearTrainingConfirm = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/data/clear-training`, { method: 'POST' });
+      const data = await response.json();
+      toast.success(data.message || 'Training data cleared!');
+      window.location.reload();
+    } catch (error) {
+      toast.error('Error clearing training data');
     }
   };
 
@@ -128,7 +141,7 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
               Data Management
             </h3>
 
-            <div className="grid sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <button onClick={exportCSV} className="btn btn-primary">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -145,7 +158,13 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Clear Database
+                Clear Trading Data
+              </button>
+              <button onClick={() => setTrainingConfirmOpen(true)} className="btn btn-warning">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                Reset Training/IQ
               </button>
             </div>
 
@@ -378,9 +397,21 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
         isOpen={confirmModalOpen}
         onClose={() => setConfirmModalOpen(false)}
         onConfirm={handleClearDatabaseConfirm}
-        title="Clear Database"
-        message="Are you sure you want to clear all trade data? A backup will be created first."
-        confirmText="Clear Database"
+        title="Clear Trading Data"
+        message="Are you sure you want to clear all trade history? A backup will be created. Training IQ will be preserved."
+        confirmText="Clear Trading Data"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        darkMode={darkMode}
+      />
+
+      <ConfirmModal
+        isOpen={trainingConfirmOpen}
+        onClose={() => setTrainingConfirmOpen(false)}
+        onConfirm={handleClearTrainingConfirm}
+        title="Reset Training Data"
+        message="This will reset the AI to its untrained state, clearing all learned IQ and the trained model. This cannot be undone. A backup will be created."
+        confirmText="Reset Training"
         cancelText="Cancel"
         confirmVariant="danger"
         darkMode={darkMode}

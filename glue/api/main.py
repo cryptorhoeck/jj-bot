@@ -382,27 +382,77 @@ async def export_data():
 
 @app.post("/api/data/clear")
 async def clear_data():
-    """Clear all trade data with backup"""
+    """Clear trading data only (trades.db) - preserves training IQ"""
     import shutil
+    from pathlib import Path
 
-    # Backup database
-    db_path = "data/jj_trades.db"
-    if os.path.exists(db_path):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_dir = "backups"
-        os.makedirs(backup_dir, exist_ok=True)
-        backup_path = f"{backup_dir}/jj_trades_backup_{timestamp}.db"
-        shutil.copy2(db_path, backup_path)
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_dir = PROJECT_ROOT / "backups"
+    backup_dir.mkdir(exist_ok=True)
 
-    # Clear trades
+    # Backup trades.db (JJ-Bot Pro database)
+    trades_db = PROJECT_ROOT / "data" / "trades.db"
+    backed_up = None
+    if trades_db.exists():
+        backup_path = backup_dir / f"trades_backup_{timestamp}.db"
+        shutil.copy2(trades_db, backup_path)
+        backed_up = backup_path.name
+
+    # Clear trades from database
     try:
         with engine.get_connection() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM trades")
             conn.commit()
-        return {"status": "cleared", "message": "Database cleared and backed up"}
+
+        return {
+            "status": "cleared",
+            "message": f"Trading data cleared{f' (backed up to {backed_up})' if backed_up else ''}. Training IQ preserved."
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/data/clear-training")
+async def clear_training_data():
+    """Clear training data (bot_state.json with IQ) - resets the AI to untrained state"""
+    import shutil
+    from pathlib import Path
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_dir = PROJECT_ROOT / "backups"
+    backup_dir.mkdir(exist_ok=True)
+
+    backed_up = []
+
+    # Backup bot_state.json (contains trading_iq and training progress)
+    state_file = PROJECT_ROOT / "data" / "bot_state.json"
+    if state_file.exists():
+        backup_path = backup_dir / f"bot_state_backup_{timestamp}.json"
+        shutil.copy2(state_file, backup_path)
+        backed_up.append(f"bot_state.json -> {backup_path.name}")
+        state_file.unlink()
+
+    # Backup and remove trained model if exists
+    model_file = PROJECT_ROOT / "models" / "ppo_agent.pt"
+    if model_file.exists():
+        backup_path = backup_dir / f"ppo_agent_backup_{timestamp}.pt"
+        shutil.copy2(model_file, backup_path)
+        backed_up.append(f"ppo_agent.pt -> {backup_path.name}")
+        model_file.unlink()
+
+    if backed_up:
+        return {
+            "status": "cleared",
+            "message": f"Training data cleared and backed up: {', '.join(backed_up)}. AI reset to untrained state."
+        }
+    else:
+        return {
+            "status": "cleared",
+            "message": "No training data found to clear."
+        }
 
 
 @app.post("/api/data/import")
