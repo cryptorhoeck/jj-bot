@@ -247,7 +247,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
           </div>
 
           {openPositions.length > 0 ? (
-            <div className="table-container">
+            <div className="table-container" style={{ maxHeight: '320px', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
                   <tr>
