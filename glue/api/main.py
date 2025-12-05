@@ -547,8 +547,23 @@ async def get_market_live():
             symbols = [row[0] for row in cursor.fetchall()]
             conn.close()
         except Exception as db_err:
-            print(f"⚠️  Failed to load symbols from DB: {db_err}, using defaults")
-            symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "POL"]
+            print(f"⚠️  Failed to load symbols from DB: {db_err}, using defaults from config")
+            # Try to load from bot config, or use comprehensive fallback
+            try:
+                import json
+                config_path = os.path.join(os.path.dirname(__file__), '../../config/bot_config.json')
+                with open(config_path) as f:
+                    config = json.load(f)
+                    # Extract base symbol from pairs like "BTC/USD" -> "BTC"
+                    symbols = [s.split('/')[0] for s in config.get('symbols', [])]
+            except:
+                symbols = [
+                    "BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK", "ATOM",
+                    "UNI", "LTC", "BCH", "XLM", "ALGO", "MATIC", "NEAR", "FIL", "APE", "AAVE",
+                    "CRV", "MKR", "COMP", "SNX", "GRT", "SAND", "MANA", "AXS", "ENJ", "CHZ",
+                    "BAT", "ZEC", "DASH", "EOS", "XTZ", "TRX", "ETC", "SHIB", "PEPE", "FTM",
+                    "OP", "ARB", "INJ", "RUNE", "KAVA", "OCEAN", "STORJ", "SUSHI", "YFI", "1INCH"
+                ]
 
         result = {}
 
@@ -629,7 +644,13 @@ async def get_ohlc_data(symbol: str, timeframe: str = "1h", source: str = "auto"
     """
     try:
         # Auto-detect source
-        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
+        crypto_symbols = [
+            'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+            'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'MATIC', 'NEAR', 'FIL', 'APE', 'AAVE',
+            'CRV', 'MKR', 'COMP', 'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'CHZ',
+            'BAT', 'ZEC', 'DASH', 'EOS', 'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'FTM',
+            'OP', 'ARB', 'INJ', 'RUNE', 'KAVA', 'OCEAN', 'STORJ', 'SUSHI', 'YFI', '1INCH', 'BNB', 'POL'
+        ]
 
         if source == "auto":
             source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
@@ -693,7 +714,13 @@ async def get_ticker_data(symbol: str, source: str = "auto"):
         source: 'kraken', 'yahoo', or 'auto'
     """
     try:
-        crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
+        crypto_symbols = [
+            'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+            'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'MATIC', 'NEAR', 'FIL', 'APE', 'AAVE',
+            'CRV', 'MKR', 'COMP', 'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'CHZ',
+            'BAT', 'ZEC', 'DASH', 'EOS', 'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'FTM',
+            'OP', 'ARB', 'INJ', 'RUNE', 'KAVA', 'OCEAN', 'STORJ', 'SUSHI', 'YFI', '1INCH', 'BNB', 'POL'
+        ]
 
         if source == "auto":
             source = "kraken" if symbol.upper() in crypto_symbols else "yahoo"
@@ -725,7 +752,13 @@ async def get_batch_ohlc(symbols: str, timeframe: str = "1h", source: str = "aut
 
         for symbol in symbol_list:
             # Determine source for each symbol
-            crypto_symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'DOT', 'POL', 'BNB']
+            crypto_symbols = [
+            'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+            'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'MATIC', 'NEAR', 'FIL', 'APE', 'AAVE',
+            'CRV', 'MKR', 'COMP', 'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'CHZ',
+            'BAT', 'ZEC', 'DASH', 'EOS', 'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'FTM',
+            'OP', 'ARB', 'INJ', 'RUNE', 'KAVA', 'OCEAN', 'STORJ', 'SUSHI', 'YFI', '1INCH', 'BNB', 'POL'
+        ]
             sym_source = "kraken" if symbol in crypto_symbols else "yahoo"
 
             if sym_source == "kraken":
