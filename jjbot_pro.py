@@ -678,16 +678,26 @@ class JJBotPro:
         import random
         # Realistic starting prices for top coins (supports both USD and USDT pairs)
         base_prices = {
-            "BTC": 97000.0, "ETH": 3500.0, "BNB": 650.0,
-            "XRP": 1.40, "SOL": 250.0, "ADA": 1.00,
-            "DOGE": 0.40, "TRX": 0.20, "AVAX": 45.0,
-            "LINK": 18.0, "DOT": 9.0, "POL": 0.50,
-            "SHIB": 0.000025, "LTC": 95.0, "BCH": 500.0,
-            "UNI": 12.0, "XLM": 0.35, "ATOM": 12.0,
-            "ETC": 32.0, "FIL": 6.5, "HBAR": 0.12,
-            "APT": 12.0, "ARB": 1.20, "OP": 2.50,
-            "NEAR": 6.50, "INJ": 35.0, "RUNE": 6.0,
-            "AAVE": 180.0, "GRT": 0.25, "FTM": 1.10,
+            # Top coins
+            "BTC": 97000.0, "ETH": 3500.0, "SOL": 250.0,
+            "XRP": 1.40, "DOGE": 0.40, "ADA": 1.00,
+            "AVAX": 45.0, "DOT": 9.0, "LINK": 18.0,
+            "ATOM": 12.0, "UNI": 12.0, "LTC": 95.0,
+            "BCH": 500.0, "XLM": 0.35, "ALGO": 0.35,
+            "MATIC": 0.50, "NEAR": 6.50, "FIL": 6.5,
+            "APE": 1.50, "AAVE": 180.0, "CRV": 0.50,
+            "MKR": 1800.0, "COMP": 60.0, "SNX": 3.0,
+            "GRT": 0.25, "SAND": 0.50, "MANA": 0.45,
+            "AXS": 8.0, "ENJ": 0.30, "CHZ": 0.10,
+            "BAT": 0.25, "ZEC": 50.0, "DASH": 35.0,
+            "EOS": 0.80, "XTZ": 1.10, "TRX": 0.20,
+            "ETC": 32.0, "SHIB": 0.000025, "PEPE": 0.00001,
+            "FTM": 1.10, "OP": 2.50, "ARB": 1.20,
+            "INJ": 35.0, "RUNE": 6.0, "KAVA": 0.50,
+            "OCEAN": 0.50, "STORJ": 0.60, "SUSHI": 1.20,
+            "YFI": 8000.0, "1INCH": 0.40,
+            # Legacy/extra
+            "BNB": 650.0, "POL": 0.50, "HBAR": 0.12, "APT": 12.0,
         }
         # Build demo_prices dict with both USD and USDT pairs
         demo_prices = {}
