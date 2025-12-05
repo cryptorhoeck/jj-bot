@@ -639,28 +639,47 @@ async def get_market_live():
                 print(f"✅ Fetched {len(result)} prices from WebSocket stream")
                 return {"status": "success", "data": result, "count": len(result), "source": "websocket"}
 
-        # Fallback: Get current prices from our market data service
-        for symbol in symbols:
-            try:
-                price_result = cached_market_data_service.get_current_price(symbol, source='kraken')
-                if price_result.get("success"):
-                    result[symbol.lower()] = {
-                        "symbol": symbol,
-                        "name": symbol,
-                        "usd": price_result.get("price", 0),
-                        "usd_24h_change": 0,  # Calculate from recent data if needed
-                        "usd_market_cap": 0,
-                        "usd_24h_vol": price_result.get("volume", 0),
-                        "image": "",
-                        "timestamp": datetime.now().isoformat()
-                    }
-            except Exception as e:
-                print(f"⚠️  Failed to fetch {symbol}: {e}")
-                continue
+        # Fallback: Use CCXT to batch fetch from Kraken (like jjbot_pro does)
+        try:
+            import ccxt
+            kraken = ccxt.kraken()
 
-        if result:
-            print(f"✅ Fetched {len(result)} prices from market data service")
-            return {"status": "success", "data": result, "count": len(result), "source": "market_data_service"}
+            # Convert symbols to full pairs (e.g., "BTC" -> "BTC/USD")
+            full_pairs = [f"{s}/USD" for s in symbols]
+
+            # Batch fetch tickers
+            try:
+                tickers = kraken.fetch_tickers(full_pairs)
+            except Exception as batch_err:
+                # If batch fails, try individual fetches
+                print(f"⚠️  Batch ticker fetch failed: {batch_err}, trying individual...")
+                tickers = {}
+                for pair in full_pairs:
+                    try:
+                        ticker = kraken.fetch_ticker(pair)
+                        tickers[pair] = ticker
+                    except:
+                        continue
+
+            for pair, ticker in tickers.items():
+                base = pair.split("/")[0]
+                result[base.lower()] = {
+                    "symbol": base,
+                    "name": base,
+                    "usd": ticker.get("last", 0) or ticker.get("close", 0) or 0,
+                    "usd_24h_change": ticker.get("percentage", 0) or 0,
+                    "usd_market_cap": 0,
+                    "usd_24h_vol": ticker.get("quoteVolume", 0) or 0,
+                    "image": "",
+                    "timestamp": datetime.now().isoformat()
+                }
+
+            if result:
+                print(f"✅ Fetched {len(result)} prices from Kraken via CCXT")
+                return {"status": "success", "data": result, "count": len(result), "source": "kraken_ccxt"}
+
+        except Exception as ccxt_err:
+            print(f"⚠️  CCXT fallback failed: {ccxt_err}")
 
         # Last resort: Return error instead of misleading placeholder data
         raise Exception("No price data available from any source")
