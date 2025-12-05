@@ -665,19 +665,24 @@ class JJBotPro:
     def _init_demo_prices(self):
         """Initialize demo prices for offline/demo mode"""
         import random
-        # Realistic starting prices for top 30 coins
-        demo_prices = {
-            "BTC/USDT": 97000.0, "ETH/USDT": 3500.0, "BNB/USDT": 650.0,
-            "XRP/USDT": 1.40, "SOL/USDT": 250.0, "ADA/USDT": 1.00,
-            "DOGE/USDT": 0.40, "TRX/USDT": 0.20, "AVAX/USDT": 45.0,
-            "LINK/USDT": 18.0, "DOT/USDT": 9.0, "POL/USDT": 0.50,
-            "SHIB/USDT": 0.000025, "LTC/USDT": 95.0, "BCH/USDT": 500.0,
-            "UNI/USDT": 12.0, "XLM/USDT": 0.35, "ATOM/USDT": 12.0,
-            "ETC/USDT": 32.0, "FIL/USDT": 6.5, "HBAR/USDT": 0.12,
-            "APT/USDT": 12.0, "ARB/USDT": 1.20, "OP/USDT": 2.50,
-            "NEAR/USDT": 6.50, "INJ/USDT": 35.0, "RUNE/USDT": 6.0,
-            "AAVE/USDT": 180.0, "GRT/USDT": 0.25, "FTM/USDT": 1.10,
+        # Realistic starting prices for top coins (supports both USD and USDT pairs)
+        base_prices = {
+            "BTC": 97000.0, "ETH": 3500.0, "BNB": 650.0,
+            "XRP": 1.40, "SOL": 250.0, "ADA": 1.00,
+            "DOGE": 0.40, "TRX": 0.20, "AVAX": 45.0,
+            "LINK": 18.0, "DOT": 9.0, "POL": 0.50,
+            "SHIB": 0.000025, "LTC": 95.0, "BCH": 500.0,
+            "UNI": 12.0, "XLM": 0.35, "ATOM": 12.0,
+            "ETC": 32.0, "FIL": 6.5, "HBAR": 0.12,
+            "APT": 12.0, "ARB": 1.20, "OP": 2.50,
+            "NEAR": 6.50, "INJ": 35.0, "RUNE": 6.0,
+            "AAVE": 180.0, "GRT": 0.25, "FTM": 1.10,
         }
+        # Build demo_prices dict with both USD and USDT pairs
+        demo_prices = {}
+        for base, price in base_prices.items():
+            demo_prices[f"{base}/USD"] = price
+            demo_prices[f"{base}/USDT"] = price
         self._price_history = {}
         for symbol in self.config.symbols:
             base_price = demo_prices.get(symbol, 100.0)

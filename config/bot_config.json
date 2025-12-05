@@ -1,12 +1,12 @@
 {
   "mode": "paper",
-  "exchange": "binance",
+  "exchange": "kraken",
   "api_key": "",
   "api_secret": "",
   "sandbox": true,
   "symbols": [
-    "BTC/USDT",
-    "ETH/USDT"
+    "BTC/USD",
+    "ETH/USD"
   ],
   "initial_capital": 10000.0,
   "max_position_pct": 0.1,
