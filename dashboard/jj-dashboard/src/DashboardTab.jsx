@@ -252,6 +252,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 <thead>
                   <tr>
                     <th>Symbol</th>
+                    <th>Opened</th>
                     <th className="text-right">Entry</th>
                     <th className="text-right">Current</th>
                     <th className="text-right">P&L</th>
@@ -261,6 +262,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                   {openPositions.map((pos, idx) => (
                     <tr key={idx}>
                       <td className="font-semibold">{pos.symbol}</td>
+                      <td className="text-muted text-sm">
+                        {pos.entry_time ? new Date(pos.entry_time).toLocaleString() : '-'}
+                      </td>
                       <td className="text-right text-muted">${pos.entry_price?.toFixed(2)}</td>
                       <td className="text-right text-muted">${pos.current_price?.toFixed(2)}</td>
                       <td className={`text-right font-semibold ${pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -455,7 +459,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 {recentTrades.map((trade, idx) => (
                   <tr key={idx}>
                     <td className="text-muted text-sm">
-                      {new Date(trade.timestamp).toLocaleTimeString()}
+                      {new Date(trade.timestamp).toLocaleString()}
                     </td>
                     <td className="font-semibold">{trade.symbol}</td>
                     <td>
