@@ -199,10 +199,13 @@ h4 { font-size: 1.125rem; }
 }
 
 .stat-value {
-  font-size: 2rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-change {
@@ -640,7 +643,7 @@ h4 { font-size: 1.125rem; }
   }
 
   .stat-value {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
 
   h1 {
