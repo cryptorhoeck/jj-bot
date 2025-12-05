@@ -25,8 +25,6 @@
     "APE/USD",
     "AAVE/USD",
     "CRV/USD",
-    "MKR/USD",
-    "COMP/USD",
     "SNX/USD",
     "GRT/USD",
     "SAND/USD",
@@ -51,10 +49,12 @@
     "SUSHI/USD",
     "YFI/USD",
     "1INCH/USD",
-    "RNDR/USD",
     "FET/USD",
     "IMX/USD",
-    "APT/USD"
+    "APT/USD",
+    "RNDR/USD",
+    "NEAR/USD",
+    "FTM/USD"
   ],
   "initial_capital": 10000.0,
   "max_position_pct": 0.05,

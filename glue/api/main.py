@@ -607,12 +607,13 @@ async def get_market_live():
                     # Extract base symbol from pairs like "BTC/USD" -> "BTC"
                     symbols = [s.split('/')[0] for s in config.get('symbols', [])]
             except:
+                # Verified Kraken USD pairs
                 symbols = [
                     "BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK", "ATOM",
-                    "UNI", "LTC", "BCH", "XLM", "ALGO", "MATIC", "NEAR", "FIL", "APE", "AAVE",
-                    "CRV", "MKR", "COMP", "SNX", "GRT", "SAND", "MANA", "AXS", "ENJ", "CHZ",
-                    "BAT", "ZEC", "DASH", "EOS", "XTZ", "TRX", "ETC", "SHIB", "PEPE", "FTM",
-                    "OP", "ARB", "INJ", "RUNE", "KAVA", "OCEAN", "STORJ", "SUSHI", "YFI", "1INCH"
+                    "UNI", "LTC", "BCH", "XLM", "ALGO", "POL", "FIL", "APE", "AAVE", "CRV",
+                    "SNX", "GRT", "SAND", "MANA", "AXS", "ENJ", "BAT", "ZEC", "DASH", "EOS",
+                    "XTZ", "TRX", "ETC", "SHIB", "PEPE", "OP", "ARB", "INJ", "RUNE", "KAVA",
+                    "STORJ", "SUSHI", "YFI", "1INCH", "FET", "IMX", "APT", "RNDR", "NEAR", "FTM"
                 ]
 
         result = {}
