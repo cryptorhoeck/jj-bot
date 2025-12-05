@@ -40,13 +40,13 @@ function DelayedNumberInput({ value, onChange, className, step, min, max, multip
   );
 }
 
-// Available symbols for selection
+// Available symbols for selection (verified Kraken USD pairs)
 const AVAILABLE_SYMBOLS = [
-  'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'AVAX', 'LINK',
-  'DOT', 'POL', 'SHIB', 'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL',
-  'HBAR', 'APT', 'ARB', 'OP', 'NEAR', 'INJ', 'RUNE', 'AAVE', 'GRT', 'FTM',
-  'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'CRV', 'SNX', 'COMP', 'MKR',
-  'SUSHI', 'YFI', '1INCH', 'BAL', 'LDO', 'RPL', 'SSV', 'GMX', 'DYDX', 'WOO'
+  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+  'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'POL', 'FIL', 'APE', 'AAVE', 'CRV',
+  'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'BAT', 'ZEC', 'DASH', 'EOS',
+  'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'OP', 'ARB', 'INJ', 'RUNE', 'KAVA',
+  'STORJ', 'SUSHI', 'YFI', '1INCH', 'FET', 'IMX', 'APT', 'RNDR', 'NEAR', 'FTM'
 ];
 
 export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, onBotStatusChange }) {
@@ -159,7 +159,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       if (data.config) {
         setProConfig(prev => ({ ...prev, ...data.config }));
         if (data.config.symbols) {
-          setSelectedSymbols(data.config.symbols.map(s => s.replace('/USDT', '')));
+          setSelectedSymbols(data.config.symbols.map(s => s.replace('/USD', '')));
         }
       }
     } catch (error) {
@@ -234,8 +234,8 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       : [...selectedSymbols, symbol];
     setSelectedSymbols(newSymbols);
 
-    // Save to config as SYMBOL/USDT format
-    const symbolsWithPair = newSymbols.map(s => `${s}/USDT`);
+    // Save to config as SYMBOL/USD format
+    const symbolsWithPair = newSymbols.map(s => `${s}/USD`);
     saveConfig({ symbols: symbolsWithPair });
   };
 
@@ -912,7 +912,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             <button
               onClick={() => {
                 setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 10));
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 10).map(s => `${s}/USDT`) });
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 10).map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >
@@ -921,7 +921,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             <button
               onClick={() => {
                 setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 25));
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 25).map(s => `${s}/USDT`) });
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 25).map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >
@@ -930,7 +930,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             <button
               onClick={() => {
                 setSelectedSymbols(AVAILABLE_SYMBOLS);
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.map(s => `${s}/USDT`) });
+                saveConfig({ symbols: AVAILABLE_SYMBOLS.map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >
