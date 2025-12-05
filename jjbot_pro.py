@@ -297,6 +297,9 @@ class JJBotPro:
         db_path = project_root / "data" / "trades.db"
         state_file = project_root / "data" / "bot_state.json"
 
+        logger.info(f"Looking for state file at: {state_file}")
+        logger.info(f"State file exists: {state_file.exists()}")
+
         # Primary: Load full state from bot_state.json
         saved_equity = None
         saved_peak_equity = None
@@ -338,6 +341,8 @@ class JJBotPro:
                     logger.info(f"Loaded from state file: equity=${saved_equity}, IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
             except Exception as e:
                 logger.warning(f"Failed to load from state file: {e}")
+        else:
+            logger.warning(f"No state file found at {state_file} - starting fresh")
 
         logger.info(f"Looking for trades database at: {db_path}")
 
@@ -497,23 +502,29 @@ class JJBotPro:
         # Use absolute path relative to this file (same as _load_state does)
         project_root = Path(__file__).parent
         state_file = project_root / "data" / "bot_state.json"
-        os.makedirs(project_root / "data", exist_ok=True)
+
         try:
+            os.makedirs(project_root / "data", exist_ok=True)
+            logger.info(f"Saving state to: {state_file}")
+
             state = {
                 "equity": self.equity,
                 "peak_equity": self.peak_equity,
                 "daily_pnl": self.daily_pnl,
                 "daily_start_equity": self.daily_start_equity,
-                "stats": self.stats,
+                "stats": self.stats.copy(),  # Make a copy to avoid modifying original
                 "last_updated": datetime.now().isoformat()
             }
             # Handle datetime in stats
             if state["stats"].get("start_time"):
                 state["stats"]["start_time"] = state["stats"]["start_time"].isoformat() if isinstance(state["stats"]["start_time"], datetime) else state["stats"]["start_time"]
+
             with open(state_file, "w") as f:
                 json.dump(state, f, indent=2)
+
+            logger.info(f"State saved successfully: equity=${self.equity:.2f}, IQ={self.stats.get('trading_iq', 0)}")
         except Exception as e:
-            logger.warning(f"Failed to save state: {e}")
+            logger.error(f"FAILED to save state: {e}", exc_info=True)
 
     def _save_mode_to_config(self, mode: str):
         """Save mode to bot_config.json so next start uses correct mode"""
