@@ -84,7 +84,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
             </div>
           ))}
         </div>
-        <div className="card p-6">
+        <div className="card p-4">
           <div className="skeleton h-6 w-40 mb-4" />
           <div className="skeleton h-64 w-full rounded-lg" />
         </div>
@@ -118,7 +118,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Performance Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {/* Current Equity */}
@@ -180,7 +180,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
 
       {/* Equity Curve */}
       {equityCurve.length > 0 && (
-        <div className="card p-6">
+        <div className="card p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -233,9 +233,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
       )}
 
       {/* Two Column Layout - Open Positions left, Risk + IQ stacked on right */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-4">
         {/* Open Positions - Full height on left */}
-        <div className="card p-6">
+        <div className="card p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <svg className="w-5 h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -288,7 +288,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         </div>
 
         {/* Right column - Risk Management + Trading IQ stacked */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
           {/* Risk Management - Compact */}
           {riskStatus && riskStatus.status === 'success' && (
             <div className={`card p-4 ${riskStatus.risk_status?.circuit_breaker_active ? 'card-danger' : ''}`}>
@@ -432,7 +432,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
       </div>
 
       {/* Recent Trades */}
-      <div className="card p-6">
+      <div className="card p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
