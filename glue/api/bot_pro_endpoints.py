@@ -106,7 +106,7 @@ async def get_bot_status():
             "winning_trades": bot.stats["winning_trades"],
             "total_pnl": bot.stats["total_pnl"],
             "daily_pnl": bot.daily_pnl,
-            "start_time": bot.stats["start_time"].isoformat() if bot.stats["start_time"] else None,
+            "start_time": bot.stats["start_time"].isoformat() if hasattr(bot.stats.get("start_time"), 'isoformat') else bot.stats.get("start_time"),
             "win_rate": (bot.stats["winning_trades"] / max(bot.stats["total_trades"], 1)) * 100,
         })
 
