@@ -1,6 +1,45 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+// Input component that only saves on blur or Enter (not on every keystroke)
+function DelayedNumberInput({ value, onChange, className, step, min, max, multiplier = 1, decimals = 0 }) {
+  const [localValue, setLocalValue] = useState(
+    multiplier !== 1 ? (value * multiplier).toFixed(decimals) : value
+  );
+
+  // Sync local value when external value changes (e.g., from server)
+  useEffect(() => {
+    const displayValue = multiplier !== 1 ? (value * multiplier).toFixed(decimals) : value;
+    setLocalValue(displayValue);
+  }, [value, multiplier, decimals]);
+
+  const commitValue = () => {
+    const parsed = parseFloat(localValue);
+    if (!isNaN(parsed)) {
+      const finalValue = multiplier !== 1 ? parsed / multiplier : parsed;
+      onChange(finalValue);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      step={step}
+      min={min}
+      max={max}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={commitValue}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.target.blur();
+        }
+      }}
+      className={className}
+    />
+  );
+}
+
 // Available symbols for selection
 const AVAILABLE_SYMBOLS = [
   'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'ADA', 'DOGE', 'TRX', 'AVAX', 'LINK',
@@ -652,30 +691,29 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="input-label">Initial Capital ($)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   value={proConfig.initial_capital}
-                  onChange={(e) => updateConfig('initial_capital', parseFloat(e.target.value))}
+                  onChange={(val) => updateConfig('initial_capital', val)}
                   className="input"
                 />
               </div>
               <div>
                 <label className="input-label">Position Size (%)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   step="1"
-                  value={(proConfig.max_position_pct * 100).toFixed(0)}
-                  onChange={(e) => updateConfig('max_position_pct', parseFloat(e.target.value) / 100)}
+                  value={proConfig.max_position_pct}
+                  multiplier={100}
+                  decimals={0}
+                  onChange={(val) => updateConfig('max_position_pct', val)}
                   className="input"
                 />
                 <p className="text-xs text-muted mt-1">${(proConfig.initial_capital * proConfig.max_position_pct).toFixed(0)} per trade</p>
               </div>
               <div>
                 <label className="input-label">Max Concurrent Positions</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   value={proConfig.max_positions}
-                  onChange={(e) => updateConfig('max_positions', parseInt(e.target.value))}
+                  onChange={(val) => updateConfig('max_positions', Math.round(val))}
                   className="input"
                 />
               </div>
@@ -688,41 +726,45 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="input-label">Stop Loss (%)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   step="0.1"
-                  value={(proConfig.stop_loss_pct * 100).toFixed(1)}
-                  onChange={(e) => updateConfig('stop_loss_pct', parseFloat(e.target.value) / 100)}
+                  value={proConfig.stop_loss_pct}
+                  multiplier={100}
+                  decimals={1}
+                  onChange={(val) => updateConfig('stop_loss_pct', val)}
                   className="input"
                 />
               </div>
               <div>
                 <label className="input-label">Take Profit (%)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   step="0.1"
-                  value={(proConfig.take_profit_pct * 100).toFixed(1)}
-                  onChange={(e) => updateConfig('take_profit_pct', parseFloat(e.target.value) / 100)}
+                  value={proConfig.take_profit_pct}
+                  multiplier={100}
+                  decimals={1}
+                  onChange={(val) => updateConfig('take_profit_pct', val)}
                   className="input"
                 />
               </div>
               <div>
                 <label className="input-label">Max Daily Loss (%)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   step="0.1"
-                  value={(proConfig.max_daily_loss_pct * 100).toFixed(1)}
-                  onChange={(e) => updateConfig('max_daily_loss_pct', parseFloat(e.target.value) / 100)}
+                  value={proConfig.max_daily_loss_pct}
+                  multiplier={100}
+                  decimals={1}
+                  onChange={(val) => updateConfig('max_daily_loss_pct', val)}
                   className="input"
                 />
               </div>
               <div>
                 <label className="input-label">Max Drawdown (%)</label>
-                <input
-                  type="number"
+                <DelayedNumberInput
                   step="0.1"
-                  value={(proConfig.max_drawdown_pct * 100).toFixed(1)}
-                  onChange={(e) => updateConfig('max_drawdown_pct', parseFloat(e.target.value) / 100)}
+                  value={proConfig.max_drawdown_pct}
+                  multiplier={100}
+                  decimals={1}
+                  onChange={(val) => updateConfig('max_drawdown_pct', val)}
                   className="input"
                 />
               </div>
