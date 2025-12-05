@@ -54,7 +54,7 @@
     "APT/USD",
     "BLUR/USD",
     "NEAR/USD",
-    "FTM/USD"
+    "KSM/USD"
   ],
   "initial_capital": 10000.0,
   "max_position_pct": 0.05,

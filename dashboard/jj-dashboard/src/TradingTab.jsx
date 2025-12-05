@@ -46,7 +46,7 @@ const AVAILABLE_SYMBOLS = [
   'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'POL', 'FIL', 'APE', 'AAVE', 'CRV',
   'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'BAT', 'ZEC', 'DASH', 'FLOW',
   'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'OP', 'ARB', 'INJ', 'RUNE', 'KAVA',
-  'STORJ', 'SUSHI', 'YFI', '1INCH', 'FET', 'IMX', 'APT', 'BLUR', 'NEAR', 'FTM'
+  'STORJ', 'SUSHI', 'YFI', '1INCH', 'FET', 'IMX', 'APT', 'BLUR', 'NEAR', 'KSM'
 ];
 
 export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, onBotStatusChange }) {
