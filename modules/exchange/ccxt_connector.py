@@ -313,9 +313,24 @@ class CCXTConnector:
             if not self.exchange:
                 await self.connect()
 
-            tickers = await asyncio.to_thread(
-                self.exchange.fetch_tickers, symbols
-            )
+            # Try fetching all at once first
+            try:
+                tickers = await asyncio.to_thread(
+                    self.exchange.fetch_tickers, symbols
+                )
+            except Exception as batch_err:
+                # If batch fetch fails (invalid symbol), fetch one by one
+                logger.warning(f"Batch ticker fetch failed, trying individual: {batch_err}")
+                tickers = {}
+                for symbol in (symbols or []):
+                    try:
+                        ticker = await asyncio.to_thread(
+                            self.exchange.fetch_ticker, symbol
+                        )
+                        tickers[symbol] = ticker
+                    except Exception as sym_err:
+                        logger.debug(f"Skipping invalid symbol {symbol}: {sym_err}")
+                        continue
 
             result = {}
             for symbol, ticker in tickers.items():
