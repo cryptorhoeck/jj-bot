@@ -10,10 +10,25 @@ const AVAILABLE_SYMBOLS = [
   'SUSHI', 'YFI', '1INCH', 'BAL', 'LDO', 'RPL', 'SSV', 'GMX', 'DYDX', 'WOO'
 ];
 
-export function TradingTab({ darkMode, API_BASE, learningData }) {
-  const [botRunning, setBotRunning] = useState(false);
+export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, onBotStatusChange }) {
+  // Use shared state from App.jsx when available, otherwise manage locally
+  const [botRunning, setBotRunning] = useState(sharedBotStatus?.running || false);
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('control'); // control, config, symbols, strategies
+
+  // Sync with shared state when it changes
+  useEffect(() => {
+    if (sharedBotStatus) {
+      setBotRunning(sharedBotStatus.running || false);
+      if (sharedBotStatus.training) {
+        setTrainingProgress(sharedBotStatus.training);
+      }
+      setTradingIQ({
+        iq: sharedBotStatus.trading_iq || 0,
+        level: sharedBotStatus.expertise_level || 'Untrained'
+      });
+    }
+  }, [sharedBotStatus]);
 
   // Pro config state
   const [proConfig, setProConfig] = useState({
@@ -43,10 +58,13 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
   const [selectedSymbols, setSelectedSymbols] = useState([]);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
-  const [trainingProgress, setTrainingProgress] = useState(null);
+  const [trainingProgress, setTrainingProgress] = useState(sharedBotStatus?.training || null);
 
   // Persistent Trading IQ and training history state
-  const [tradingIQ, setTradingIQ] = useState({ iq: 0, level: 'Untrained' });
+  const [tradingIQ, setTradingIQ] = useState({
+    iq: sharedBotStatus?.trading_iq || 0,
+    level: sharedBotStatus?.expertise_level || 'Untrained'
+  });
   const [trainingHistory, setTrainingHistory] = useState({
     training_sessions: 0,
     total_training_episodes: 0,
@@ -192,6 +210,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
         toast.success('Paper trading started!');
+        onBotStatusChange?.(); // Notify App.jsx to refresh status
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to start bot');
       }
@@ -221,6 +240,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
         } else {
           toast.success('Bot stopped');
         }
+        onBotStatusChange?.(); // Notify App.jsx to refresh status
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to stop');
       }
@@ -250,6 +270,7 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
       if (data.status === 'started') {
         setBotRunning(true);
         toast.success(`RL training started for ${episodes} episodes. This may take a while...`);
+        onBotStatusChange?.(); // Notify App.jsx to refresh status
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to start training');
       }

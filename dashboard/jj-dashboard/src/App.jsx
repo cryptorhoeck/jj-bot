@@ -574,6 +574,8 @@ function App() {
               darkMode={darkMode}
               API_BASE={API_BASE}
               learningData={learningData}
+              sharedBotStatus={botStatus}
+              onBotStatusChange={checkBotStatus}
             />
           )}
 
