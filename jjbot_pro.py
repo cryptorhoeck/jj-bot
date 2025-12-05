@@ -827,6 +827,10 @@ class JJBotPro:
         if self._demo_mode:
             logger.info("Running in DEMO mode - prices are simulated")
 
+        # Track time for periodic saves
+        last_save_time = datetime.now()
+        save_interval = 300  # Save state every 5 minutes
+
         while self.running:
             try:
                 # Update prices - demo mode uses simulation, live mode uses REST API fallback
@@ -858,6 +862,12 @@ class JJBotPro:
 
                 # Log status
                 self._log_status()
+
+                # Periodic state save (every 5 minutes)
+                if (datetime.now() - last_save_time).total_seconds() >= save_interval:
+                    self._save_state()
+                    last_save_time = datetime.now()
+                    logger.debug("Periodic state save completed")
 
                 # Wait for next cycle
                 await asyncio.sleep(self.config.analysis_interval_seconds)
@@ -1293,10 +1303,15 @@ class JJBotPro:
                     f"Win Rate: {metrics.get('win_rate', 0):.1%}"
                 )
 
-            # Save periodically
+            # Save periodically (model + state with IQ)
             if episode % 50 == 0 and episode > 0:
                 os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
                 self.rl_agent.save(self.config.rl_model_path)
+                # Also save IQ progress so it persists if training is interrupted
+                self.stats["trading_iq"] = self.training_progress["trading_iq"]
+                self.stats["expertise_level"] = self.training_progress["expertise_level"]
+                self._save_state()
+                logger.info(f"Checkpoint saved at episode {episode} - IQ: {self.stats['trading_iq']}")
 
         # Always save model at end (whether completed or stopped)
         os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
@@ -1343,6 +1358,11 @@ class JJBotPro:
             for symbol in list(self.positions.keys()):
                 price = self.prices.get(symbol, self.positions[symbol].entry_price)
                 await self._close_position(symbol, price, "shutdown")
+
+        # CRITICAL: Save state before shutdown
+        logger.info("Saving state before shutdown...")
+        self._save_state()
+        logger.info(f"State saved - Equity: ${self.equity:.2f}, IQ: {self.stats.get('trading_iq', 0)}")
 
         # Cleanup
         if self.data_feed:
