@@ -182,15 +182,16 @@ export function TradingTab({ darkMode, API_BASE, learningData }) {
     saveConfig({ symbols: symbolsWithPair });
   };
 
-  // Start bot
+  // Start bot in paper trading mode
   const startBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/pro/start`, { method: 'POST' });
+      // Explicitly request paper mode to ensure we're trading, not training
+      const response = await fetch(`${API_BASE}/api/pro/start?mode=paper`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
-        toast.success('Trading bot started!');
+        toast.success('Paper trading started!');
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to start bot');
       }
