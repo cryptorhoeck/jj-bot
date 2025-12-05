@@ -47,13 +47,12 @@ def init_symbols_db():
         )
     """)
 
-    # Insert default symbols if table is empty
+    # Insert default symbols if table is empty (verified Kraken USD pairs)
     cursor.execute("SELECT COUNT(*) FROM symbols")
     if cursor.fetchone()[0] == 0:
         default_symbols = [
             ("BTC", "bitcoin", 1, 0),
             ("ETH", "ethereum", 1, 0),
-            ("BNB", "binancecoin", 1, 0),
             ("SOL", "solana", 1, 0),
             ("XRP", "ripple", 1, 0),
             ("ADA", "cardano", 1, 0),
@@ -63,14 +62,25 @@ def init_symbols_db():
             ("LINK", "chainlink", 1, 0),
             ("DOT", "polkadot", 1, 0),
             ("POL", "polygon", 1, 0),
-            ("WBTC", "wrapped-bitcoin", 1, 0),
             ("SHIB", "shiba-inu", 1, 0),
             ("LTC", "litecoin", 1, 0),
             ("BCH", "bitcoin-cash", 1, 0),
             ("UNI", "uniswap", 1, 0),
             ("XLM", "stellar", 1, 0),
             ("ATOM", "cosmos", 1, 0),
-            ("ETC", "ethereum-classic", 1, 0)
+            ("ETC", "ethereum-classic", 1, 0),
+            ("ALGO", "algorand", 1, 0),
+            ("FIL", "filecoin", 1, 0),
+            ("AAVE", "aave", 1, 0),
+            ("GRT", "the-graph", 1, 0),
+            ("SAND", "the-sandbox", 1, 0),
+            ("MANA", "decentraland", 1, 0),
+            ("APE", "apecoin", 1, 0),
+            ("CRV", "curve-dao-token", 1, 0),
+            ("SNX", "synthetix-network-token", 1, 0),
+            ("BAT", "basic-attention-token", 1, 0),
+            ("ENJ", "enjincoin", 1, 0),
+            ("STORJ", "storj", 1, 0)
         ]
 
         cursor.executemany(

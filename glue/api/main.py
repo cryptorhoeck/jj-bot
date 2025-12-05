@@ -643,18 +643,26 @@ async def get_market_live():
         try:
             import ccxt
             kraken = ccxt.kraken()
+            kraken.load_markets()
 
-            # Convert symbols to full pairs (e.g., "BTC" -> "BTC/USD")
-            full_pairs = [f"{s}/USD" for s in symbols]
+            # Filter to only valid Kraken symbols (skip stocks like AAPL, TSLA)
+            valid_pairs = []
+            for s in symbols:
+                pair = f"{s}/USD"
+                if pair in kraken.symbols:
+                    valid_pairs.append(pair)
+
+            if not valid_pairs:
+                raise Exception("No valid Kraken symbols found")
 
             # Batch fetch tickers
             try:
-                tickers = kraken.fetch_tickers(full_pairs)
+                tickers = kraken.fetch_tickers(valid_pairs)
             except Exception as batch_err:
                 # If batch fails, try individual fetches
                 print(f"⚠️  Batch ticker fetch failed: {batch_err}, trying individual...")
                 tickers = {}
-                for pair in full_pairs:
+                for pair in valid_pairs:
                     try:
                         ticker = kraken.fetch_ticker(pair)
                         tickers[pair] = ticker
