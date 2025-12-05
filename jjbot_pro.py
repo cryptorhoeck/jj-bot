@@ -290,14 +290,18 @@ class JJBotPro:
         )
 
     def _load_state(self) -> Optional[Dict]:
-        """Load saved bot state from trades database and bot_state.json for IQ"""
+        """Load saved bot state from bot_state.json (primary) and trades database (fallback)"""
         import sqlite3
         # Use absolute path relative to this file (same as engine.py does)
         project_root = Path(__file__).parent
         db_path = project_root / "data" / "trades.db"
         state_file = project_root / "data" / "bot_state.json"
 
-        # First, try to load IQ and training history from bot_state.json
+        # Primary: Load full state from bot_state.json
+        saved_equity = None
+        saved_peak_equity = None
+        saved_daily_pnl = 0.0
+        saved_daily_start_equity = None
         saved_iq = 0
         saved_level = "Untrained"
         saved_training_history = {
@@ -308,10 +312,17 @@ class JJBotPro:
             "avg_profit_factor": 0.0,
             "avg_reward": 0.0,
         }
+
         if state_file.exists():
             try:
                 with open(state_file) as f:
                     saved_data = json.load(f)
+                    # Load equity and related fields
+                    saved_equity = saved_data.get("equity")
+                    saved_peak_equity = saved_data.get("peak_equity")
+                    saved_daily_pnl = saved_data.get("daily_pnl", 0.0)
+                    saved_daily_start_equity = saved_data.get("daily_start_equity")
+
                     saved_stats = saved_data.get("stats", {})
                     saved_iq = saved_stats.get("trading_iq", 0)
                     saved_level = saved_stats.get("expertise_level", "Untrained")
@@ -324,20 +335,21 @@ class JJBotPro:
                         "avg_profit_factor": saved_stats.get("avg_profit_factor", 0.0),
                         "avg_reward": saved_stats.get("avg_reward", 0.0),
                     }
-                    logger.info(f"Loaded IQ from state file: IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
+                    logger.info(f"Loaded from state file: equity=${saved_equity}, IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
             except Exception as e:
-                logger.warning(f"Failed to load IQ from state file: {e}")
+                logger.warning(f"Failed to load from state file: {e}")
 
         logger.info(f"Looking for trades database at: {db_path}")
 
         if not db_path.exists():
-            # If we have IQ but no trades, return state with just IQ
-            if saved_iq > 0 or saved_training_history["training_sessions"] > 0:
+            # If we have saved state (equity or IQ), use it
+            if saved_equity is not None or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
+                equity = saved_equity if saved_equity is not None else self.config.initial_capital
                 return {
-                    "equity": self.config.initial_capital,
-                    "peak_equity": self.config.initial_capital,
-                    "daily_pnl": 0.0,
-                    "daily_start_equity": self.config.initial_capital,
+                    "equity": equity,
+                    "peak_equity": saved_peak_equity if saved_peak_equity is not None else equity,
+                    "daily_pnl": saved_daily_pnl,
+                    "daily_start_equity": saved_daily_start_equity if saved_daily_start_equity is not None else equity,
                     "stats": {
                         "total_trades": 0,
                         "winning_trades": 0,
@@ -368,15 +380,18 @@ class JJBotPro:
 
             conn.close()
 
-            if total_trades > 0 or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
-                # Calculate equity from initial capital + total P&L
-                equity = self.config.initial_capital + total_pnl
+            if total_trades > 0 or saved_equity is not None or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
+                # Use saved equity if available, otherwise calculate from initial capital + P&L
+                if saved_equity is not None:
+                    equity = saved_equity
+                else:
+                    equity = self.config.initial_capital + total_pnl
 
                 state = {
                     "equity": equity,
-                    "peak_equity": max(equity, self.config.initial_capital),
-                    "daily_pnl": 0.0,  # Reset daily on restart
-                    "daily_start_equity": equity,
+                    "peak_equity": saved_peak_equity if saved_peak_equity is not None else max(equity, self.config.initial_capital),
+                    "daily_pnl": saved_daily_pnl,
+                    "daily_start_equity": saved_daily_start_equity if saved_daily_start_equity is not None else equity,
                     "stats": {
                         "total_trades": total_trades,
                         "winning_trades": winning_trades,
