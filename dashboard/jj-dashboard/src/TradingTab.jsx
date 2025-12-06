@@ -874,6 +874,42 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             </p>
           </div>
 
+          {/* Training Settings */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">📚 Training Settings</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Training Episodes</p>
+                <p className="text-sm text-muted">More episodes = better learning (recommended: 1000+)</p>
+              </div>
+              <DelayedNumberInput
+                value={proConfig.train_episodes || 1000}
+                onChange={(val) => updateConfig('train_episodes', Math.max(100, Math.round(val)))}
+                className="input w-28 text-right"
+                min={100}
+                step={100}
+              />
+            </div>
+          </div>
+
+          {/* Reset to Defaults */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">🔄 Reset Settings</h3>
+                <p className="text-sm text-muted">
+                  Restore recommended defaults: 2% position size, 2:1 risk/reward, 60% confidence threshold
+                </p>
+              </div>
+              <button
+                onClick={resetToDefaults}
+                className="btn bg-warning/20 text-warning hover:bg-warning/30 px-6 py-2"
+              >
+                Reset to Defaults
+              </button>
+            </div>
+          </div>
+
           {/* Trading IQ - Always visible */}
           <div className={`card p-6 ${trainingProgress?.is_training ? 'card-info' : ''}`}>
             <div className="flex items-center justify-between mb-4">
@@ -1077,25 +1113,6 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                 </label>
               </div>
 
-              {/* Training Episodes */}
-              {proConfig.use_rl_agent && (
-                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="font-semibold">📚 Training Episodes</p>
-                      <p className="text-sm text-muted">More episodes = better learning (recommended: 1000+)</p>
-                    </div>
-                    <DelayedNumberInput
-                      value={proConfig.train_episodes || 500}
-                      onChange={(val) => updateConfig('train_episodes', Math.max(100, Math.round(val)))}
-                      className="input w-24 text-right"
-                      min={100}
-                      step={100}
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Edge Strategies */}
               <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
                 <div>
@@ -1129,24 +1146,6 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
                 </label>
               </div>
-            </div>
-          </div>
-
-          {/* Reset to Defaults */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">🔄 Reset Settings</h3>
-                <p className="text-sm text-muted">
-                  Restore recommended defaults: 2% position size, 2:1 risk/reward, 60% confidence threshold
-                </p>
-              </div>
-              <button
-                onClick={resetToDefaults}
-                className="btn bg-warning/20 text-warning hover:bg-warning/30 px-6 py-2"
-              >
-                Reset to Defaults
-              </button>
             </div>
           </div>
 
