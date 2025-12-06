@@ -125,8 +125,15 @@ async def lifespan(app: FastAPI):
     # Shutdown (add cleanup here if needed)
     print("👋 Shutting down API...")
 
+# Import version from config
+try:
+    from config import APP_VERSION, APP_NAME
+except ImportError:
+    APP_VERSION = "3.0.0"
+    APP_NAME = "JJ-Bot"
+
 # Create FastAPI app with lifespan
-app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)
+app = FastAPI(title=f"{APP_NAME} API v{APP_VERSION}", lifespan=lifespan)
 
 # Add CORS middleware for dashboard - restricted to localhost for security
 app.add_middleware(
@@ -167,7 +174,7 @@ simulator_process = None
 # ===== ROOT ENDPOINT =====
 @app.get("/")
 async def root():
-    return {"message": "JJ-Bot API v2.1", "status": "running"}
+    return {"message": f"{APP_NAME} API v{APP_VERSION}", "status": "running", "version": APP_VERSION}
 
 # ===== TRADES ENDPOINTS - Uses unified bot when running =====
 @app.get("/api/trades")
@@ -389,6 +396,16 @@ async def get_market_prices():
 @app.get("/api/system/health")
 async def system_health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/system/version")
+async def system_version():
+    """Get system version information"""
+    return {
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "api_title": app.title,
+        "changelog": "See CHANGELOG.md for full version history"
+    }
 
 # ===== AUTHENTICATION =====
 @app.get("/api/auth/status")
@@ -1033,7 +1050,7 @@ async def websocket_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    print("JJ-Bot API v2.1 starting...")
+    print(f"{APP_NAME} API v{APP_VERSION} starting...")
     print("API: http://127.0.0.1:8000")
     print("Dashboard: http://localhost:5173")
     uvicorn.run(

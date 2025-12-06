@@ -26,6 +26,13 @@ from modules.exchange import create_connector, create_live_feed, CCXTConnector, 
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 from modules.event_bus import event_bus
 
+# Import version
+try:
+    from config import APP_VERSION, APP_NAME
+except ImportError:
+    APP_VERSION = "3.0.0"
+    APP_NAME = "JJ-Bot"
+
 # RL modules are optional (require PyTorch)
 try:
     from modules.rl import TradingEnvironment, create_agent, PPOAgent
@@ -581,7 +588,8 @@ class JJBotPro:
     async def start(self):
         """Start the trading bot"""
         logger.info("=" * 50)
-        logger.info("JJ-Bot Pro Starting...")
+        logger.info(f"{APP_NAME} Pro v{APP_VERSION} Starting...")
+        logger.info("=" * 50)
         logger.info(f"Mode: {self.config.mode}")
         logger.info(f"Symbols: {self.config.symbols}")
         logger.info(f"Capital: ${self.config.initial_capital:,.2f}")
