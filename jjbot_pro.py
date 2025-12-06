@@ -1276,32 +1276,38 @@ class JJBotPro:
         avg_reward = self.training_metrics["total_reward"] / episodes
 
         # === SAMPLE SIZE MULTIPLIER ===
-        # Small samples are statistically meaningless
-        # Need 500+ episodes for full credit, scales down harshly below that
-        if episodes < 50:
-            sample_multiplier = 0.3  # Barely started
-        elif episodes < 100:
-            sample_multiplier = 0.5  # Still learning
-        elif episodes < 250:
-            sample_multiplier = 0.7  # Getting there
+        # Like becoming a doctor - you don't read 1 book and become an expert
+        # Need THOUSANDS of episodes and trades for expertise
+        if episodes < 100:
+            sample_multiplier = 0.1  # Just started - barely knows anything
         elif episodes < 500:
-            sample_multiplier = 0.85  # Decent sample
+            sample_multiplier = 0.2  # Student level
         elif episodes < 1000:
-            sample_multiplier = 0.95  # Good sample
+            sample_multiplier = 0.35  # Intern level
+        elif episodes < 2500:
+            sample_multiplier = 0.5  # Resident level
+        elif episodes < 5000:
+            sample_multiplier = 0.7  # Junior professional
+        elif episodes < 10000:
+            sample_multiplier = 0.85  # Experienced professional
         else:
-            sample_multiplier = 1.0  # Full credit
+            sample_multiplier = 1.0  # Master level (10000+ episodes)
 
-        # Also penalize low trade counts (need actual trades, not just episodes)
-        if total_trades < 100:
-            trade_multiplier = 0.4
-        elif total_trades < 500:
-            trade_multiplier = 0.6
+        # Also penalize low trade counts - need MANY real trades
+        if total_trades < 500:
+            trade_multiplier = 0.15  # Barely any real experience
         elif total_trades < 1000:
-            trade_multiplier = 0.8
+            trade_multiplier = 0.25  # Still a novice
+        elif total_trades < 2500:
+            trade_multiplier = 0.4  # Learning
         elif total_trades < 5000:
-            trade_multiplier = 0.9
+            trade_multiplier = 0.55  # Getting experienced
+        elif total_trades < 10000:
+            trade_multiplier = 0.7  # Experienced
+        elif total_trades < 25000:
+            trade_multiplier = 0.85  # Very experienced
         else:
-            trade_multiplier = 1.0
+            trade_multiplier = 1.0  # Master trader (25000+ trades)
 
         # Combined sample penalty
         sample_penalty = sample_multiplier * trade_multiplier
