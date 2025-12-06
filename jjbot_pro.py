@@ -1276,38 +1276,38 @@ class JJBotPro:
         avg_reward = self.training_metrics["total_reward"] / episodes
 
         # === SAMPLE SIZE MULTIPLIER ===
-        # Like becoming a doctor - you don't read 1 book and become an expert
-        # Need THOUSANDS of episodes and trades for expertise
-        if episodes < 100:
-            sample_multiplier = 0.1  # Just started - barely knows anything
-        elif episodes < 500:
-            sample_multiplier = 0.2  # Student level
-        elif episodes < 1000:
-            sample_multiplier = 0.35  # Intern level
-        elif episodes < 2500:
-            sample_multiplier = 0.5  # Resident level
+        # 5x HARDER than human expert (10,000 hour rule = 5 years, ~10,000 trades)
+        # Human expert: 5 years / 10,000 trades -> AI must do 5x that
+        # Based on real research: day traders ~1,200 trades/year, 5-year expert ~6,000-12,000 trades
+        if episodes < 2500:
+            sample_multiplier = 0.05  # Just started (< 6 months human equivalent)
         elif episodes < 5000:
-            sample_multiplier = 0.7  # Junior professional
-        elif episodes < 10000:
-            sample_multiplier = 0.85  # Experienced professional
+            sample_multiplier = 0.10  # Student (< 1 year)
+        elif episodes < 12500:
+            sample_multiplier = 0.20  # Intern (< 2.5 years)
+        elif episodes < 25000:
+            sample_multiplier = 0.35  # Resident (< 5 years - human expert level)
+        elif episodes < 50000:
+            sample_multiplier = 0.50  # 5x human expert threshold
         else:
-            sample_multiplier = 1.0  # Master level (10000+ episodes)
+            sample_multiplier = 1.0  # True AI Master (50,000+ episodes)
 
-        # Also penalize low trade counts - need MANY real trades
-        if total_trades < 500:
-            trade_multiplier = 0.15  # Barely any real experience
-        elif total_trades < 1000:
-            trade_multiplier = 0.25  # Still a novice
-        elif total_trades < 2500:
-            trade_multiplier = 0.4  # Learning
-        elif total_trades < 5000:
-            trade_multiplier = 0.55  # Getting experienced
-        elif total_trades < 10000:
-            trade_multiplier = 0.7  # Experienced
+        # Trade counts - 5x harder than human expert (~10,000-12,000 career trades)
+        # Need 125,000+ trades for full credit (5x × 25,000 benchmark)
+        if total_trades < 5000:
+            trade_multiplier = 0.05  # Barely started
+        elif total_trades < 12500:
+            trade_multiplier = 0.10  # Novice
         elif total_trades < 25000:
-            trade_multiplier = 0.85  # Very experienced
+            trade_multiplier = 0.20  # Learning
+        elif total_trades < 50000:
+            trade_multiplier = 0.35  # Getting experienced
+        elif total_trades < 100000:
+            trade_multiplier = 0.50  # Experienced
+        elif total_trades < 125000:
+            trade_multiplier = 0.70  # Very experienced
         else:
-            trade_multiplier = 1.0  # Master trader (25000+ trades)
+            trade_multiplier = 1.0  # Master trader (125,000+ trades - 5x human expert)
 
         # Combined sample penalty
         sample_penalty = sample_multiplier * trade_multiplier
