@@ -1233,7 +1233,7 @@ class JJBotPro:
         )
 
     def _calculate_trading_iq(self):
-        """Calculate Trading IQ based on cumulative performance"""
+        """Calculate Trading IQ based on cumulative performance (mimics human IQ scale)"""
         if self.training_metrics["episode_count"] == 0:
             return 0, "Untrained"
 
@@ -1242,33 +1242,41 @@ class JJBotPro:
         avg_profit_factor = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
         avg_reward = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
 
-        # Normalize and score (0-100 scale)
-        # Win rate: 0-50% = 0-40 points
+        # Calculate performance score (0-100)
+        # Win rate: 50% = average, scale 0-100%
         win_rate_score = min(40, (avg_win_rate / 0.5) * 40)
 
-        # Profit factor: 0-3 = 0-30 points
+        # Profit factor: 1.0 = break even, 2.0+ = good
         profit_factor_score = min(30, (avg_profit_factor / 3.0) * 30)
 
-        # Reward: normalize to 0-30 points (assuming rewards typically -100 to +100)
+        # Reward: normalize to 0-30 points
         reward_normalized = max(0, min(100, avg_reward + 100)) / 100
         reward_score = reward_normalized * 30
 
-        # Total IQ (0-100)
-        iq = int(win_rate_score + profit_factor_score + reward_score)
+        # Raw performance score (0-100)
+        raw_score = win_rate_score + profit_factor_score + reward_score
 
-        # Determine expertise level
-        if iq < 20:
-            level = "Novice"
-        elif iq < 40:
-            level = "Beginner"
-        elif iq < 60:
-            level = "Intermediate"
-        elif iq < 75:
-            level = "Advanced"
-        elif iq < 90:
-            level = "Expert"
+        # Convert to human IQ scale (70-160)
+        # 0 raw = 70 IQ (very low)
+        # 50 raw = 100 IQ (average)
+        # 100 raw = 160 IQ (genius)
+        iq = int(70 + (raw_score * 0.9))
+
+        # Determine expertise level using human IQ categories
+        if iq < 70:
+            level = "Untrained"
+        elif iq < 85:
+            level = "Below Average"
+        elif iq < 100:
+            level = "Average"
+        elif iq < 115:
+            level = "Above Average"
+        elif iq < 130:
+            level = "Bright"
+        elif iq < 145:
+            level = "Gifted"
         else:
-            level = "Master"
+            level = "Genius"
 
         return iq, level
 

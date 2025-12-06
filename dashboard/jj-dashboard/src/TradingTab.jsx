@@ -593,11 +593,17 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   <p className="text-sm text-muted mt-1">
                     {tradingIQ.iq === 0
                       ? 'Train the AI to improve trading decisions'
-                      : tradingIQ.iq < 50
-                        ? 'Continue training to improve performance'
-                        : tradingIQ.iq < 80
-                          ? 'Good progress! More training will help'
-                          : 'Excellent! AI is well-trained'}
+                      : tradingIQ.iq < 85
+                        ? 'Below average - needs more training'
+                        : tradingIQ.iq < 100
+                          ? 'Average performance - continue training'
+                          : tradingIQ.iq < 115
+                            ? 'Above average - good progress!'
+                            : tradingIQ.iq < 130
+                              ? 'Bright! AI is performing well'
+                              : tradingIQ.iq < 145
+                                ? 'Gifted! Excellent performance'
+                                : 'Genius level! Outstanding AI'}
                   </p>
                 )}
               </div>
@@ -824,11 +830,17 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   <p className="text-sm text-muted mt-1">
                     {tradingIQ.iq === 0
                       ? 'Train the AI to improve trading decisions'
-                      : tradingIQ.iq < 50
-                        ? 'Continue training to improve performance'
-                        : tradingIQ.iq < 80
-                          ? 'Good progress! More training will help'
-                          : 'Excellent! AI is well-trained'}
+                      : tradingIQ.iq < 85
+                        ? 'Below average - needs more training'
+                        : tradingIQ.iq < 100
+                          ? 'Average performance - continue training'
+                          : tradingIQ.iq < 115
+                            ? 'Above average - good progress!'
+                            : tradingIQ.iq < 130
+                              ? 'Bright! AI is performing well'
+                              : tradingIQ.iq < 145
+                                ? 'Gifted! Excellent performance'
+                                : 'Genius level! Outstanding AI'}
                   </p>
                 )}
               </div>
