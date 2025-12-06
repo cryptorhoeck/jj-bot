@@ -382,14 +382,25 @@ async def export_data():
 
 @app.post("/api/data/clear")
 async def clear_data():
-    """Clear trading data only (trades.db) - preserves training IQ"""
+    """Clear trading data only (trades.db) - preserves training IQ but resets equity"""
     import shutil
     from pathlib import Path
+    import json
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_dir = PROJECT_ROOT / "backups"
     backup_dir.mkdir(exist_ok=True)
+
+    # Load config to get initial_capital
+    config_path = PROJECT_ROOT / "config" / "bot_config.json"
+    initial_capital = 10000.0
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+            initial_capital = config.get("initial_capital", 10000.0)
+    except:
+        pass
 
     # Backup trades.db (JJ-Bot Pro database)
     trades_db = PROJECT_ROOT / "data" / "trades.db"
@@ -406,9 +417,34 @@ async def clear_data():
             cur.execute("DELETE FROM trades")
             conn.commit()
 
+        # Reset equity in bot_state.json but preserve IQ
+        state_file = PROJECT_ROOT / "data" / "bot_state.json"
+        if state_file.exists():
+            try:
+                with open(state_file) as f:
+                    state_data = json.load(f)
+
+                # Reset equity to initial_capital
+                state_data["equity"] = initial_capital
+                state_data["peak_equity"] = initial_capital
+                state_data["daily_pnl"] = 0.0
+                state_data["daily_start_equity"] = initial_capital
+
+                # Reset trade stats but keep IQ
+                if "stats" in state_data:
+                    state_data["stats"]["total_trades"] = 0
+                    state_data["stats"]["winning_trades"] = 0
+                    state_data["stats"]["total_pnl"] = 0.0
+                    # Keep trading_iq, expertise_level, training_sessions, etc.
+
+                with open(state_file, 'w') as f:
+                    json.dump(state_data, f, indent=2)
+            except Exception as e:
+                print(f"Warning: Could not update state file: {e}")
+
         return {
             "status": "cleared",
-            "message": f"Trading data cleared{f' (backed up to {backed_up})' if backed_up else ''}. Training IQ preserved."
+            "message": f"Trading data cleared, equity reset to ${initial_capital:,.2f}{f' (backed up to {backed_up})' if backed_up else ''}. Training IQ preserved."
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
