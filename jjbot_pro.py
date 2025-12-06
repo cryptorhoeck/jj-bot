@@ -1413,83 +1413,91 @@ class JJBotPro:
         avg_reward = self.training_metrics["total_reward"] / episodes
 
         # === SAMPLE SIZE MULTIPLIER ===
-        # 5x HARDER than human expert (10,000 hour rule = 5 years, ~10,000 trades)
-        # Human expert: 5 years / 10,000 trades -> AI must do 5x that
-        # Based on real research: day traders ~1,200 trades/year, 5-year expert ~6,000-12,000 trades
-        if episodes < 2500:
-            sample_multiplier = 0.05  # Just started (< 6 months human equivalent)
+        # Balanced approach - reward experience but don't over-penalize early progress
+        # Based on: professional traders make ~500-2000 trades/year
+        if episodes < 1000:
+            sample_multiplier = 0.30  # Just started
+        elif episodes < 2500:
+            sample_multiplier = 0.45  # Learning
         elif episodes < 5000:
-            sample_multiplier = 0.10  # Student (< 1 year)
-        elif episodes < 12500:
-            sample_multiplier = 0.20  # Intern (< 2.5 years)
+            sample_multiplier = 0.60  # Getting experienced
+        elif episodes < 10000:
+            sample_multiplier = 0.75  # Experienced
         elif episodes < 25000:
-            sample_multiplier = 0.35  # Resident (< 5 years - human expert level)
-        elif episodes < 50000:
-            sample_multiplier = 0.50  # 5x human expert threshold
+            sample_multiplier = 0.90  # Very experienced
         else:
-            sample_multiplier = 1.0  # True AI Master (50,000+ episodes)
+            sample_multiplier = 1.0  # Master (25,000+ episodes)
 
-        # Trade counts - 5x harder than human expert (~10,000-12,000 career trades)
-        # Need 125,000+ trades for full credit (5x × 25,000 benchmark)
-        if total_trades < 5000:
-            trade_multiplier = 0.05  # Barely started
-        elif total_trades < 12500:
-            trade_multiplier = 0.10  # Novice
+        # Trade counts - reasonable thresholds
+        # Professional traders: 5,000-20,000 career trades is expert level
+        if total_trades < 2500:
+            trade_multiplier = 0.35  # Beginner
+        elif total_trades < 5000:
+            trade_multiplier = 0.50  # Novice
+        elif total_trades < 10000:
+            trade_multiplier = 0.65  # Intermediate
         elif total_trades < 25000:
-            trade_multiplier = 0.20  # Learning
+            trade_multiplier = 0.80  # Experienced
         elif total_trades < 50000:
-            trade_multiplier = 0.35  # Getting experienced
-        elif total_trades < 100000:
-            trade_multiplier = 0.50  # Experienced
-        elif total_trades < 125000:
-            trade_multiplier = 0.70  # Very experienced
+            trade_multiplier = 0.90  # Expert
         else:
-            trade_multiplier = 1.0  # Master trader (125,000+ trades - 5x human expert)
+            trade_multiplier = 1.0  # Master (50,000+ trades)
 
-        # Combined sample penalty
-        sample_penalty = sample_multiplier * trade_multiplier
+        # Combined sample penalty (use average, not product, to be less harsh)
+        sample_penalty = (sample_multiplier + trade_multiplier) / 2
 
-        # === PERFORMANCE SCORES (harder thresholds) ===
+        # === PERFORMANCE SCORES (balanced thresholds) ===
 
-        # Win rate: 50% is baseline (random), need 55%+ for points
-        # Max 35 points at 70%+ win rate
-        if avg_win_rate <= 0.50:
+        # Win rate: 50% is baseline (random), need 40%+ for points with good profit factor
+        # Max 25 points at 65%+ win rate
+        # NOTE: Low win rate is OK if profit factor is high (trend-following strategies)
+        if avg_win_rate <= 0.35:
             win_rate_score = 0
+        elif avg_win_rate <= 0.45:
+            win_rate_score = (avg_win_rate - 0.35) / 0.10 * 8  # 0-8 points
         elif avg_win_rate <= 0.55:
-            win_rate_score = (avg_win_rate - 0.50) / 0.05 * 10  # 0-10 points
-        elif avg_win_rate <= 0.60:
-            win_rate_score = 10 + (avg_win_rate - 0.55) / 0.05 * 10  # 10-20 points
+            win_rate_score = 8 + (avg_win_rate - 0.45) / 0.10 * 8  # 8-16 points
         elif avg_win_rate <= 0.65:
-            win_rate_score = 20 + (avg_win_rate - 0.60) / 0.05 * 8  # 20-28 points
+            win_rate_score = 16 + (avg_win_rate - 0.55) / 0.10 * 6  # 16-22 points
         else:
-            win_rate_score = min(35, 28 + (avg_win_rate - 0.65) / 0.05 * 7)  # 28-35 points
+            win_rate_score = min(25, 22 + (avg_win_rate - 0.65) / 0.10 * 3)  # 22-25 points
 
-        # Profit factor: 1.0 = break even, need 1.2+ for points
-        # Max 35 points at 2.5+ profit factor
+        # Profit factor: THE MOST IMPORTANT METRIC
+        # 1.0 = break even, 1.5+ is good, 2.0+ is great, 3.0+ is exceptional
+        # Max 45 points - this is the primary driver of IQ
         if avg_profit_factor <= 1.0:
             profit_factor_score = 0
-        elif avg_profit_factor <= 1.2:
-            profit_factor_score = (avg_profit_factor - 1.0) / 0.2 * 5  # 0-5 points
-        elif avg_profit_factor <= 1.5:
-            profit_factor_score = 5 + (avg_profit_factor - 1.2) / 0.3 * 10  # 5-15 points
-        elif avg_profit_factor <= 2.0:
-            profit_factor_score = 15 + (avg_profit_factor - 1.5) / 0.5 * 12  # 15-27 points
+        elif avg_profit_factor <= 1.3:
+            profit_factor_score = (avg_profit_factor - 1.0) / 0.3 * 8  # 0-8 points
+        elif avg_profit_factor <= 1.8:
+            profit_factor_score = 8 + (avg_profit_factor - 1.3) / 0.5 * 12  # 8-20 points
+        elif avg_profit_factor <= 2.5:
+            profit_factor_score = 20 + (avg_profit_factor - 1.8) / 0.7 * 10  # 20-30 points
+        elif avg_profit_factor <= 4.0:
+            profit_factor_score = 30 + (avg_profit_factor - 2.5) / 1.5 * 10  # 30-40 points
         else:
-            profit_factor_score = min(35, 27 + (avg_profit_factor - 2.0) / 0.5 * 8)  # 27-35 points
+            profit_factor_score = min(45, 40 + (avg_profit_factor - 4.0) / 3.0 * 5)  # 40-45 points
+
+        # Bonus: High profit factor can compensate for low win rate
+        # If profit factor > 3.0 and win rate > 20%, give bonus points
+        pf_winrate_synergy = 0
+        if avg_profit_factor > 3.0 and avg_win_rate > 0.20:
+            # This rewards trend-following strategies that lose often but win big
+            pf_winrate_synergy = min(15, (avg_profit_factor - 3.0) * 3)
 
         # Consistency bonus: reward stable positive performance
-        # Max 30 points
+        # Max 15 points (reduced from 30 since profit factor is now weighted more)
         if avg_reward <= 0:
             reward_score = 0
         elif avg_reward <= 10:
-            reward_score = avg_reward / 10 * 10  # 0-10 points
+            reward_score = avg_reward / 10 * 5  # 0-5 points
         elif avg_reward <= 25:
-            reward_score = 10 + (avg_reward - 10) / 15 * 10  # 10-20 points
+            reward_score = 5 + (avg_reward - 10) / 15 * 5  # 5-10 points
         else:
-            reward_score = min(30, 20 + (avg_reward - 25) / 25 * 10)  # 20-30 points
+            reward_score = min(15, 10 + (avg_reward - 25) / 25 * 5)  # 10-15 points
 
         # Raw performance score (0-100)
-        raw_score = win_rate_score + profit_factor_score + reward_score
+        raw_score = win_rate_score + profit_factor_score + reward_score + pf_winrate_synergy
 
         # Apply sample size penalty
         adjusted_score = raw_score * sample_penalty
