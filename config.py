@@ -91,15 +91,16 @@ def get_config(section: str, key: str, default: Any = None) -> Any:
 # ======================
 APP_NAME = get_env('APP_NAME', 'JJ-Bot')
 
-# Load version from VERSION file
+# Load version from VERSION file (always use VERSION file, ignore env variable)
 def _load_version() -> str:
-    """Load version from VERSION file"""
+    """Load version from VERSION file - this is the single source of truth"""
     version_file = BASE_DIR / "VERSION"
     if version_file.exists():
         return version_file.read_text().strip()
     return '3.0.0'  # Fallback
 
-APP_VERSION = get_env('APP_VERSION', _load_version())
+# Always use VERSION file - do NOT allow env override to prevent stale versions
+APP_VERSION = _load_version()
 ENVIRONMENT = get_env('ENVIRONMENT', 'development')
 
 # ======================
