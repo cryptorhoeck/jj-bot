@@ -798,16 +798,21 @@ class TradingEnvironment:
         drawdown = (peak - equity_array) / peak
         max_drawdown = np.max(drawdown)
 
+        # Convert numpy types to Python native for JSON serialization
         return {
             "total_trades": len(self.trade_history),
-            "win_rate": len(wins) / len(self.trade_history) if self.trade_history else 0,
-            "total_pnl": total_pnl,
-            "avg_pnl": total_pnl / len(self.trade_history),
-            "sharpe_ratio": sharpe,
-            "max_drawdown": max_drawdown,
-            "profit_factor": gross_profit / gross_loss if gross_loss else 0,
-            "final_equity": self.equity,
-            "return_pct": (self.equity - self.initial_balance) / self.initial_balance * 100,
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
+            "win_rate": float(len(wins) / len(self.trade_history)) if self.trade_history else 0.0,
+            "total_pnl": float(total_pnl),
+            "avg_pnl": float(total_pnl / len(self.trade_history)),
+            "gross_profit": float(gross_profit),
+            "gross_loss": float(gross_loss),
+            "sharpe_ratio": float(sharpe),
+            "max_drawdown": float(max_drawdown),
+            "profit_factor": float(gross_profit / gross_loss) if gross_loss > 0 else 0.0,
+            "final_equity": float(self.equity),
+            "return_pct": float((self.equity - self.initial_balance) / self.initial_balance * 100),
         }
 
     def render(self, mode: str = "human"):

@@ -1336,9 +1336,8 @@ class JJBotPro:
 
             # Update cumulative metrics for IQ calculation (convert numpy to Python types)
             win_rate = float(metrics.get('win_rate', 0))
-            total_wins = int(metrics.get('winning_trades', 0))
-            total_losses = int(metrics.get('losing_trades', 0))
-            profit_factor = float((total_wins / max(1, total_losses)) if total_losses > 0 else 1.0)
+            # Use actual profit factor from trading environment (gross_profit / gross_loss)
+            profit_factor = float(metrics.get('profit_factor', 1.0))
 
             self.training_metrics["episode_count"] += 1
             self.training_metrics["total_win_rate"] += win_rate
