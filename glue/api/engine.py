@@ -48,7 +48,7 @@ def init_db() -> None:
             cur.execute("ALTER TABLE trades ADD COLUMN pnl REAL DEFAULT 0.0")
         
         conn.commit()
-    print("🦍 Database initialized for JJ Gorilla")
+    print("[GORILLA] Database initialized for JJ Gorilla")
 
 def log_trade(trade: Dict[str, Any]) -> None:
     """

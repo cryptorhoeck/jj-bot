@@ -49,7 +49,7 @@ class StrategyService(BaseService):
 
     def _run(self):
         """Initialize and run the strategy engine"""
-        print("🧠 Strategy Engine Service starting...")
+        print("[STRATEGY] Strategy Engine Service starting...")
 
         try:
             # Create and start the strategy engine

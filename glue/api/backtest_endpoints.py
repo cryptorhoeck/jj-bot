@@ -388,7 +388,7 @@ async def run_backtest_with_real_data(
         from modules.backtesting import backtest_data_loader
 
         # Fetch real market data
-        print(f"📊 Fetching real market data for {symbol} ({timeframe})...")
+        print(f"[FETCH] Fetching real market data for {symbol} ({timeframe})...")
         data_result = backtest_data_loader.load_data_for_backtest(
             symbol=symbol,
             timeframe=timeframe,
@@ -419,7 +419,7 @@ async def run_backtest_with_real_data(
                 detail="Failed to load data into backtester"
             )
 
-        print(f"✅ Loaded {len(data_result['data'])} candles from {data_result['metadata']['source']}")
+        print(f"[OK] Loaded {len(data_result['data'])} candles from {data_result['metadata']['source']}")
 
         # Run backtest
         results = backtester.run_backtest(

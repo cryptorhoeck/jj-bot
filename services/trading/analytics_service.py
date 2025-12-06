@@ -56,7 +56,7 @@ class AnalyticsService(BaseService):
 
     def _run(self):
         """Analyze trading performance in a loop"""
-        print(f"📊 Analytics Service starting (update every {self.config['update_interval']}s)...")
+        print(f"[ANALYTICS] Analytics Service starting (update every {self.config['update_interval']}s)...")
 
         while self.status == "running":
             try:

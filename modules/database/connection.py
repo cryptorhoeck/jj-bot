@@ -140,9 +140,9 @@ def init_trades_db():
         conn.commit()
 
         if migrations:
-            print(f"✅ Trades DB migrated: Added columns {migrations}")
+            print(f"[OK] Trades DB migrated: Added columns {migrations}")
         else:
-            print("✅ Trades DB initialized")
+            print("[OK] Trades DB initialized")
 
 
 def init_price_history_db():
@@ -169,7 +169,7 @@ def init_price_history_db():
         """)
 
         conn.commit()
-        print("✅ Price history DB initialized")
+        print("[OK] Price history DB initialized")
 
 
 def init_learning_db():
@@ -232,7 +232,7 @@ def init_learning_db():
         """)
 
         conn.commit()
-        print("✅ Learning DB initialized")
+        print("[OK] Learning DB initialized")
 
 
 def init_all_databases():
@@ -240,7 +240,7 @@ def init_all_databases():
     init_trades_db()
     init_price_history_db()
     init_learning_db()
-    print("✅ All databases initialized")
+    print("[OK] All databases initialized")
 
 
 # Export commonly used functions

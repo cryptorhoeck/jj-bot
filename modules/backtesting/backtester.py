@@ -219,7 +219,7 @@ class Backtester:
         # Calculate performance metrics
         self.metrics = self._calculate_metrics()
 
-        print(f"✅ Backtest complete: {len(self.trades)} trades executed")
+        print(f"[OK] Backtest complete: {len(self.trades)} trades executed")
 
         return {
             "symbol": symbol,

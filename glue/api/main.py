@@ -110,20 +110,20 @@ from websocket_manager import ws_manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("✅ Database initialized")
+    print("[OK] Database initialized")
     engine.init_db()
 
-    print("🚀 Starting auto-start services...")
+    print("[START] Starting auto-start services...")
     started = service_manager.start_auto_services()
     if started:
-        print(f"✅ Auto-started services: {', '.join(started)}")
+        print(f"[OK] Auto-started services: {', '.join(started)}")
     else:
-        print("ℹ️  No auto-start services configured")
+        print("[INFO] No auto-start services configured")
 
     yield
 
     # Shutdown (add cleanup here if needed)
-    print("👋 Shutting down API...")
+    print("[SHUTDOWN] Shutting down API...")
 
 # Import version from config
 try:
@@ -779,7 +779,7 @@ async def get_market_live():
                     }
 
             if result:
-                print(f"✅ Fetched {len(result)} prices from WebSocket stream")
+                print(f"[OK] Fetched {len(result)} prices from WebSocket stream")
                 return {"status": "success", "data": result, "count": len(result), "source": "websocket"}
 
         # Fallback: Use CCXT to batch fetch from Kraken (like jjbot_pro does)
@@ -826,7 +826,7 @@ async def get_market_live():
                 }
 
             if result:
-                print(f"✅ Fetched {len(result)} prices from Kraken via CCXT")
+                print(f"[OK] Fetched {len(result)} prices from Kraken via CCXT")
                 return {"status": "success", "data": result, "count": len(result), "source": "kraken_ccxt"}
 
         except Exception as ccxt_err:

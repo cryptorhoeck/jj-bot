@@ -5,6 +5,24 @@ All notable changes to JJ-Bot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.4] - 2025-12-06
+
+### Fixed
+- **Kraken Rate Limiting** - Fixed "Too many requests" error when fetching historical data
+  - Increased rate limit delay from 0.3s to 3.5s between requests
+  - Added exponential backoff retry logic (5s, 10s, 20s delays)
+  - Added 30-second cooldown after rate limit errors
+  - Improved progress logging during data fetch
+
+### Changed
+- **More Emoji Replacements** - Extended Windows compatibility to all production files
+  - Additional files fixed: `main.py`, `engine.py`, `market_data_cache.py`,
+    `connection.py`, `realtime_market_stream.py`, `market_stream_service.py`,
+    `analytics_service.py`, `market_feed_service.py`, `backtest_endpoints.py`,
+    `backtester.py`, `data_loader.py`
+
+---
+
 ## [3.0.3] - 2025-12-06
 
 ### Fixed
@@ -153,6 +171,7 @@ This changelog was created retroactively. Version 2.3.0 represents the state bef
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 3.0.4 | 2025-12-06 | Fix Kraken rate limiting + more emoji replacements |
 | 3.0.3 | 2025-12-06 | Windows compatibility: Replace emojis with ASCII |
 | 3.0.2 | 2025-12-06 | Remove stale TODO comment |
 | 3.0.1 | 2025-12-06 | Fix remaining bare except clauses |

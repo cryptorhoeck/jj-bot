@@ -68,20 +68,20 @@ class MarketStreamService:
             except asyncio.CancelledError:
                 pass
 
-        print("✅ Market stream service stopped")
+        print("[OK] Market stream service stopped")
 
     def set_symbols(self, symbols: list[str]):
         """Update the list of symbols to stream"""
         self.symbols = symbols
-        print(f"📊 Updated symbols: {', '.join(symbols)}")
+        print(f"[UPDATE] Updated symbols: {', '.join(symbols)}")
 
     def set_exchange(self, exchange: str):
         """Set the exchange to use (kraken or binance)"""
         if exchange.lower() in ['kraken', 'binance']:
             self.exchange = exchange.lower()
-            print(f"📡 Exchange set to: {self.exchange}")
+            print(f"[EXCHANGE] Exchange set to: {self.exchange}")
         else:
-            print(f"❌ Unknown exchange: {exchange}")
+            print(f"[ERROR] Unknown exchange: {exchange}")
 
     def get_stats(self):
         """Get service statistics"""

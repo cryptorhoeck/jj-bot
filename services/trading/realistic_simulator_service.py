@@ -244,12 +244,12 @@ class RealisticSimulatorService(BaseService):
                 state = self.adaptive_selector.get_state()
                 if state:
                     self.current_strategy = state["current_strategy"]
-                    print(f"✅ Loaded strategy: {self.current_strategy}")
+                    print(f"[OK] Loaded strategy: {self.current_strategy}")
                 else:
-                    print(f"✅ Using default strategy: {self.current_strategy}")
+                    print(f"[OK] Using default strategy: {self.current_strategy}")
             else:
                 self.adaptive_selector = None
-                print(f"✅ Using fixed strategy: {self.current_strategy}")
+                print(f"[OK] Using fixed strategy: {self.current_strategy}")
 
         except Exception as e:
             print(f"Failed to initialize components: {e}")
@@ -671,7 +671,7 @@ class RealisticSimulatorService(BaseService):
 
     def _run(self):
         """Main simulator loop"""
-        print("🚀 Realistic Simulator starting...")
+        print("[START] Realistic Simulator starting...")
 
         # Initialize components
         try:
@@ -686,9 +686,9 @@ class RealisticSimulatorService(BaseService):
             symbol: [] for symbol in self.symbols_config.keys()
         }
 
-        print(f"💰 Initial capital: ${self.initial_capital:,.2f}")
-        print(f"📊 Trading {len(self.symbols_config)} symbols")
-        print(f"🎯 Starting strategy: {self.current_strategy}")
+        print(f"[CAPITAL] Initial capital: ${self.initial_capital:,.2f}")
+        print(f"[SYMBOLS] Trading {len(self.symbols_config)} symbols")
+        print(f"[STRATEGY] Starting strategy: {self.current_strategy}")
         print("=" * 60)
 
         try:
@@ -796,7 +796,7 @@ class RealisticSimulatorService(BaseService):
                 # Log status every 5 ticks (FAST mode)
                 if self.tick_count % 5 == 0:
                     print(
-                        f"📊 Tick {self.tick_count} | "
+                        f"[TICK] Tick {self.tick_count} | "
                         f"Cash: ${stats['available_capital']:,.2f} | "
                         f"Positions: ${stats['positions_value']:,.2f} | "
                         f"Total: ${stats['current_capital']:,.2f} | "

@@ -30,6 +30,10 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
     Synchronously fetch historical OHLCV data from Kraken with smart pagination.
     Automatically makes multiple requests to fetch the full history period.
 
+    Uses proper rate limiting to avoid Kraken's "Too many requests" error.
+    Kraken public API: 15 request budget, +1 per request, -0.33 per second
+    Safe rate: ~1 request per 3 seconds
+
     Args:
         symbols: List of trading pairs (e.g., ['BTC/USD', 'ETH/USD'])
         timeframe: Candle size ('5m', '15m', '1h', '4h', '1d')
@@ -70,9 +74,11 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
 
     logger.info(f"Fetching {days} days of {timeframe} data ({total_candles_needed:,} candles) for {len(symbols)} symbols...")
 
+    # Kraken rate limit: ~1 request per 3 seconds to be safe
+    # Use ccxt's built-in rate limiter plus our own delays
     exchange = ccxt.kraken({
         'enableRateLimit': True,
-        'rateLimit': 500,  # Faster but still safe
+        'rateLimit': 3000,  # 3 seconds between requests (Kraken safe limit)
     })
 
     try:
@@ -84,7 +90,12 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
     data_cache = {}
     kraken_limit = 720  # Kraken's max per request
 
-    for symbol in symbols:
+    # Track request timing for rate limiting
+    request_count = 0
+    last_request_time = 0
+    MIN_REQUEST_INTERVAL = 3.5  # Seconds between requests (conservative)
+
+    for symbol_idx, symbol in enumerate(symbols):
         if symbol not in exchange.markets:
             logger.warning(f"Symbol {symbol} not available on Kraken, skipping")
             continue
@@ -97,9 +108,43 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
             # Calculate how many requests we need
             requests_needed = (total_candles_needed + kraken_limit - 1) // kraken_limit
 
+            logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {symbol}: {requests_needed} requests needed...")
+
             for req_num in range(requests_needed):
-                # Fetch batch
-                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=kraken_limit)
+                # Rate limiting with exponential backoff on failure
+                current_time = time.time()
+                elapsed = current_time - last_request_time
+                if elapsed < MIN_REQUEST_INTERVAL:
+                    sleep_time = MIN_REQUEST_INTERVAL - elapsed
+                    time.sleep(sleep_time)
+
+                # Retry logic with exponential backoff
+                max_retries = 3
+                retry_delay = 5  # Start with 5 second delay
+
+                for retry in range(max_retries):
+                    try:
+                        last_request_time = time.time()
+                        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=kraken_limit)
+                        request_count += 1
+                        break  # Success, exit retry loop
+                    except ccxt.RateLimitExceeded as e:
+                        if retry < max_retries - 1:
+                            logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries}...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            raise e
+                    except Exception as e:
+                        if "Too many requests" in str(e):
+                            if retry < max_retries - 1:
+                                logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries}...")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            else:
+                                raise e
+                        else:
+                            raise e
 
                 if not ohlcv:
                     break
@@ -107,6 +152,10 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
                 # Prepend to get chronological order (we're going backwards)
                 all_ohlcv = ohlcv + all_ohlcv
                 candles_fetched += len(ohlcv)
+
+                # Progress logging
+                if req_num > 0 and (req_num + 1) % 5 == 0:
+                    logger.info(f"  {symbol}: {candles_fetched:,}/{total_candles_needed:,} candles fetched...")
 
                 # Get the oldest timestamp from this batch to fetch older data next
                 oldest_timestamp = ohlcv[0][0]
@@ -116,9 +165,6 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
                 # Stop if we have enough or no more data
                 if candles_fetched >= total_candles_needed or len(ohlcv) < kraken_limit:
                     break
-
-                # Rate limit between requests
-                time.sleep(0.3)
 
             if not all_ohlcv or len(all_ohlcv) < 100:
                 logger.warning(f"Insufficient data for {symbol}: {len(all_ohlcv) if all_ohlcv else 0} candles")
@@ -136,13 +182,14 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
 
             if features is not None and len(features) > 50:
                 data_cache[symbol] = features
-                logger.info(f"Loaded {len(features):,} candles for {symbol}")
-
-            # Rate limit between symbols
-            time.sleep(0.3)
+                logger.info(f"[OK] {symbol}: Loaded {len(features):,} candles")
 
         except Exception as e:
             logger.warning(f"Failed to fetch {symbol}: {e}")
+            # On rate limit failure, add extra delay before next symbol
+            if "Too many requests" in str(e) or "rate" in str(e).lower():
+                logger.info("Rate limit hit, adding 30 second cooldown...")
+                time.sleep(30)
             continue
 
     if data_cache:
@@ -151,7 +198,7 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         _CACHE_SYMBOLS = list(data_cache.keys())
         _CACHE_TIMEFRAME = timeframe
         _CACHE_DAYS = days
-        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days")
+        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days ({request_count} API requests)")
     else:
         logger.warning("No data fetched, will use dummy data")
 
