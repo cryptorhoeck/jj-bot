@@ -1334,33 +1334,33 @@ class JJBotPro:
             # Yield control to allow UI updates
             await asyncio.sleep(0)
 
-            # Update cumulative metrics for IQ calculation
-            win_rate = metrics.get('win_rate', 0)
-            total_wins = metrics.get('winning_trades', 0)
-            total_losses = metrics.get('losing_trades', 0)
-            profit_factor = (total_wins / max(1, total_losses)) if total_losses > 0 else 1.0
+            # Update cumulative metrics for IQ calculation (convert numpy to Python types)
+            win_rate = float(metrics.get('win_rate', 0))
+            total_wins = int(metrics.get('winning_trades', 0))
+            total_losses = int(metrics.get('losing_trades', 0))
+            profit_factor = float((total_wins / max(1, total_losses)) if total_losses > 0 else 1.0)
 
             self.training_metrics["episode_count"] += 1
             self.training_metrics["total_win_rate"] += win_rate
             self.training_metrics["total_profit_factor"] += profit_factor
-            self.training_metrics["total_reward"] += metrics.get('episode_reward', 0)
-            self.training_metrics["total_trades"] += metrics.get('total_trades', 0)
+            self.training_metrics["total_reward"] += float(metrics.get('episode_reward', 0))
+            self.training_metrics["total_trades"] += int(metrics.get('total_trades', 0))
 
             # Calculate Trading IQ
             iq, level = self._calculate_trading_iq()
 
-            # Update progress
-            self.training_progress["current_episode"] = completed_episodes
-            self.training_progress["last_reward"] = metrics.get('episode_reward', 0)
-            self.training_progress["last_pnl"] = metrics.get('total_pnl', 0)
-            self.training_progress["last_win_rate"] = win_rate * 100
-            self.training_progress["progress_pct"] = (completed_episodes / self.config.train_episodes) * 100
-            self.training_progress["trading_iq"] = iq
+            # Update progress (convert numpy types to Python native for JSON serialization)
+            self.training_progress["current_episode"] = int(completed_episodes)
+            self.training_progress["last_reward"] = float(metrics.get('episode_reward', 0))
+            self.training_progress["last_pnl"] = float(metrics.get('total_pnl', 0))
+            self.training_progress["last_win_rate"] = float(win_rate * 100)
+            self.training_progress["progress_pct"] = float((completed_episodes / self.config.train_episodes) * 100)
+            self.training_progress["trading_iq"] = int(iq)
             self.training_progress["expertise_level"] = level
-            self.training_progress["avg_win_rate"] = (self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]) * 100
-            self.training_progress["avg_profit_factor"] = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
-            self.training_progress["avg_reward"] = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
-            self.training_progress["total_trades"] = self.training_metrics["total_trades"]
+            self.training_progress["avg_win_rate"] = float((self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]) * 100)
+            self.training_progress["avg_profit_factor"] = float(self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"])
+            self.training_progress["avg_reward"] = float(self.training_metrics["total_reward"] / self.training_metrics["episode_count"])
+            self.training_progress["total_trades"] = int(self.training_metrics["total_trades"])
 
             # Track which symbol was used in this episode
             current_symbol = getattr(self.rl_env, 'current_symbol', 'N/A')
