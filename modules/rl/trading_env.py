@@ -439,9 +439,9 @@ class TradingEnvironment:
         slippage: float = 0.0005,  # 0.05%
         lookback_window: int = 50,
         max_steps: int = 10000,
-        reward_scaling: float = 1.0,
+        reward_scaling: float = 100.0,  # Increased 100x for effective RL learning
         risk_penalty: float = 0.1,
-        trade_penalty: float = 0.0001,
+        trade_penalty: float = 0.001,  # Slightly higher to prevent overtrading
     ):
         self.initial_balance = initial_balance
         self.max_position_size = max_position_size

@@ -237,17 +237,19 @@ class PPOAgent:
         returns = np.zeros(len(rewards), dtype=np.float32)
 
         gae = 0
-        next_value = 0
+        # Bootstrap from next state value (not current state)
+        # For the last step, use 0 if done, otherwise need next state value
+        # Since we don't have next_state value here, we estimate with last value
+        next_value = 0 if dones[-1] else values[-1]
 
         for t in reversed(range(len(rewards))):
-            if t == len(rewards) - 1:
-                next_value = 0 if dones[t] else values[t]
-
+            # Calculate TD error: r + γV(s') - V(s)
             delta = rewards[t] + self.gamma * next_value * (1 - dones[t]) - values[t]
             gae = delta + self.gamma * self.gae_lambda * (1 - dones[t]) * gae
             advantages[t] = gae
             returns[t] = gae + values[t]
 
+            # For next iteration, the "next_value" is current value
             next_value = values[t]
 
         return advantages, returns

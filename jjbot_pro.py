@@ -24,6 +24,7 @@ import signal
 # Internal modules
 from modules.exchange import create_connector, create_live_feed, CCXTConnector, LiveDataFeed
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
+from modules.event_bus import event_bus
 
 # RL modules are optional (require PyTorch)
 try:
@@ -118,7 +119,8 @@ class BotConfig:
     rl_batch_size: int = 128  # PPO batch size
 
     # Timing
-    analysis_interval_seconds: int = 60  # How often to analyze
+    analysis_interval_seconds: int = 60  # How often to analyze (minimum 30 seconds recommended)
+    rest_api_interval_seconds: int = 30  # How often to fetch prices via REST (reduces API load)
 
     # Logging
     log_level: str = "INFO"
@@ -275,6 +277,12 @@ class JJBotPro:
 
         # Price cache
         self.prices: Dict[str, float] = {}
+
+        # Price feed health tracking
+        self._last_price_update: datetime = datetime.now()
+        self._last_rest_fetch: datetime = datetime.min  # Track REST API fetches separately
+        self._price_feed_stale_threshold = 300  # 5 minutes without price updates = stale
+        self._trading_paused_due_to_feed = False
 
         logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
 
@@ -488,17 +496,35 @@ class JJBotPro:
                     # Calculate position size (use a default based on config)
                     position_size = self.config.initial_capital * self.config.max_position_pct
 
+                    entry_price = data["entry_price"]
+                    current_price = data["current_price"]
+
+                    # Calculate unrealized P&L based on last known price
+                    if entry_price > 0 and current_price > 0:
+                        if side == "long":
+                            unrealized_pnl = (current_price - entry_price) / entry_price * position_size
+                        else:
+                            unrealized_pnl = (entry_price - current_price) / entry_price * position_size
+                    else:
+                        unrealized_pnl = 0.0
+
+                    # Calculate stop/take profit from config (not hardcoded)
+                    stop_loss = entry_price * (1 - self.config.stop_loss_pct if side == "long" else 1 + self.config.stop_loss_pct)
+                    take_profit = entry_price * (1 + self.config.take_profit_pct if side == "long" else 1 - self.config.take_profit_pct)
+
                     positions[symbol] = Position(
                         symbol=symbol,
                         side=side,
-                        entry_price=data["entry_price"],
+                        entry_price=entry_price,
                         size=position_size,
-                        stop_loss=data["entry_price"] * (0.95 if side == "long" else 1.05),
-                        take_profit=data["entry_price"] * (1.10 if side == "long" else 0.90),
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
                         entry_time=entry_time,
                         signal_source="restored",
-                        unrealized_pnl=0.0  # Will be calculated when prices update
+                        unrealized_pnl=unrealized_pnl
                     )
+
+                    logger.info(f"Restored position: {side} {symbol} @ ${entry_price:.2f}, unrealized P&L: ${unrealized_pnl:.2f}")
 
             if positions:
                 logger.info(f"Restored {len(positions)} open positions from database")
@@ -559,6 +585,19 @@ class JJBotPro:
         logger.info(f"Mode: {self.config.mode}")
         logger.info(f"Symbols: {self.config.symbols}")
         logger.info(f"Capital: ${self.config.initial_capital:,.2f}")
+
+        # CRITICAL WARNING: Sandbox mode
+        if self.config.sandbox:
+            logger.warning("=" * 50)
+            logger.warning("⚠️  SANDBOX MODE ENABLED - Using testnet/demo exchange")
+            logger.warning("⚠️  No real funds will be used. Set sandbox=False for live trading.")
+            logger.warning("=" * 50)
+        elif self.config.mode == "live":
+            logger.warning("=" * 50)
+            logger.warning("🚨 LIVE TRADING MODE - REAL FUNDS AT RISK! 🚨")
+            logger.warning("🚨 Ensure you have reviewed all settings carefully! 🚨")
+            logger.warning("=" * 50)
+
         logger.info("=" * 50)
 
         self.running = True
@@ -599,7 +638,11 @@ class JJBotPro:
             connected = await self.exchange.connect()
             if not connected:
                 if self.config.mode == "paper":
-                    logger.warning("Exchange connection failed - running in DEMO mode with simulated prices")
+                    logger.warning("=" * 60)
+                    logger.warning("⚠️  EXCHANGE CONNECTION FAILED - DEMO MODE ACTIVATED ⚠️")
+                    logger.warning("⚠️  Using SIMULATED prices - NOT real market data!")
+                    logger.warning("⚠️  This is for testing only. Results may not reflect real trading.")
+                    logger.warning("=" * 60)
                     self._demo_mode = True
                     # Initialize with simulated prices
                     self._init_demo_prices()
@@ -698,6 +741,12 @@ class JJBotPro:
     def _on_price_update(self, update):
         """Handle real-time price updates"""
         self.prices[update.symbol] = update.price
+        self._last_price_update = datetime.now()
+
+        # Resume trading if it was paused due to stale feed
+        if self._trading_paused_due_to_feed:
+            logger.info("Price feed restored - resuming trading")
+            self._trading_paused_due_to_feed = False
 
         # Update position P&L
         if update.symbol in self.positions:
@@ -801,6 +850,11 @@ class JJBotPro:
                                     pos.unrealized_pnl = (pos.entry_price - ticker.last) / pos.entry_price * pos.size
 
                 if updated_count > 0:
+                    self._last_price_update = datetime.now()
+                    # Resume trading if it was paused
+                    if self._trading_paused_due_to_feed:
+                        logger.info("Price feed restored via REST API - resuming trading")
+                        self._trading_paused_due_to_feed = False
                     logger.debug(f"REST API updated {updated_count} prices")
         except Exception as e:
             logger.warning(f"REST API price fetch failed: {e}")
@@ -896,9 +950,36 @@ class JJBotPro:
                 if self._demo_mode:
                     await self._update_demo_prices()
                 else:
-                    # Always fetch fresh prices via REST API to ensure P&L is accurate
-                    # This supplements WebSocket data which may be stale or disconnected
-                    await self._fetch_prices_rest()
+                    # Rate-limit REST API fetches to reduce load
+                    time_since_rest = (datetime.now() - self._last_rest_fetch).total_seconds()
+                    if time_since_rest >= self.config.rest_api_interval_seconds:
+                        # Fetch fresh prices via REST API to ensure P&L is accurate
+                        # This supplements WebSocket data which may be stale or disconnected
+                        await self._fetch_prices_rest()
+                        self._last_rest_fetch = datetime.now()
+
+                # Check price feed health (only in non-demo mode)
+                if not self._demo_mode:
+                    time_since_update = (datetime.now() - self._last_price_update).total_seconds()
+                    if time_since_update > self._price_feed_stale_threshold:
+                        if not self._trading_paused_due_to_feed:
+                            logger.warning("=" * 60)
+                            logger.warning("⚠️  PRICE FEED STALE - PAUSING NEW TRADES ⚠️")
+                            logger.warning(f"⚠️  No price updates for {time_since_update:.0f} seconds")
+                            logger.warning("⚠️  Existing positions will NOT be auto-closed.")
+                            logger.warning("⚠️  Trading will resume when price feed is restored.")
+                            logger.warning("=" * 60)
+                            self._trading_paused_due_to_feed = True
+
+                            # Publish event to WebSocket clients
+                            event_bus.publish("TRADING_SIGNAL", {
+                                "symbol": "SYSTEM",
+                                "action": "PAUSED",
+                                "price": 0,
+                                "strength": 0,
+                                "reason": ["Price feed stale", f"No updates for {time_since_update:.0f}s"],
+                                "timestamp": datetime.now().isoformat()
+                            })
 
                 # Reset daily stats at midnight
                 await self._check_daily_reset()
@@ -909,9 +990,11 @@ class JJBotPro:
                     await asyncio.sleep(60)
                     continue
 
-                # Analyze each symbol
-                for symbol in self.config.symbols:
-                    await self._analyze_symbol(symbol)
+                # Skip analysis if price feed is stale (but still check exits for existing positions)
+                if not self._trading_paused_due_to_feed:
+                    # Analyze each symbol
+                    for symbol in self.config.symbols:
+                        await self._analyze_symbol(symbol)
 
                 # Check open positions for exits
                 await self._check_exits()
@@ -1006,27 +1089,33 @@ class JJBotPro:
                     state = state[:self.rl_env.observation_space_dim]
 
                     import numpy as np
-                    action, _, _ = self.rl_agent.select_action(np.array(state), training=False)
+                    action, log_prob, value = self.rl_agent.select_action(np.array(state), training=False)
+
+                    # Convert log_prob to confidence (probability of chosen action)
+                    # log_prob is negative, so exp(log_prob) gives probability [0, 1]
+                    confidence = float(np.exp(log_prob))
+                    # Ensure confidence is in reasonable range [0.5, 0.95]
+                    confidence = max(0.5, min(0.95, confidence))
 
                     if action == 1:  # BUY
                         signals.append(TradeSignal(
                             symbol=symbol,
                             direction="long",
                             strength=2,
-                            confidence=0.6,
+                            confidence=confidence,
                             edge_type="rl_agent",
                             entry_price=price,
-                            reason="RL agent buy signal"
+                            reason=f"RL agent buy signal (conf: {confidence:.1%})"
                         ))
                     elif action == 2:  # SELL
                         signals.append(TradeSignal(
                             symbol=symbol,
                             direction="short",
                             strength=2,
-                            confidence=0.6,
+                            confidence=confidence,
                             edge_type="rl_agent",
                             entry_price=price,
-                            reason="RL agent sell signal"
+                            reason=f"RL agent sell signal (conf: {confidence:.1%})"
                         ))
             except Exception as e:
                 logger.debug(f"RL signal error for {symbol}: {e}")
@@ -1122,6 +1211,16 @@ class JJBotPro:
         )
 
         self.stats["total_trades"] += 1
+
+        # Publish trade event to WebSocket clients
+        event_bus.publish("TRADE_EXECUTED", {
+            "symbol": symbol,
+            "action": "OPEN_" + direction.upper(),
+            "price": filled_price,
+            "quantity": position_value,
+            "pnl": 0,  # No P&L on open
+            "timestamp": datetime.now().isoformat()
+        })
 
         # Save state after opening position
         self._save_state()
@@ -1221,6 +1320,18 @@ class JJBotPro:
         # Remove position
         del self.positions[symbol]
 
+        # Publish trade event to WebSocket clients
+        event_bus.publish("TRADE_EXECUTED", {
+            "symbol": symbol,
+            "action": "CLOSE_" + pos.side.upper(),
+            "price": exit_price,
+            "quantity": pos.size,
+            "pnl": pnl,
+            "pnl_pct": pnl_pct * 100,
+            "reason": reason,
+            "timestamp": datetime.now().isoformat()
+        })
+
         # Save state after each trade
         self._save_state()
 
@@ -1231,8 +1342,9 @@ class JJBotPro:
             logger.warning(f"Daily loss limit hit: ${self.daily_pnl:.2f}")
             return False
 
-        # Max drawdown
-        drawdown = (self.peak_equity - self.equity) / self.peak_equity
+        # Max drawdown (include unrealized P&L for accurate risk assessment)
+        current_equity = self.total_equity  # Uses property that includes unrealized P&L
+        drawdown = (self.peak_equity - current_equity) / self.peak_equity if self.peak_equity > 0 else 0
         if drawdown > self.config.max_drawdown_pct:
             logger.warning(f"Max drawdown hit: {drawdown:.2%}")
             return False

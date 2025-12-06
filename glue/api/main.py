@@ -13,9 +13,68 @@ from io import StringIO
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends
+from fastapi.security import APIKeyHeader
+import secrets
 
 logger = logging.getLogger(__name__)
+
+# API Key Authentication
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+_API_KEY = None  # Will be loaded from config or generated
+
+def get_api_key() -> str:
+    """Get or generate the API key"""
+    global _API_KEY
+    if _API_KEY is None:
+        # Try to load from config
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
+            if os.path.exists(config_path):
+                with open(config_path) as f:
+                    config = json.load(f)
+                    _API_KEY = config.get('api_key', '')
+        except Exception:
+            pass
+
+        # Generate new key if not found
+        if not _API_KEY:
+            _API_KEY = secrets.token_urlsafe(32)
+            # Save it
+            try:
+                config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
+                os.makedirs(os.path.dirname(config_path), exist_ok=True)
+                with open(config_path, 'w') as f:
+                    json.dump({'api_key': _API_KEY, 'auth_enabled': False}, f, indent=2)
+                logger.info(f"Generated new API key (saved to config/api_config.json)")
+            except Exception as e:
+                logger.warning(f"Could not save API key: {e}")
+    return _API_KEY
+
+def is_auth_enabled() -> bool:
+    """Check if API authentication is enabled"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                config = json.load(f)
+                return config.get('auth_enabled', False)
+    except Exception:
+        pass
+    return False
+
+async def verify_api_key(api_key: str = Depends(API_KEY_HEADER)):
+    """Verify API key if authentication is enabled"""
+    if not is_auth_enabled():
+        return True  # Auth disabled
+
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API key required. Set X-API-Key header.")
+
+    if api_key != get_api_key():
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+    return True
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -69,10 +128,17 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(title="JJ-Bot API v2.1", lifespan=lifespan)
 
-# Add CORS middleware for dashboard
+# Add CORS middleware for dashboard - restricted to localhost for security
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",  # Alternative React port
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",  # API itself (for testing)
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -323,6 +389,27 @@ async def get_market_prices():
 @app.get("/api/system/health")
 async def system_health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# ===== AUTHENTICATION =====
+@app.get("/api/auth/status")
+async def auth_status():
+    """Get authentication status and info"""
+    return {
+        "auth_enabled": is_auth_enabled(),
+        "message": "Set auth_enabled=true in config/api_config.json to require API keys"
+    }
+
+@app.post("/api/auth/enable")
+async def enable_auth(enabled: bool = True, _: bool = Depends(verify_api_key)):
+    """Enable or disable API authentication"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
+        config = {'api_key': get_api_key(), 'auth_enabled': enabled}
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        return {"status": "ok", "auth_enabled": enabled, "api_key": get_api_key() if enabled else None}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # ===== BOT ENDPOINTS - Uses unified JJBotPro =====
 # Import the unified bot module
