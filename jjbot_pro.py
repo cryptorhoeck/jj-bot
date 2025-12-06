@@ -650,7 +650,7 @@ class JJBotPro:
                     raise ValueError(error_msg)
 
                 logger.info("Loading real historical data from Kraken for training...")
-                training_symbols = self.config.symbols[:10]  # Use top 10 configured symbols
+                training_symbols = self.config.symbols  # Use ALL configured symbols
                 data = load_historical_data_sync(
                     symbols=training_symbols,
                     timeframe='1h',  # 1-hour candles

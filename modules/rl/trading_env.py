@@ -42,12 +42,9 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         logger.warning("ccxt not installed, using dummy data")
         return {}
 
-    if symbols is None:
-        # Default symbols - top crypto pairs on Kraken
-        symbols = [
-            'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'DOGE/USD',
-            'ADA/USD', 'AVAX/USD', 'DOT/USD', 'LINK/USD', 'ATOM/USD'
-        ]
+    if not symbols:
+        logger.error("No symbols provided for training data")
+        return {}
 
     logger.info(f"Fetching historical data for {len(symbols)} symbols from Kraken...")
 
