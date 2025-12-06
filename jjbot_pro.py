@@ -641,13 +641,16 @@ class JJBotPro:
         if self.config.use_rl_agent and RL_AVAILABLE:
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
-                max_position_size=self.config.max_position_pct
+                max_position_size=self.config.max_position_pct,
+                max_steps=500  # Faster training - 500 steps per episode
             )
 
             self.rl_agent = create_agent(
                 "ppo",
                 state_dim=self.rl_env.observation_space_dim,
-                action_dim=self.rl_env.action_space_dim
+                action_dim=self.rl_env.action_space_dim,
+                n_epochs=4,  # Faster training - fewer optimization passes
+                batch_size=128  # Larger batches for efficiency
             )
 
             # Load existing model if available
