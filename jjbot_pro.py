@@ -643,9 +643,14 @@ class JJBotPro:
         if self.config.use_rl_agent and RL_AVAILABLE:
             # Load REAL historical data from Kraken for training
             if load_historical_data_sync:
+                # Validate symbols are configured
+                if not self.config.symbols:
+                    error_msg = "No symbols selected! Please select trading symbols in Settings before training."
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
                 logger.info("Loading real historical data from Kraken for training...")
-                # Use configured symbols for training data
-                training_symbols = self.config.symbols[:10]  # Use top 10 symbols
+                training_symbols = self.config.symbols[:10]  # Use top 10 configured symbols
                 data = load_historical_data_sync(
                     symbols=training_symbols,
                     timeframe='1h',  # 1-hour candles

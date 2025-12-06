@@ -332,7 +332,18 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       return;
     }
 
-    const episodes = parseInt(prompt('How many training episodes? (Default: 100, Recommended: 500-1000)', '500'));
+    // Check if symbols are selected
+    if (!proConfig.symbols || proConfig.symbols.length === 0) {
+      toast.error('Please select trading symbols in Settings before training');
+      return;
+    }
+
+    // Use configured episodes from settings
+    const configuredEpisodes = proConfig.train_episodes || 1000;
+    const episodes = parseInt(prompt(
+      `Training episodes (configured: ${configuredEpisodes})`,
+      String(configuredEpisodes)
+    ));
     if (!episodes || episodes < 1) {
       toast.error('Invalid number of episodes');
       return;
