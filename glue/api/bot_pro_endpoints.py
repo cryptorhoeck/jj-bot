@@ -326,8 +326,8 @@ async def stop_bot():
 
 
 @router.post("/train")
-async def start_training(episodes: int = 100):
-    """Start RL agent training"""
+async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90):
+    """Start RL agent training with configurable data settings"""
     global _bot_instance
 
     if _bot_instance and _bot_instance.running:
@@ -339,6 +339,8 @@ async def start_training(episodes: int = 100):
     config = load_config() or {}
     config["mode"] = "training"
     config["train_episodes"] = episodes
+    config["train_timeframe"] = timeframe
+    config["train_history_days"] = history_days
     save_config(config)
 
     # Start in training mode

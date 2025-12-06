@@ -370,7 +370,9 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/pro/train?episodes=${episodes}`, { method: 'POST' });
+      const timeframe = proConfig.train_timeframe || '1h';
+      const historyDays = proConfig.train_history_days || 90;
+      const response = await fetch(`${API_BASE}/api/pro/train?episodes=${episodes}&timeframe=${timeframe}&history_days=${historyDays}`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started') {
         setBotRunning(true);

@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 _DATA_CACHE: Dict[str, np.ndarray] = {}
 _CACHE_LOADED = False
 _CACHE_SYMBOLS: List[str] = []
+_CACHE_TIMEFRAME: str = ''
+_CACHE_DAYS: int = 0
 
 
 def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', days: int = 90) -> Dict[str, np.ndarray]:
@@ -35,11 +37,18 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
 
     Returns dict of symbol -> feature array (n_candles, n_features)
     """
-    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS
+    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS, _CACHE_TIMEFRAME, _CACHE_DAYS
 
+    # Check if cache is valid (same timeframe and days)
     if _CACHE_LOADED and _DATA_CACHE:
-        logger.info(f"Using cached data for {len(_DATA_CACHE)} symbols")
-        return _DATA_CACHE
+        if _CACHE_TIMEFRAME == timeframe and _CACHE_DAYS == days:
+            logger.info(f"Using cached data for {len(_DATA_CACHE)} symbols (timeframe={timeframe}, days={days})")
+            return _DATA_CACHE
+        else:
+            logger.info(f"Cache invalidated: settings changed from {_CACHE_TIMEFRAME}/{_CACHE_DAYS}d to {timeframe}/{days}d")
+            _DATA_CACHE = {}
+            _CACHE_LOADED = False
+            _CACHE_SYMBOLS = []
 
     try:
         import ccxt
@@ -140,7 +149,9 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         _DATA_CACHE = data_cache
         _CACHE_LOADED = True
         _CACHE_SYMBOLS = list(data_cache.keys())
-        logger.info(f"Successfully cached data for {len(data_cache)} symbols")
+        _CACHE_TIMEFRAME = timeframe
+        _CACHE_DAYS = days
+        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days")
     else:
         logger.warning("No data fetched, will use dummy data")
 
