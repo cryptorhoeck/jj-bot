@@ -5,6 +5,7 @@ import sys
 import json
 import math
 import asyncio
+import logging
 from datetime import datetime, timedelta
 import subprocess
 import csv
@@ -13,6 +14,8 @@ from typing import List, Dict, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -440,7 +443,7 @@ async def clear_data():
                 with open(state_file, 'w') as f:
                     json.dump(state_data, f, indent=2)
             except Exception as e:
-                print(f"Warning: Could not update state file: {e}")
+                logger.warning(f"Could not update state file: {e}")
 
         return {
             "status": "cleared",
@@ -633,7 +636,7 @@ async def get_market_live():
             symbols = [row[0] for row in cursor.fetchall()]
             conn.close()
         except Exception as db_err:
-            print(f"⚠️  Failed to load symbols from DB: {db_err}, using defaults from config")
+            logger.warning(f"Failed to load symbols from DB: {db_err}, using defaults from config")
             # Try to load from bot config, or use comprehensive fallback
             try:
                 import json
@@ -696,7 +699,7 @@ async def get_market_live():
                 tickers = kraken.fetch_tickers(valid_pairs)
             except Exception as batch_err:
                 # If batch fails, try individual fetches
-                print(f"⚠️  Batch ticker fetch failed: {batch_err}, trying individual...")
+                logger.warning(f"Batch ticker fetch failed: {batch_err}, trying individual...")
                 tickers = {}
                 for pair in valid_pairs:
                     try:
@@ -723,13 +726,13 @@ async def get_market_live():
                 return {"status": "success", "data": result, "count": len(result), "source": "kraken_ccxt"}
 
         except Exception as ccxt_err:
-            print(f"⚠️  CCXT fallback failed: {ccxt_err}")
+            logger.warning(f"CCXT fallback failed: {ccxt_err}")
 
         # Last resort: Return error instead of misleading placeholder data
         raise Exception("No price data available from any source")
 
     except Exception as e:
-        print(f"⚠️  Market data fetch failed: {e}")
+        logger.warning(f"Market data fetch failed: {e}")
         # Return error with clear message instead of fake prices
         return {
             "status": "error",
@@ -933,7 +936,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
     except Exception as e:
-        print(f"⚠️ WebSocket error: {e}")
+        logger.warning(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
 
 @app.get("/api/websocket/stats")
