@@ -467,6 +467,34 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
           {/* Training Progress */}
           {trainingProgress && trainingProgress.is_training && (
             <div className="card p-6 card-info">
+              {/* Data Source Banner */}
+              <div className={`flex items-center justify-between mb-4 p-3 rounded-lg ${trainingProgress.using_real_data ? 'bg-green-500/10 border border-green-500/30' : 'bg-yellow-500/10 border border-yellow-500/30'}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`text-lg ${trainingProgress.using_real_data ? 'text-green-500' : 'text-yellow-500'}`}>
+                    {trainingProgress.using_real_data ? '📊' : '⚠️'}
+                  </span>
+                  <div>
+                    <p className={`font-semibold text-sm ${trainingProgress.using_real_data ? 'text-green-500' : 'text-yellow-500'}`}>
+                      {trainingProgress.using_real_data ? 'Training on REAL Market Data' : 'Training on Simulated Data'}
+                    </p>
+                    {trainingProgress.using_real_data && trainingProgress.current_symbol && (
+                      <p className="text-xs text-muted">
+                        Current: <span className="font-mono font-semibold">{trainingProgress.current_symbol}</span>
+                        {trainingProgress.data_symbols?.length > 0 && (
+                          <span> • {trainingProgress.data_symbols.length} symbols loaded</span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {trainingProgress.using_real_data && trainingProgress.data_symbols?.length > 0 && (
+                  <div className="text-right">
+                    <p className="text-xs text-muted">Symbols</p>
+                    <p className="text-xs font-mono">{trainingProgress.data_symbols.slice(0, 3).map(s => s.split('/')[0]).join(', ')}{trainingProgress.data_symbols.length > 3 ? '...' : ''}</p>
+                  </div>
+                )}
+              </div>
+
               {/* Trading IQ Header */}
               <div className="flex items-center justify-between mb-4 pb-4 border-b border-[var(--border-color)]">
                 <div className="flex items-center gap-3">

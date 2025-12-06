@@ -377,6 +377,17 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
             {/* Live Training Progress Bar */}
             {isTraining && (
               <div className="mb-3">
+                {/* Real Data Indicator */}
+                <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-md text-xs ${currentTrainingProgress?.using_real_data ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                  <span>{currentTrainingProgress?.using_real_data ? '📊' : '⚠️'}</span>
+                  <span className="font-medium">
+                    {currentTrainingProgress?.using_real_data ? 'Real Data' : 'Simulated'}
+                  </span>
+                  {currentTrainingProgress?.using_real_data && currentTrainingProgress?.current_symbol && (
+                    <span className="text-muted">• <span className="font-mono">{currentTrainingProgress.current_symbol}</span></span>
+                  )}
+                </div>
+
                 <div className="flex justify-between text-xs text-muted mb-1">
                   <span>Progress</span>
                   <span className="font-semibold">{currentTrainingProgress?.progress_pct?.toFixed(1) || 0}%</span>
