@@ -66,7 +66,7 @@ class AIInferenceService(BaseService):
     """
 
     def __init__(self):
-        super().__init__(name="ai_inference", auto_start=False)
+        super().__init__(name="ai_inference", auto_start=True)
 
         # AI components
         self.config: AIConfig = get_ai_config()
