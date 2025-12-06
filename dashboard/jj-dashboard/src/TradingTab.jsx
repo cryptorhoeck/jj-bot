@@ -69,22 +69,26 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
     }
   }, [sharedBotStatus]);
 
-  // Pro config state
-  const [proConfig, setProConfig] = useState({
+  // Recommended default config (professional trading settings)
+  const DEFAULT_CONFIG = {
     mode: 'paper',
     initial_capital: 10000,
-    max_position_pct: 0.05,
-    max_positions: 10,
-    stop_loss_pct: 0.02,
-    take_profit_pct: 0.04,
-    max_daily_loss_pct: 0.05,
-    max_drawdown_pct: 0.10,
-    min_signal_confidence: 0.45,
+    max_position_pct: 0.02,      // 2% per trade (conservative)
+    max_positions: 5,            // Max 5 concurrent positions
+    stop_loss_pct: 0.02,         // 2% stop loss
+    take_profit_pct: 0.04,       // 4% take profit (2:1 risk/reward)
+    max_daily_loss_pct: 0.05,    // 5% max daily loss
+    max_drawdown_pct: 0.10,      // 10% max drawdown
+    min_signal_confidence: 0.60, // 60% minimum confidence
     use_rl_agent: true,
     use_edge_strategies: true,
     use_alternative_data: true,
+    train_episodes: 1000,        // More episodes for better learning
     symbols: []
-  });
+  };
+
+  // Pro config state
+  const [proConfig, setProConfig] = useState({...DEFAULT_CONFIG});
 
   const [botStats, setBotStats] = useState({
     equity: 10000,
@@ -224,6 +228,38 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       updateConfig.timeout = setTimeout(() => {
         saveConfig({ [field]: value });
       }, 500);
+    }
+  };
+
+  // Reset to recommended defaults
+  const resetToDefaults = async () => {
+    if (!window.confirm('Reset all settings to recommended defaults? This will optimize for conservative trading with proper risk management.')) {
+      return;
+    }
+
+    // Keep current symbols if any, otherwise use defaults
+    const defaultSymbols = proConfig.symbols.length > 0 ? proConfig.symbols : [
+      'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'DOGE/USD',
+      'ADA/USD', 'AVAX/USD', 'DOT/USD', 'LINK/USD', 'ATOM/USD'
+    ];
+
+    const resetConfig = {
+      ...DEFAULT_CONFIG,
+      symbols: defaultSymbols
+    };
+
+    setProConfig(resetConfig);
+    setSelectedSymbols(defaultSymbols);
+
+    try {
+      await fetch(`${API_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(resetConfig)
+      });
+      toast.success('Settings reset to recommended defaults');
+    } catch (error) {
+      toast.error('Failed to save default settings');
     }
   };
 
@@ -1030,6 +1066,25 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                 </label>
               </div>
 
+              {/* Training Episodes */}
+              {proConfig.use_rl_agent && (
+                <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="font-semibold">📚 Training Episodes</p>
+                      <p className="text-sm text-muted">More episodes = better learning (recommended: 1000+)</p>
+                    </div>
+                    <DelayedNumberInput
+                      value={proConfig.train_episodes || 500}
+                      onChange={(val) => updateConfig('train_episodes', Math.max(100, Math.round(val)))}
+                      className="input w-24 text-right"
+                      min={100}
+                      step={100}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Edge Strategies */}
               <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
                 <div>
@@ -1063,6 +1118,24 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
                 </label>
               </div>
+            </div>
+          </div>
+
+          {/* Reset to Defaults */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">🔄 Reset Settings</h3>
+                <p className="text-sm text-muted">
+                  Restore recommended defaults: 2% position size, 2:1 risk/reward, 60% confidence threshold
+                </p>
+              </div>
+              <button
+                onClick={resetToDefaults}
+                className="btn bg-warning/20 text-warning hover:bg-warning/30 px-6 py-2"
+              >
+                Reset to Defaults
+              </button>
             </div>
           </div>
 
