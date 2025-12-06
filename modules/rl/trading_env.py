@@ -1,6 +1,8 @@
 """
 Trading Environment for Reinforcement Learning
 OpenAI Gym compatible environment for training RL agents
+
+Uses REAL historical data from Kraken for meaningful training.
 """
 
 import numpy as np
@@ -9,9 +11,318 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
 import logging
-
+import random
+import time
+import asyncio
 
 logger = logging.getLogger(__name__)
+
+# Global cache for historical data (avoid re-fetching)
+_DATA_CACHE: Dict[str, np.ndarray] = {}
+_CACHE_LOADED = False
+_CACHE_SYMBOLS: List[str] = []
+
+
+def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', limit: int = 1000) -> Dict[str, np.ndarray]:
+    """
+    Synchronously fetch historical OHLCV data from Kraken.
+    Called once at startup and cached for all training episodes.
+
+    Returns dict of symbol -> feature array (n_candles, n_features)
+    """
+    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS
+
+    if _CACHE_LOADED and _DATA_CACHE:
+        logger.info(f"Using cached data for {len(_DATA_CACHE)} symbols")
+        return _DATA_CACHE
+
+    try:
+        import ccxt
+    except ImportError:
+        logger.warning("ccxt not installed, using dummy data")
+        return {}
+
+    if symbols is None:
+        # Default symbols - top crypto pairs on Kraken
+        symbols = [
+            'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'DOGE/USD',
+            'ADA/USD', 'AVAX/USD', 'DOT/USD', 'LINK/USD', 'ATOM/USD'
+        ]
+
+    logger.info(f"Fetching historical data for {len(symbols)} symbols from Kraken...")
+
+    exchange = ccxt.kraken({
+        'enableRateLimit': True,
+        'rateLimit': 1000,  # Be nice to the API
+    })
+
+    try:
+        exchange.load_markets()
+    except Exception as e:
+        logger.error(f"Failed to load Kraken markets: {e}")
+        return {}
+
+    data_cache = {}
+
+    for symbol in symbols:
+        if symbol not in exchange.markets:
+            logger.warning(f"Symbol {symbol} not available on Kraken, skipping")
+            continue
+
+        try:
+            # Fetch OHLCV data
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+
+            if not ohlcv or len(ohlcv) < 100:
+                logger.warning(f"Insufficient data for {symbol}: {len(ohlcv) if ohlcv else 0} candles")
+                continue
+
+            # Convert to numpy array: [timestamp, open, high, low, close, volume]
+            ohlcv_array = np.array(ohlcv, dtype=np.float64)
+
+            # Calculate features from OHLCV
+            features = calculate_features(ohlcv_array)
+
+            if features is not None and len(features) > 50:
+                data_cache[symbol] = features
+                logger.info(f"Loaded {len(features)} candles for {symbol}")
+
+            # Rate limit
+            time.sleep(0.5)
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch {symbol}: {e}")
+            continue
+
+    if data_cache:
+        _DATA_CACHE = data_cache
+        _CACHE_LOADED = True
+        _CACHE_SYMBOLS = list(data_cache.keys())
+        logger.info(f"Successfully cached data for {len(data_cache)} symbols")
+    else:
+        logger.warning("No data fetched, will use dummy data")
+
+    return data_cache
+
+
+def calculate_features(ohlcv: np.ndarray) -> np.ndarray:
+    """
+    Calculate technical indicators from OHLCV data.
+
+    Input: (n_candles, 6) - [timestamp, open, high, low, close, volume]
+    Output: (n_candles, 20) - [close, returns, volatility, rsi, macd, bb_upper, bb_lower, ...]
+    """
+    n = len(ohlcv)
+    if n < 50:
+        return None
+
+    close = ohlcv[:, 4]
+    high = ohlcv[:, 2]
+    low = ohlcv[:, 3]
+    volume = ohlcv[:, 5]
+
+    features = np.zeros((n, 20), dtype=np.float32)
+
+    # Feature 0: Close price (raw, for trading)
+    features[:, 0] = close
+
+    # Feature 1: Returns (price change %)
+    features[1:, 1] = (close[1:] - close[:-1]) / (close[:-1] + 1e-8)
+
+    # Feature 2: Log returns
+    features[1:, 2] = np.log(close[1:] / (close[:-1] + 1e-8))
+
+    # Feature 3: Volatility (20-period rolling std of returns)
+    for i in range(20, n):
+        features[i, 3] = np.std(features[i-20:i, 1])
+
+    # Feature 4: RSI (14-period)
+    rsi = calculate_rsi(close, period=14)
+    features[:, 4] = rsi / 100.0  # Normalize to 0-1
+
+    # Feature 5-6: MACD (12, 26, 9)
+    macd_line, signal_line = calculate_macd(close)
+    features[:, 5] = macd_line / (close + 1e-8)  # Normalize by price
+    features[:, 6] = signal_line / (close + 1e-8)
+
+    # Feature 7-9: Bollinger Bands (20-period, 2 std)
+    bb_mid, bb_upper, bb_lower = calculate_bollinger_bands(close, period=20, std_mult=2)
+    features[:, 7] = (close - bb_mid) / (bb_upper - bb_lower + 1e-8)  # Position within bands
+    features[:, 8] = (bb_upper - close) / (close + 1e-8)  # Distance to upper band
+    features[:, 9] = (close - bb_lower) / (close + 1e-8)  # Distance to lower band
+
+    # Feature 10: Volume relative to 20-period average
+    vol_sma = np.zeros(n)
+    for i in range(20, n):
+        vol_sma[i] = np.mean(volume[i-20:i])
+    features[:, 10] = volume / (vol_sma + 1e-8) - 1  # Normalized volume
+
+    # Feature 11: Price momentum (10-period)
+    for i in range(10, n):
+        features[i, 11] = (close[i] - close[i-10]) / (close[i-10] + 1e-8)
+
+    # Feature 12: Price momentum (20-period)
+    for i in range(20, n):
+        features[i, 12] = (close[i] - close[i-20]) / (close[i-20] + 1e-8)
+
+    # Feature 13: SMA crossover (10 vs 20)
+    sma_10 = np.zeros(n)
+    sma_20 = np.zeros(n)
+    for i in range(20, n):
+        sma_10[i] = np.mean(close[i-10:i])
+        sma_20[i] = np.mean(close[i-20:i])
+    features[:, 13] = (sma_10 - sma_20) / (close + 1e-8)
+
+    # Feature 14: High-Low range (volatility proxy)
+    features[:, 14] = (high - low) / (close + 1e-8)
+
+    # Feature 15: Close position in day's range
+    features[:, 15] = (close - low) / (high - low + 1e-8)
+
+    # Feature 16-17: ATR (14-period Average True Range)
+    atr = calculate_atr(high, low, close, period=14)
+    features[:, 16] = atr / (close + 1e-8)  # Normalized ATR
+
+    # Feature 17: Stochastic %K (14-period)
+    stoch_k = calculate_stochastic(high, low, close, period=14)
+    features[:, 17] = stoch_k / 100.0  # Normalize to 0-1
+
+    # Feature 18: OBV trend (On-Balance Volume)
+    obv = calculate_obv(close, volume)
+    obv_sma = np.zeros(n)
+    for i in range(20, n):
+        obv_sma[i] = np.mean(obv[i-20:i])
+    features[:, 18] = np.sign(obv - obv_sma)  # OBV above/below average
+
+    # Feature 19: VWAP deviation
+    vwap = np.cumsum(close * volume) / (np.cumsum(volume) + 1e-8)
+    features[:, 19] = (close - vwap) / (vwap + 1e-8)
+
+    return features
+
+
+def calculate_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
+    """Calculate Relative Strength Index"""
+    n = len(prices)
+    rsi = np.full(n, 50.0)  # Default to neutral
+
+    if n < period + 1:
+        return rsi
+
+    deltas = np.diff(prices)
+    gains = np.where(deltas > 0, deltas, 0)
+    losses = np.where(deltas < 0, -deltas, 0)
+
+    # Initial average gain/loss
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+
+    for i in range(period, n - 1):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+        if avg_loss == 0:
+            rsi[i + 1] = 100
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i + 1] = 100 - (100 / (1 + rs))
+
+    return rsi
+
+
+def calculate_macd(prices: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[np.ndarray, np.ndarray]:
+    """Calculate MACD line and signal line"""
+    n = len(prices)
+
+    # EMA calculation
+    def ema(data, period):
+        result = np.zeros(n)
+        multiplier = 2 / (period + 1)
+        result[0] = data[0]
+        for i in range(1, n):
+            result[i] = (data[i] - result[i-1]) * multiplier + result[i-1]
+        return result
+
+    ema_fast = ema(prices, fast)
+    ema_slow = ema(prices, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = ema(macd_line, signal)
+
+    return macd_line, signal_line
+
+
+def calculate_bollinger_bands(prices: np.ndarray, period: int = 20, std_mult: float = 2) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Calculate Bollinger Bands"""
+    n = len(prices)
+    mid = np.zeros(n)
+    upper = np.zeros(n)
+    lower = np.zeros(n)
+
+    for i in range(period, n):
+        window = prices[i-period:i]
+        mid[i] = np.mean(window)
+        std = np.std(window)
+        upper[i] = mid[i] + std_mult * std
+        lower[i] = mid[i] - std_mult * std
+
+    # Fill initial values
+    mid[:period] = prices[:period]
+    upper[:period] = prices[:period]
+    lower[:period] = prices[:period]
+
+    return mid, upper, lower
+
+
+def calculate_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+    """Calculate Average True Range"""
+    n = len(high)
+    tr = np.zeros(n)
+    atr = np.zeros(n)
+
+    tr[0] = high[0] - low[0]
+    for i in range(1, n):
+        tr[i] = max(
+            high[i] - low[i],
+            abs(high[i] - close[i-1]),
+            abs(low[i] - close[i-1])
+        )
+
+    atr[period-1] = np.mean(tr[:period])
+    for i in range(period, n):
+        atr[i] = (atr[i-1] * (period - 1) + tr[i]) / period
+
+    return atr
+
+
+def calculate_stochastic(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+    """Calculate Stochastic %K"""
+    n = len(close)
+    stoch_k = np.full(n, 50.0)
+
+    for i in range(period, n):
+        highest = np.max(high[i-period:i])
+        lowest = np.min(low[i-period:i])
+        if highest != lowest:
+            stoch_k[i] = 100 * (close[i] - lowest) / (highest - lowest)
+
+    return stoch_k
+
+
+def calculate_obv(close: np.ndarray, volume: np.ndarray) -> np.ndarray:
+    """Calculate On-Balance Volume"""
+    n = len(close)
+    obv = np.zeros(n)
+    obv[0] = volume[0]
+
+    for i in range(1, n):
+        if close[i] > close[i-1]:
+            obv[i] = obv[i-1] + volume[i]
+        elif close[i] < close[i-1]:
+            obv[i] = obv[i-1] - volume[i]
+        else:
+            obv[i] = obv[i-1]
+
+    return obv
 
 
 class Action(Enum):
@@ -103,8 +414,13 @@ class TradingEnvironment:
 
         self.reset()
 
-    def reset(self, price_data: Optional[np.ndarray] = None) -> np.ndarray:
-        """Reset environment to initial state"""
+    def reset(self, price_data: Optional[np.ndarray] = None, use_real_data: bool = True) -> np.ndarray:
+        """Reset environment to initial state
+
+        Args:
+            price_data: Optional pre-loaded price data
+            use_real_data: If True, use cached real Kraken data (default)
+        """
         self.balance = self.initial_balance
         self.equity = self.initial_balance
         self.peak_equity = self.initial_balance
@@ -118,8 +434,12 @@ class TradingEnvironment:
         # Price data: shape (n_steps, n_features)
         if price_data is not None:
             self.price_data = price_data
+        elif use_real_data and _CACHE_LOADED and _DATA_CACHE:
+            # Use random segment from cached real data
+            self.price_data = self._get_real_data_segment()
         else:
-            # Generate dummy data for testing
+            # Fallback: Generate dummy data for testing
+            logger.warning("Using dummy data - real data not loaded!")
             self.price_data = self._generate_dummy_data()
 
         self.prices = self.price_data[:, 0]  # First column is close price
@@ -129,7 +449,38 @@ class TradingEnvironment:
         self.returns_history = deque(maxlen=100)
         self.equity_history = [self.initial_balance]
 
+        # Track which symbol we're trading (for logging)
+        self.current_symbol = getattr(self, '_current_symbol', 'UNKNOWN')
+
         return self._get_observation()
+
+    def _get_real_data_segment(self) -> np.ndarray:
+        """Get a random segment of real market data for training"""
+        global _DATA_CACHE, _CACHE_SYMBOLS
+
+        if not _DATA_CACHE:
+            return self._generate_dummy_data()
+
+        # Pick a random symbol
+        symbol = random.choice(_CACHE_SYMBOLS)
+        self._current_symbol = symbol
+        data = _DATA_CACHE[symbol]
+
+        # Required length
+        required_length = self.max_steps + self.lookback_window
+
+        if len(data) >= required_length:
+            # Pick a random starting point
+            max_start = len(data) - required_length
+            start_idx = random.randint(0, max_start) if max_start > 0 else 0
+            segment = data[start_idx:start_idx + required_length].copy()
+        else:
+            # Data is shorter than required - use all of it and pad if needed
+            segment = data.copy()
+            # Update max_steps for this episode
+            self.max_steps = len(segment) - self.lookback_window - 1
+
+        return segment
 
     def _generate_dummy_data(self) -> np.ndarray:
         """Generate dummy price data for testing"""

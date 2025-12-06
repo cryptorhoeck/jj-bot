@@ -28,11 +28,13 @@ from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 # RL modules are optional (require PyTorch)
 try:
     from modules.rl import TradingEnvironment, create_agent, PPOAgent
+    from modules.rl.trading_env import load_historical_data_sync
     RL_AVAILABLE = True
 except ImportError:
     TradingEnvironment = None
     create_agent = None
     PPOAgent = None
+    load_historical_data_sync = None
     RL_AVAILABLE = False
 
 # Alternative data modules (optional)
@@ -639,6 +641,21 @@ class JJBotPro:
 
         # 5. RL Agent (optional - requires PyTorch)
         if self.config.use_rl_agent and RL_AVAILABLE:
+            # Load REAL historical data from Kraken for training
+            if load_historical_data_sync:
+                logger.info("Loading real historical data from Kraken for training...")
+                # Use configured symbols for training data
+                training_symbols = self.config.symbols[:10]  # Use top 10 symbols
+                data = load_historical_data_sync(
+                    symbols=training_symbols,
+                    timeframe='1h',  # 1-hour candles
+                    limit=1000  # ~41 days of hourly data
+                )
+                if data:
+                    logger.info(f"Loaded real data for {len(data)} symbols - Training will use REAL market data!")
+                else:
+                    logger.warning("Failed to load real data - training will use simulated data")
+
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct,
@@ -1288,8 +1305,18 @@ class JJBotPro:
             logger.error("RL components not initialized")
             return
 
+        # Check if we have real data loaded
+        from modules.rl.trading_env import _CACHE_LOADED, _CACHE_SYMBOLS
+        using_real_data = _CACHE_LOADED and len(_CACHE_SYMBOLS) > 0
+        if using_real_data:
+            logger.info(f"Training with REAL market data from {len(_CACHE_SYMBOLS)} symbols: {', '.join(_CACHE_SYMBOLS)}")
+        else:
+            logger.warning("Training with SIMULATED data - consider loading real data for better results")
+
         self.training_progress["is_training"] = True
         self.training_progress["total_episodes"] = self.config.train_episodes
+        self.training_progress["using_real_data"] = using_real_data
+        self.training_progress["data_symbols"] = _CACHE_SYMBOLS if using_real_data else []
 
         completed_episodes = 0
         for episode in range(self.config.train_episodes):
@@ -1335,9 +1362,14 @@ class JJBotPro:
             self.training_progress["avg_reward"] = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
             self.training_progress["total_trades"] = self.training_metrics["total_trades"]
 
+            # Track which symbol was used in this episode
+            current_symbol = getattr(self.rl_env, 'current_symbol', 'N/A')
+            self.training_progress["current_symbol"] = current_symbol
+
             if episode % 10 == 0:
+                symbol_info = f" [{current_symbol}]" if using_real_data else ""
                 logger.info(
-                    f"Episode {episode}/{self.config.train_episodes} | "
+                    f"Episode {episode}/{self.config.train_episodes}{symbol_info} | "
                     f"Reward: {metrics.get('episode_reward', 0):.2f} | "
                     f"P&L: ${metrics.get('total_pnl', 0):.2f} | "
                     f"Win Rate: {metrics.get('win_rate', 0):.1%}"
