@@ -126,7 +126,7 @@ class ActorCritic(nn.Module):
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
 
-        return log_probs, state_values.squeeze(), entropy
+        return log_probs, state_values.squeeze(-1), entropy
 
 
 class PPOAgent:
