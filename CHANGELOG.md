@@ -5,6 +5,19 @@ All notable changes to JJ-Bot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.3] - 2025-12-06
+
+### Fixed
+- **Windows Compatibility** - Replaced all emoji characters with ASCII equivalents
+  - Fixes `UnicodeEncodeError` on Windows cp1252 console
+  - Affected files: `jjbot_pro.py`, `websocket_manager.py`, `trading_bot_service.py`,
+    `realistic_simulator_service.py`, `inference_service.py`, `strategy_service.py`,
+    `market_stream_service.py`, `error_recovery.py`
+  - Emoji replacements: `⚠️` → `[WARNING]`, `✅` → `[OK]`, `❌` → `[ERROR]`,
+    `🚨` → `[ALERT]`, `🤖` → `[BOT]`/`[AI]`, `🛑` → `[STOP]`, etc.
+
+---
+
 ## [3.0.2] - 2025-12-06
 
 ### Changed
@@ -140,6 +153,9 @@ This changelog was created retroactively. Version 2.3.0 represents the state bef
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 3.0.3 | 2025-12-06 | Windows compatibility: Replace emojis with ASCII |
+| 3.0.2 | 2025-12-06 | Remove stale TODO comment |
+| 3.0.1 | 2025-12-06 | Fix remaining bare except clauses |
 | 3.0.0 | 2025-12-06 | Major overhaul: Security, RL improvements, bug fixes |
 | 2.3.0 | Previous | Initial tracked version |
 

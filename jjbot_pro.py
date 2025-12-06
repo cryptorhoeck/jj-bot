@@ -597,13 +597,13 @@ class JJBotPro:
         # CRITICAL WARNING: Sandbox mode
         if self.config.sandbox:
             logger.warning("=" * 50)
-            logger.warning("⚠️  SANDBOX MODE ENABLED - Using testnet/demo exchange")
-            logger.warning("⚠️  No real funds will be used. Set sandbox=False for live trading.")
+            logger.warning("[WARNING] SANDBOX MODE ENABLED - Using testnet/demo exchange")
+            logger.warning("[WARNING] No real funds will be used. Set sandbox=False for live trading.")
             logger.warning("=" * 50)
         elif self.config.mode == "live":
             logger.warning("=" * 50)
-            logger.warning("🚨 LIVE TRADING MODE - REAL FUNDS AT RISK! 🚨")
-            logger.warning("🚨 Ensure you have reviewed all settings carefully! 🚨")
+            logger.warning("[ALERT] LIVE TRADING MODE - REAL FUNDS AT RISK!")
+            logger.warning("[ALERT] Ensure you have reviewed all settings carefully!")
             logger.warning("=" * 50)
 
         logger.info("=" * 50)
@@ -647,9 +647,9 @@ class JJBotPro:
             if not connected:
                 if self.config.mode == "paper":
                     logger.warning("=" * 60)
-                    logger.warning("⚠️  EXCHANGE CONNECTION FAILED - DEMO MODE ACTIVATED ⚠️")
-                    logger.warning("⚠️  Using SIMULATED prices - NOT real market data!")
-                    logger.warning("⚠️  This is for testing only. Results may not reflect real trading.")
+                    logger.warning("[WARNING] EXCHANGE CONNECTION FAILED - DEMO MODE ACTIVATED")
+                    logger.warning("[WARNING] Using SIMULATED prices - NOT real market data!")
+                    logger.warning("[WARNING] This is for testing only. Results may not reflect real trading.")
                     logger.warning("=" * 60)
                     self._demo_mode = True
                     # Initialize with simulated prices
@@ -972,10 +972,10 @@ class JJBotPro:
                     if time_since_update > self._price_feed_stale_threshold:
                         if not self._trading_paused_due_to_feed:
                             logger.warning("=" * 60)
-                            logger.warning("⚠️  PRICE FEED STALE - PAUSING NEW TRADES ⚠️")
-                            logger.warning(f"⚠️  No price updates for {time_since_update:.0f} seconds")
-                            logger.warning("⚠️  Existing positions will NOT be auto-closed.")
-                            logger.warning("⚠️  Trading will resume when price feed is restored.")
+                            logger.warning("[WARNING] PRICE FEED STALE - PAUSING NEW TRADES")
+                            logger.warning(f"[WARNING] No price updates for {time_since_update:.0f} seconds")
+                            logger.warning("[WARNING] Existing positions will NOT be auto-closed.")
+                            logger.warning("[WARNING] Trading will resume when price feed is restored.")
                             logger.warning("=" * 60)
                             self._trading_paused_due_to_feed = True
 

@@ -33,10 +33,10 @@ class MarketStreamService:
     async def start(self):
         """Start the market stream service"""
         if self.running:
-            print("⚠️ Market stream already running")
+            print("[WARNING] Market stream already running")
             return
 
-        print(f"🚀 Starting market stream service ({self.exchange})...")
+        print(f"[START] Starting market stream service ({self.exchange})...")
         self.running = True
 
         # Start the appropriate WebSocket connection
@@ -45,18 +45,18 @@ class MarketStreamService:
         elif self.exchange == 'binance':
             self.task = asyncio.create_task(self.stream.connect_binance(self.symbols))
         else:
-            print(f"❌ Unknown exchange: {self.exchange}")
+            print(f"[ERROR] Unknown exchange: {self.exchange}")
             self.running = False
             return
 
-        print(f"✅ Market stream service started for {', '.join(self.symbols)}")
+        print(f"[OK] Market stream service started for {', '.join(self.symbols)}")
 
     async def stop(self):
         """Stop the market stream service"""
         if not self.running:
             return
 
-        print("🛑 Stopping market stream service...")
+        print("[STOP] Stopping market stream service...")
         self.running = False
 
         await self.stream.stop()

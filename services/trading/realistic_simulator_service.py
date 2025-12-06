@@ -45,7 +45,7 @@ try:
     HAS_ADAPTIVE_SELECTOR = True
 except ImportError:
     HAS_ADAPTIVE_SELECTOR = False
-    print("⚠️ Adaptive strategy selector not available - using fixed strategy")
+    print("[WARNING] Adaptive strategy selector not available - using fixed strategy")
 
 
 def fetch_top_100_coins() -> Dict[str, float]:
@@ -66,7 +66,7 @@ def fetch_top_100_coins() -> Dict[str, float]:
             'sparkline': False
         }
 
-        print("🌐 Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
+        print("[API] Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
         response = requests.get(url, params=params, timeout=15)
 
         if response.status_code == 200:
@@ -80,17 +80,17 @@ def fetch_top_100_coins() -> Dict[str, float]:
 
                 prices[symbol] = price
 
-            print(f"✅ Fetched {len(prices)} cryptocurrencies")
+            print(f"[OK] Fetched {len(prices)} cryptocurrencies")
             print(f"   Top 5: {list(prices.keys())[:5]}")
             print(f"   Price range: ${min(prices.values()):.6f} - ${max(prices.values()):,.2f}")
 
             return prices
         else:
-            print(f"⚠️ CoinGecko API returned status {response.status_code}")
+            print(f"[WARNING] CoinGecko API returned status {response.status_code}")
             return {}
 
     except Exception as e:
-        print(f"⚠️ Failed to fetch top 100 coins: {e}")
+        print(f"[WARNING] Failed to fetch top 100 coins: {e}")
         return {}
 
 
@@ -183,7 +183,7 @@ class RealisticSimulatorService(BaseService):
         """Initialize all simulator components"""
         try:
             # Initialize databases first
-            print("📦 Initializing databases...")
+            print("[INIT] Initializing databases...")
             init_all_databases()
 
             # Fetch top 100 cryptocurrencies by market cap
@@ -191,10 +191,10 @@ class RealisticSimulatorService(BaseService):
             if top_100_prices:
                 # Use the fetched prices
                 self.symbols_config = top_100_prices
-                print(f"✅ Tracking {len(self.symbols_config)} cryptocurrencies")
+                print(f"[OK] Tracking {len(self.symbols_config)} cryptocurrencies")
             else:
                 # Fallback to top 10 if API fails
-                print("⚠️ API failed, using fallback top 10 symbols")
+                print("[WARNING] API failed, using fallback top 10 symbols")
                 self.symbols_config = {
                     'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
                     'DOT': 7, 'LINK': 15, 'POL': 0.45, 'UNI': 6, 'AVAX': 35
@@ -206,7 +206,7 @@ class RealisticSimulatorService(BaseService):
                 correlation=0.3,  # 30% correlation between crypto prices
                 tick_interval_seconds=self.tick_interval
             )
-            print("✅ Price generator initialized")
+            print("[OK] Price generator initialized")
 
             # Market simulator
             self.market_simulator = MarketSimulator(
@@ -219,19 +219,19 @@ class RealisticSimulatorService(BaseService):
                 use_take_profit=True,
                 take_profit_pct=0.05        # 5% take-profit
             )
-            print("✅ Market simulator initialized")
+            print("[OK] Market simulator initialized")
 
             # Strategy engine
             self.strategy_engine = StrategyEngine()
-            print("✅ Strategy engine initialized")
+            print("[OK] Strategy engine initialized")
 
             # Price history for learning system
             self.price_history = PriceHistory()
-            print("✅ Price history tracker initialized")
+            print("[OK] Price history tracker initialized")
 
             # Performance tracker for learning system
             self.performance_tracker = StrategyPerformanceTracker()
-            print("✅ Performance tracker initialized")
+            print("[OK] Performance tracker initialized")
 
             # Adaptive selector (optional)
             if HAS_ADAPTIVE_SELECTOR:

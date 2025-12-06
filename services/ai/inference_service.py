@@ -99,24 +99,24 @@ class AIInferenceService(BaseService):
 
     def _run(self):
         """Initialize and run the AI inference service"""
-        print("🤖 AI Inference Service starting...")
+        print("[AI] AI Inference Service starting...")
 
         try:
             # Initialize LLM client
             self.llm_client = get_llm_client()
 
             if not self.llm_client.is_available:
-                print("⚠️  AI client not available (no API key). Running in fallback mode.")
+                print("[WARNING] AI client not available (no API key). Running in fallback mode.")
             else:
-                print(f"✅ AI client initialized: {self.config.model}")
+                print(f"[OK] AI client initialized: {self.config.model}")
 
             # Subscribe to trading signals for enhancement
             if self.service_config["enhance_on_event"]:
                 event_bus.subscribe("TRADING_SIGNAL", self._on_trading_signal)
-                print("📡 Subscribed to TRADING_SIGNAL events")
+                print("[INFO] Subscribed to TRADING_SIGNAL events")
 
             self.stats["last_analysis"] = datetime.now().isoformat()
-            print("✅ AI Inference Service started")
+            print("[OK] AI Inference Service started")
 
             # Main service loop
             last_sentiment_update = 0
@@ -135,7 +135,7 @@ class AIInferenceService(BaseService):
                     time.sleep(5)
 
         except Exception as e:
-            print(f"❌ AI Inference Service error: {e}")
+            print(f"[ERROR] AI Inference Service error: {e}")
             logger.error(f"AI Inference Service failed: {e}")
             self.status = "stopped"
 
@@ -144,9 +144,9 @@ class AIInferenceService(BaseService):
         # Unsubscribe from events
         try:
             event_bus.unsubscribe("TRADING_SIGNAL", self._on_trading_signal)
-            print("🛑 AI Inference Service stopped")
+            print("[STOP] AI Inference Service stopped")
         except Exception as e:
-            print(f"⚠️  Error during cleanup: {e}")
+            print(f"[WARNING] Error during cleanup: {e}")
 
     def _on_trading_signal(self, event: Dict[str, Any]):
         """Handle incoming trading signals"""
@@ -426,10 +426,10 @@ class AIInferenceService(BaseService):
         """
         try:
             self.service_config.update(new_config)
-            print(f"✅ AI Inference config updated: {new_config}")
+            print(f"[OK] AI Inference config updated: {new_config}")
             return True
         except Exception as e:
-            print(f"❌ Error updating config: {e}")
+            print(f"[ERROR] Error updating config: {e}")
             return False
 
     def get_status(self) -> Dict[str, Any]:
