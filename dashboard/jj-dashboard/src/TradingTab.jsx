@@ -618,6 +618,24 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   </p>
                 </div>
               </div>
+
+              {/* Cumulative Training P&L */}
+              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
+                <div className="text-center p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase">Cumulative P&L</p>
+                  <p className={`text-lg font-bold ${(trainingProgress.cumulative_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {(trainingProgress.cumulative_pnl || 0) >= 0 ? '+' : ''}${(trainingProgress.cumulative_pnl || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  </p>
+                  <p className="text-xs text-muted mt-1">If compounding all episodes</p>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                  <p className="text-xs text-muted uppercase">Simulated Equity</p>
+                  <p className={`text-lg font-bold ${(trainingProgress.simulated_equity || 1000) >= 1000 ? 'text-success' : 'text-danger'}`}>
+                    ${(trainingProgress.simulated_equity || 1000).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  </p>
+                  <p className="text-xs text-muted mt-1">Starting from $1,000</p>
+                </div>
+              </div>
             </div>
           )}
 

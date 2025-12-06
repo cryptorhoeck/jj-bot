@@ -246,7 +246,9 @@ class JJBotPro:
             "avg_win_rate": self.stats.get("avg_win_rate", 0.0),
             "avg_profit_factor": self.stats.get("avg_profit_factor", 0.0),
             "avg_reward": self.stats.get("avg_reward", 0.0),
-            "total_trades": self.stats.get("total_training_trades", 0)
+            "total_trades": self.stats.get("total_training_trades", 0),
+            "cumulative_pnl": 0.0,  # Total P&L if compounding across episodes
+            "simulated_equity": self.config.initial_capital  # What equity would be if compounding
         }
 
         # Training metrics for IQ calculation
@@ -255,7 +257,8 @@ class JJBotPro:
             "total_win_rate": 0.0,
             "total_profit_factor": 0.0,
             "total_reward": 0.0,
-            "total_trades": 0
+            "total_trades": 0,
+            "cumulative_pnl": 0.0  # Track what P&L would be if compounding
         }
 
         # Components (initialized in start())
@@ -1428,6 +1431,10 @@ class JJBotPro:
             self.training_metrics["total_reward"] += float(metrics.get('episode_reward', 0))
             self.training_metrics["total_trades"] += int(metrics.get('total_trades', 0))
 
+            # Track cumulative P&L (what it would be if compounding)
+            episode_pnl = float(metrics.get('total_pnl', 0))
+            self.training_metrics["cumulative_pnl"] += episode_pnl
+
             # Calculate Trading IQ
             iq, level = self._calculate_trading_iq()
 
@@ -1444,17 +1451,23 @@ class JJBotPro:
             self.training_progress["avg_reward"] = float(self.training_metrics["total_reward"] / self.training_metrics["episode_count"])
             self.training_progress["total_trades"] = int(self.training_metrics["total_trades"])
 
+            # Cumulative P&L tracking (what equity would be if compounding)
+            self.training_progress["cumulative_pnl"] = float(self.training_metrics["cumulative_pnl"])
+            self.training_progress["simulated_equity"] = float(self.config.initial_capital + self.training_metrics["cumulative_pnl"])
+
             # Track which symbol was used in this episode
             current_symbol = getattr(self.rl_env, 'current_symbol', 'N/A')
             self.training_progress["current_symbol"] = current_symbol
 
             if episode % 10 == 0:
                 symbol_info = f" [{current_symbol}]" if using_real_data else ""
+                cumulative = self.training_metrics["cumulative_pnl"]
+                sim_equity = self.config.initial_capital + cumulative
                 logger.info(
                     f"Episode {episode}/{self.config.train_episodes}{symbol_info} | "
-                    f"Reward: {metrics.get('episode_reward', 0):.2f} | "
                     f"P&L: ${metrics.get('total_pnl', 0):.2f} | "
-                    f"Win Rate: {metrics.get('win_rate', 0):.1%}"
+                    f"Cumulative: ${cumulative:+,.2f} | "
+                    f"Sim Equity: ${sim_equity:,.2f}"
                 )
 
             # Save periodically (model + state with IQ)
