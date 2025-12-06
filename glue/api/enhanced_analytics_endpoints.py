@@ -17,10 +17,22 @@ from datetime import datetime, timedelta
 import sqlite3
 import os
 import sys
+import json
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 router = APIRouter(prefix="/api/analytics/enhanced", tags=["enhanced_analytics"])
+
+
+def get_initial_capital() -> float:
+    """Get initial capital from bot config"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'bot_config.json')
+        with open(config_path) as f:
+            config = json.load(f)
+            return config.get('initial_capital', 10000.0)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return 10000.0
 
 
 def get_db_path() -> str:
@@ -69,7 +81,7 @@ async def get_equity_curve(
             }
 
         # Calculate cumulative P&L and capital
-        initial_capital = 10000.0  # TODO: Get from simulator config
+        initial_capital = get_initial_capital()
         cumulative_pnl = 0
         timestamps = []
         cumulative_pnls = []

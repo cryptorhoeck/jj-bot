@@ -399,8 +399,8 @@ async def clear_data():
         with open(config_path) as f:
             config = json.load(f)
             initial_capital = config.get("initial_capital", 10000.0)
-    except:
-        pass
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass  # Use default initial_capital
 
     # Backup trades.db (JJ-Bot Pro database)
     trades_db = PROJECT_ROOT / "data" / "trades.db"
@@ -642,7 +642,7 @@ async def get_market_live():
                     config = json.load(f)
                     # Extract base symbol from pairs like "BTC/USD" -> "BTC"
                     symbols = [s.split('/')[0] for s in config.get('symbols', [])]
-            except:
+            except (FileNotFoundError, json.JSONDecodeError, KeyError):
                 # Verified Kraken USD pairs
                 symbols = [
                     "BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK", "ATOM",
@@ -702,8 +702,8 @@ async def get_market_live():
                     try:
                         ticker = kraken.fetch_ticker(pair)
                         tickers[pair] = ticker
-                    except:
-                        continue
+                    except Exception:
+                        continue  # Skip failed tickers, try next
 
             for pair, ticker in tickers.items():
                 base = pair.split("/")[0]

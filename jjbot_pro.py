@@ -113,6 +113,9 @@ class BotConfig:
     train_episodes: int = 100
     train_timeframe: str = "1h"  # Candle size for training data
     train_history_days: int = 90  # Days of historical data
+    rl_max_steps: int = 500  # Steps per training episode
+    rl_n_epochs: int = 4  # PPO optimization epochs
+    rl_batch_size: int = 128  # PPO batch size
 
     # Timing
     analysis_interval_seconds: int = 60  # How often to analyze
@@ -670,15 +673,15 @@ class JJBotPro:
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct,
-                max_steps=500  # Faster training - 500 steps per episode
+                max_steps=self.config.rl_max_steps
             )
 
             self.rl_agent = create_agent(
                 "ppo",
                 state_dim=self.rl_env.observation_space_dim,
                 action_dim=self.rl_env.action_space_dim,
-                n_epochs=4,  # Faster training - fewer optimization passes
-                batch_size=128  # Larger batches for efficiency
+                n_epochs=self.config.rl_n_epochs,
+                batch_size=self.config.rl_batch_size
             )
 
             # Load existing model if available

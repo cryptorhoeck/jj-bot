@@ -7,10 +7,13 @@ import os
 import sys
 import json
 import asyncio
+import logging
 from datetime import datetime
 from typing import Optional, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -144,7 +147,8 @@ async def get_bot_status():
                         "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),
                         "avg_reward": saved_stats.get("avg_reward", 0),
                     }
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Could not load trading stats: {e}")
                 status["trading_iq"] = 0
                 status["expertise_level"] = "Untrained"
                 status["training_history"] = {}
@@ -288,7 +292,7 @@ async def _run_bot(bot):
     except asyncio.CancelledError:
         await bot.stop()
     except Exception as e:
-        print(f"Bot error: {e}")
+        logger.error(f"Bot error: {e}", exc_info=True)
         await bot.stop()
 
 
