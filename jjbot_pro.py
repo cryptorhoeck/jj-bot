@@ -1286,8 +1286,15 @@ class JJBotPro:
                 logger.info(f"Training stopped by user at episode {episode}")
                 break
 
-            metrics = self.rl_agent.train_episode(self.rl_env)
+            # Run training episode in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            metrics = await loop.run_in_executor(
+                None, self.rl_agent.train_episode, self.rl_env
+            )
             completed_episodes = episode + 1
+
+            # Yield control to allow UI updates
+            await asyncio.sleep(0)
 
             # Update cumulative metrics for IQ calculation
             win_rate = metrics.get('win_rate', 0)
