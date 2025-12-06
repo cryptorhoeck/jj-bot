@@ -1257,39 +1257,109 @@ class JJBotPro:
         )
 
     def _calculate_trading_iq(self):
-        """Calculate Trading IQ based on cumulative performance (mimics human IQ scale)"""
-        if self.training_metrics["episode_count"] == 0:
+        """Calculate Trading IQ based on cumulative performance (mimics human IQ scale)
+
+        Scoring is deliberately difficult:
+        - Requires large sample sizes for high scores
+        - 160 IQ (Genius) requires 1000+ episodes with exceptional metrics
+        - Small samples are heavily penalized
+        """
+        episodes = self.training_metrics["episode_count"]
+        total_trades = self.training_metrics["total_trades"]
+
+        if episodes == 0:
             return 0, "Untrained"
 
         # Calculate averages
-        avg_win_rate = self.training_metrics["total_win_rate"] / self.training_metrics["episode_count"]
-        avg_profit_factor = self.training_metrics["total_profit_factor"] / self.training_metrics["episode_count"]
-        avg_reward = self.training_metrics["total_reward"] / self.training_metrics["episode_count"]
+        avg_win_rate = self.training_metrics["total_win_rate"] / episodes
+        avg_profit_factor = self.training_metrics["total_profit_factor"] / episodes
+        avg_reward = self.training_metrics["total_reward"] / episodes
 
-        # Calculate performance score (0-100)
-        # Win rate: 50% = average, scale 0-100%
-        win_rate_score = min(40, (avg_win_rate / 0.5) * 40)
+        # === SAMPLE SIZE MULTIPLIER ===
+        # Small samples are statistically meaningless
+        # Need 500+ episodes for full credit, scales down harshly below that
+        if episodes < 50:
+            sample_multiplier = 0.3  # Barely started
+        elif episodes < 100:
+            sample_multiplier = 0.5  # Still learning
+        elif episodes < 250:
+            sample_multiplier = 0.7  # Getting there
+        elif episodes < 500:
+            sample_multiplier = 0.85  # Decent sample
+        elif episodes < 1000:
+            sample_multiplier = 0.95  # Good sample
+        else:
+            sample_multiplier = 1.0  # Full credit
 
-        # Profit factor: 1.0 = break even, 2.0+ = good
-        profit_factor_score = min(30, (avg_profit_factor / 3.0) * 30)
+        # Also penalize low trade counts (need actual trades, not just episodes)
+        if total_trades < 100:
+            trade_multiplier = 0.4
+        elif total_trades < 500:
+            trade_multiplier = 0.6
+        elif total_trades < 1000:
+            trade_multiplier = 0.8
+        elif total_trades < 5000:
+            trade_multiplier = 0.9
+        else:
+            trade_multiplier = 1.0
 
-        # Reward: normalize to 0-30 points
-        reward_normalized = max(0, min(100, avg_reward + 100)) / 100
-        reward_score = reward_normalized * 30
+        # Combined sample penalty
+        sample_penalty = sample_multiplier * trade_multiplier
+
+        # === PERFORMANCE SCORES (harder thresholds) ===
+
+        # Win rate: 50% is baseline (random), need 55%+ for points
+        # Max 35 points at 70%+ win rate
+        if avg_win_rate <= 0.50:
+            win_rate_score = 0
+        elif avg_win_rate <= 0.55:
+            win_rate_score = (avg_win_rate - 0.50) / 0.05 * 10  # 0-10 points
+        elif avg_win_rate <= 0.60:
+            win_rate_score = 10 + (avg_win_rate - 0.55) / 0.05 * 10  # 10-20 points
+        elif avg_win_rate <= 0.65:
+            win_rate_score = 20 + (avg_win_rate - 0.60) / 0.05 * 8  # 20-28 points
+        else:
+            win_rate_score = min(35, 28 + (avg_win_rate - 0.65) / 0.05 * 7)  # 28-35 points
+
+        # Profit factor: 1.0 = break even, need 1.2+ for points
+        # Max 35 points at 2.5+ profit factor
+        if avg_profit_factor <= 1.0:
+            profit_factor_score = 0
+        elif avg_profit_factor <= 1.2:
+            profit_factor_score = (avg_profit_factor - 1.0) / 0.2 * 5  # 0-5 points
+        elif avg_profit_factor <= 1.5:
+            profit_factor_score = 5 + (avg_profit_factor - 1.2) / 0.3 * 10  # 5-15 points
+        elif avg_profit_factor <= 2.0:
+            profit_factor_score = 15 + (avg_profit_factor - 1.5) / 0.5 * 12  # 15-27 points
+        else:
+            profit_factor_score = min(35, 27 + (avg_profit_factor - 2.0) / 0.5 * 8)  # 27-35 points
+
+        # Consistency bonus: reward stable positive performance
+        # Max 30 points
+        if avg_reward <= 0:
+            reward_score = 0
+        elif avg_reward <= 10:
+            reward_score = avg_reward / 10 * 10  # 0-10 points
+        elif avg_reward <= 25:
+            reward_score = 10 + (avg_reward - 10) / 15 * 10  # 10-20 points
+        else:
+            reward_score = min(30, 20 + (avg_reward - 25) / 25 * 10)  # 20-30 points
 
         # Raw performance score (0-100)
         raw_score = win_rate_score + profit_factor_score + reward_score
 
-        # Convert to human IQ scale (70-160)
-        # 0 raw = 70 IQ (very low)
-        # 50 raw = 100 IQ (average)
-        # 100 raw = 160 IQ (genius)
-        iq = int(70 + (raw_score * 0.9))
+        # Apply sample size penalty
+        adjusted_score = raw_score * sample_penalty
 
-        # Determine expertise level using human IQ categories
-        if iq < 70:
-            level = "Untrained"
-        elif iq < 85:
+        # Convert to IQ scale (70-160)
+        # 0 adjusted = 70 IQ
+        # 50 adjusted = 115 IQ (above average - hard to reach)
+        # 100 adjusted = 160 IQ (genius - very hard to reach)
+        iq = int(70 + (adjusted_score * 0.9))
+        iq = max(70, min(160, iq))  # Clamp to valid range
+
+        # Determine expertise level
+        if iq < 85:
             level = "Below Average"
         elif iq < 100:
             level = "Average"
