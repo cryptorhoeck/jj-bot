@@ -193,10 +193,10 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
   // Load open positions
   const loadPositions = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/positions/open`);
+      const response = await fetch(`${API_BASE}/api/pro/positions`);
       const data = await response.json();
-      if (data.open_positions) {
-        setPositions(data.open_positions);
+      if (data.positions) {
+        setPositions(data.positions);
       }
     } catch (error) {
       console.error('Failed to load positions:', error);
@@ -271,7 +271,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
     setSelectedSymbols(defaultSymbols);
 
     try {
-      await fetch(`${API_URL}/api/config`, {
+      await fetch(`${API_BASE}/api/pro/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(resetConfig)

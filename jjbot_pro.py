@@ -475,7 +475,8 @@ class JJBotPro:
                 if data["trade_count"] % 2 == 1:  # Odd = open position
                     try:
                         entry_time = datetime.fromisoformat(data["entry_time"]) if data["entry_time"] else datetime.now()
-                    except:
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Could not parse entry_time for {symbol}: {e}")
                         entry_time = datetime.now()
 
                     # Determine side from signal
@@ -698,10 +699,11 @@ class JJBotPro:
         # Update position P&L
         if update.symbol in self.positions:
             pos = self.positions[update.symbol]
-            if pos.side == "long":
-                pos.unrealized_pnl = (update.price - pos.entry_price) / pos.entry_price * pos.size
-            else:
-                pos.unrealized_pnl = (pos.entry_price - update.price) / pos.entry_price * pos.size
+            if pos.entry_price > 0:  # Protect against division by zero
+                if pos.side == "long":
+                    pos.unrealized_pnl = (update.price - pos.entry_price) / pos.entry_price * pos.size
+                else:
+                    pos.unrealized_pnl = (pos.entry_price - update.price) / pos.entry_price * pos.size
 
     def _init_demo_prices(self):
         """Initialize demo prices for offline/demo mode"""
@@ -766,10 +768,11 @@ class JJBotPro:
             # Update position P&L for demo mode
             if symbol in self.positions:
                 pos = self.positions[symbol]
-                if pos.side == "long":
-                    pos.unrealized_pnl = (price - pos.entry_price) / pos.entry_price * pos.size
-                else:
-                    pos.unrealized_pnl = (pos.entry_price - price) / pos.entry_price * pos.size
+                if pos.entry_price > 0:  # Protect against division by zero
+                    if pos.side == "long":
+                        pos.unrealized_pnl = (price - pos.entry_price) / pos.entry_price * pos.size
+                    else:
+                        pos.unrealized_pnl = (pos.entry_price - price) / pos.entry_price * pos.size
 
     async def _fetch_prices_rest(self):
         """Fetch prices via REST API as fallback when WebSocket isn't working"""
@@ -788,10 +791,11 @@ class JJBotPro:
                         # Also update position P&L when prices update
                         if symbol in self.positions:
                             pos = self.positions[symbol]
-                            if pos.side == "long":
-                                pos.unrealized_pnl = (ticker.last - pos.entry_price) / pos.entry_price * pos.size
-                            else:
-                                pos.unrealized_pnl = (pos.entry_price - ticker.last) / pos.entry_price * pos.size
+                            if pos.entry_price > 0:  # Protect against division by zero
+                                if pos.side == "long":
+                                    pos.unrealized_pnl = (ticker.last - pos.entry_price) / pos.entry_price * pos.size
+                                else:
+                                    pos.unrealized_pnl = (pos.entry_price - ticker.last) / pos.entry_price * pos.size
 
                 if updated_count > 0:
                     logger.debug(f"REST API updated {updated_count} prices")
@@ -992,7 +996,8 @@ class JJBotPro:
                 if len(candles) >= 20:
                     # Simple state: returns and volatility
                     closes = [c.close for c in candles[-50:]]
-                    returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes))]
+                    # Protect against division by zero
+                    returns = [(closes[i] - closes[i-1]) / closes[i-1] if closes[i-1] > 0 else 0 for i in range(1, len(closes))]
 
                     state = list(returns[-20:]) + [0] * (self.rl_env.observation_space_dim - 20)
                     state = state[:self.rl_env.observation_space_dim]
@@ -1154,6 +1159,12 @@ class JJBotPro:
             return
 
         pos = self.positions[symbol]
+
+        # Validate prices to prevent division by zero
+        if pos.entry_price <= 0 or exit_price <= 0:
+            logger.warning(f"Invalid prices for {symbol}: entry={pos.entry_price}, exit={exit_price}")
+            del self.positions[symbol]
+            return
 
         # Calculate P&L
         if pos.side == "long":
