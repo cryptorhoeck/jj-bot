@@ -84,8 +84,27 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
     use_edge_strategies: true,
     use_alternative_data: true,
     train_episodes: 1000,        // More episodes for better learning
+    train_timeframe: '1h',       // Candle size for training data
+    train_history_days: 90,      // Days of historical data for training
     symbols: []
   };
+
+  // Available timeframes for training
+  const TIMEFRAME_OPTIONS = [
+    { value: '5m', label: '5 min', minutes: 5 },
+    { value: '15m', label: '15 min', minutes: 15 },
+    { value: '1h', label: '1 hour', minutes: 60 },
+    { value: '4h', label: '4 hours', minutes: 240 },
+    { value: '1d', label: '1 day', minutes: 1440 },
+  ];
+
+  // Available history periods
+  const HISTORY_OPTIONS = [
+    { value: 30, label: '30 days' },
+    { value: 90, label: '90 days' },
+    { value: 180, label: '180 days' },
+    { value: 365, label: '1 year' },
+  ];
 
   // Pro config state
   const [proConfig, setProConfig] = useState({...DEFAULT_CONFIG});
@@ -877,18 +896,71 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
           {/* Training Settings */}
           <div className="card p-6">
             <h3 className="text-lg font-semibold mb-4">📚 Training Settings</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Training Episodes</p>
-                <p className="text-sm text-muted">More episodes = better learning (recommended: 1000+)</p>
+            <div className="space-y-4">
+              {/* Training Episodes */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Training Episodes</p>
+                  <p className="text-sm text-muted">More episodes = better learning (recommended: 1000+)</p>
+                </div>
+                <DelayedNumberInput
+                  value={proConfig.train_episodes || 1000}
+                  onChange={(val) => updateConfig('train_episodes', Math.max(100, Math.round(val)))}
+                  className="input w-28 text-right"
+                  min={100}
+                  step={100}
+                />
               </div>
-              <DelayedNumberInput
-                value={proConfig.train_episodes || 1000}
-                onChange={(val) => updateConfig('train_episodes', Math.max(100, Math.round(val)))}
-                className="input w-28 text-right"
-                min={100}
-                step={100}
-              />
+
+              {/* Candle Size / Timeframe */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Candle Size</p>
+                  <p className="text-sm text-muted">Timeframe for training data</p>
+                </div>
+                <select
+                  value={proConfig.train_timeframe || '1h'}
+                  onChange={(e) => updateConfig('train_timeframe', e.target.value, true)}
+                  className="input w-32"
+                >
+                  {TIMEFRAME_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* History Period */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">History Period</p>
+                  <p className="text-sm text-muted">How far back to fetch data</p>
+                </div>
+                <select
+                  value={proConfig.train_history_days || 90}
+                  onChange={(e) => updateConfig('train_history_days', parseInt(e.target.value), true)}
+                  className="input w-32"
+                >
+                  {HISTORY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Calculated info */}
+              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-sm">
+                <p className="text-muted">
+                  📊 Will fetch approximately{' '}
+                  <span className="font-semibold text-info">
+                    {(() => {
+                      const tf = TIMEFRAME_OPTIONS.find(t => t.value === (proConfig.train_timeframe || '1h'));
+                      const days = proConfig.train_history_days || 90;
+                      const candles = Math.floor((days * 24 * 60) / (tf?.minutes || 60));
+                      return candles.toLocaleString();
+                    })()}
+                  </span>
+                  {' '}candles per symbol
+                </p>
+              </div>
             </div>
           </div>
 

@@ -23,10 +23,15 @@ _CACHE_LOADED = False
 _CACHE_SYMBOLS: List[str] = []
 
 
-def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', limit: int = 1000) -> Dict[str, np.ndarray]:
+def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', days: int = 90) -> Dict[str, np.ndarray]:
     """
-    Synchronously fetch historical OHLCV data from Kraken.
-    Called once at startup and cached for all training episodes.
+    Synchronously fetch historical OHLCV data from Kraken with smart pagination.
+    Automatically makes multiple requests to fetch the full history period.
+
+    Args:
+        symbols: List of trading pairs (e.g., ['BTC/USD', 'ETH/USD'])
+        timeframe: Candle size ('5m', '15m', '1h', '4h', '1d')
+        days: How many days of historical data to fetch
 
     Returns dict of symbol -> feature array (n_candles, n_features)
     """
@@ -46,11 +51,19 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         logger.error("No symbols provided for training data")
         return {}
 
-    logger.info(f"Fetching historical data for {len(symbols)} symbols from Kraken...")
+    # Calculate candles needed based on timeframe and days
+    timeframe_minutes = {
+        '1m': 1, '5m': 5, '15m': 15, '30m': 30,
+        '1h': 60, '4h': 240, '1d': 1440
+    }
+    minutes_per_candle = timeframe_minutes.get(timeframe, 60)
+    total_candles_needed = (days * 24 * 60) // minutes_per_candle
+
+    logger.info(f"Fetching {days} days of {timeframe} data ({total_candles_needed:,} candles) for {len(symbols)} symbols...")
 
     exchange = ccxt.kraken({
         'enableRateLimit': True,
-        'rateLimit': 1000,  # Be nice to the API
+        'rateLimit': 500,  # Faster but still safe
     })
 
     try:
@@ -60,6 +73,7 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         return {}
 
     data_cache = {}
+    kraken_limit = 720  # Kraken's max per request
 
     for symbol in symbols:
         if symbol not in exchange.markets:
@@ -67,25 +81,56 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
             continue
 
         try:
-            # Fetch OHLCV data
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            all_ohlcv = []
+            candles_fetched = 0
+            since = None  # Start from most recent
 
-            if not ohlcv or len(ohlcv) < 100:
-                logger.warning(f"Insufficient data for {symbol}: {len(ohlcv) if ohlcv else 0} candles")
+            # Calculate how many requests we need
+            requests_needed = (total_candles_needed + kraken_limit - 1) // kraken_limit
+
+            for req_num in range(requests_needed):
+                # Fetch batch
+                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=kraken_limit)
+
+                if not ohlcv:
+                    break
+
+                # Prepend to get chronological order (we're going backwards)
+                all_ohlcv = ohlcv + all_ohlcv
+                candles_fetched += len(ohlcv)
+
+                # Get the oldest timestamp from this batch to fetch older data next
+                oldest_timestamp = ohlcv[0][0]
+                # Go back one more candle to avoid duplicates
+                since = oldest_timestamp - (minutes_per_candle * 60 * 1000 * kraken_limit)
+
+                # Stop if we have enough or no more data
+                if candles_fetched >= total_candles_needed or len(ohlcv) < kraken_limit:
+                    break
+
+                # Rate limit between requests
+                time.sleep(0.3)
+
+            if not all_ohlcv or len(all_ohlcv) < 100:
+                logger.warning(f"Insufficient data for {symbol}: {len(all_ohlcv) if all_ohlcv else 0} candles")
                 continue
 
+            # Trim to requested amount if we got more
+            if len(all_ohlcv) > total_candles_needed:
+                all_ohlcv = all_ohlcv[-total_candles_needed:]
+
             # Convert to numpy array: [timestamp, open, high, low, close, volume]
-            ohlcv_array = np.array(ohlcv, dtype=np.float64)
+            ohlcv_array = np.array(all_ohlcv, dtype=np.float64)
 
             # Calculate features from OHLCV
             features = calculate_features(ohlcv_array)
 
             if features is not None and len(features) > 50:
                 data_cache[symbol] = features
-                logger.info(f"Loaded {len(features)} candles for {symbol}")
+                logger.info(f"Loaded {len(features):,} candles for {symbol}")
 
-            # Rate limit
-            time.sleep(0.5)
+            # Rate limit between symbols
+            time.sleep(0.3)
 
         except Exception as e:
             logger.warning(f"Failed to fetch {symbol}: {e}")

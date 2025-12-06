@@ -111,6 +111,8 @@ class BotConfig:
     # RL settings
     rl_model_path: str = "models/ppo_agent.pt"
     train_episodes: int = 100
+    train_timeframe: str = "1h"  # Candle size for training data
+    train_history_days: int = 90  # Days of historical data
 
     # Timing
     analysis_interval_seconds: int = 60  # How often to analyze
@@ -653,8 +655,8 @@ class JJBotPro:
                 training_symbols = self.config.symbols  # Use ALL configured symbols
                 data = load_historical_data_sync(
                     symbols=training_symbols,
-                    timeframe='1h',  # 1-hour candles
-                    limit=1000  # ~41 days of hourly data
+                    timeframe=self.config.train_timeframe,
+                    days=self.config.train_history_days
                 )
                 if data:
                     logger.info(f"Loaded real data for {len(data)} symbols - Training will use REAL market data!")
