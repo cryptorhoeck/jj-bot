@@ -140,7 +140,7 @@ class RealisticSimulatorService(BaseService):
         self.price_history: Optional[PriceHistory] = None
         self.performance_tracker: Optional[StrategyPerformanceTracker] = None
 
-        # Available strategies - the 24 strategies mentioned in TODO
+        # Available strategies (24 fully implemented)
         self.AVAILABLE_STRATEGIES = [
             # Momentum strategies
             "rsi_strategy",           # RSI oversold/overbought
