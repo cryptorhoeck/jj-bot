@@ -149,7 +149,7 @@ class PPOAgent:
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
         clip_epsilon: float = 0.2,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.05,  # Higher entropy for better exploration
         value_coef: float = 0.5,
         max_grad_norm: float = 0.5,
         n_epochs: int = 10,
@@ -440,7 +440,7 @@ class A2CAgent(PPOAgent):
         action_dim: int,
         learning_rate: float = 3e-4,
         gamma: float = 0.99,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.05,  # Higher entropy for better exploration
         value_coef: float = 0.5,
         max_grad_norm: float = 0.5,
         hidden_dims: List[int] = [256, 128, 64],
