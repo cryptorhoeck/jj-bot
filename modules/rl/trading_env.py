@@ -824,10 +824,7 @@ class TradingEnvironment:
         """
         Calculate reward for the current step
 
-        Components:
-        1. P&L reward (scaled)
-        2. Risk penalty (drawdown, volatility)
-        3. Trade penalty (discourage overtrading)
+        FIXED: Now encourages trading instead of penalizing it
         """
         reward = 0.0
 
@@ -835,18 +832,25 @@ class TradingEnvironment:
         # Reward scaling of 100 makes a 1% move = reward of 1.0
         reward += step_return * self.reward_scaling
 
-        # Risk penalty
+        # POSITION HOLDING BONUS: Reward for being in a profitable position
+        if self.position.side != "flat" and self.position.unrealized_pnl > 0:
+            # Small bonus for holding profitable positions
+            reward += 0.01
+
+        # INACTIVITY PENALTY: Penalize staying flat when there could be opportunities
+        if self.position.side == "flat":
+            # Small penalty for not being in the market
+            reward -= 0.005
+
+        # Risk penalty (only for extreme cases)
         if len(self.returns_history) > 10:
-            volatility = np.std(list(self.returns_history))
             drawdown = (self.peak_equity - self.equity) / self.peak_equity if self.peak_equity else 0
+            # Only penalize large drawdowns
+            if drawdown > 0.1:  # More than 10% drawdown
+                reward -= drawdown * self.risk_penalty
 
-            # Penalize high volatility and drawdown
-            reward -= volatility * self.risk_penalty
-            reward -= drawdown * self.risk_penalty
-
-        # Trade penalty (discourage churning)
-        if trade_executed:
-            reward -= self.trade_penalty
+        # NO trade penalty - we WANT the model to trade!
+        # (removed: reward -= self.trade_penalty)
 
         return reward
 
