@@ -831,8 +831,9 @@ class TradingEnvironment:
         """
         reward = 0.0
 
-        # P&L component
-        reward += step_return * self.reward_scaling * 100
+        # P&L component (step_return is decimal like 0.001 for 0.1%)
+        # Reward scaling of 100 makes a 1% move = reward of 1.0
+        reward += step_return * self.reward_scaling
 
         # Risk penalty
         if len(self.returns_history) > 10:

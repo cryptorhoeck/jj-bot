@@ -178,7 +178,8 @@ class PPOAgent:
         # Networks
         self.policy = ActorCritic(state_dim, action_dim, hidden_dims).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1000, gamma=0.95)
+        # Gentler LR decay: reduce by 1% every 5000 episodes (maintains ~60% LR after 50k episodes)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5000, gamma=0.99)
 
         # Experience buffer
         self.buffer: List[Experience] = []
