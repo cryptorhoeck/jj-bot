@@ -199,13 +199,16 @@ h4 { font-size: 1.125rem; }
 }
 
 .stat-value {
-  font-size: 1.5rem;
+  /* Fluid typography: scales from 1.1rem at 320px to 1.5rem at 1200px */
+  font-size: clamp(1.1rem, 0.9rem + 1.5vw, 1.5rem);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Ensure long numbers shrink to fit */
+  max-width: 100%;
 }
 
 .stat-change {
@@ -654,7 +657,8 @@ h4 { font-size: 1.125rem; }
   }
 
   .stat-value {
-    font-size: 1.25rem;
+    /* Smaller fluid size for mobile: 0.95rem to 1.15rem */
+    font-size: clamp(0.95rem, 0.8rem + 2vw, 1.15rem);
   }
 
   h1 {
@@ -666,7 +670,20 @@ h4 { font-size: 1.125rem; }
   }
 }
 
+/* Extra small screens */
 @media (max-width: 480px) {
+  .stat-value {
+    font-size: clamp(0.85rem, 0.7rem + 2.5vw, 1rem);
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+  }
+
+  .stat-change {
+    font-size: 0.75rem;
+  }
+
   .btn {
     width: 100%;
   }
