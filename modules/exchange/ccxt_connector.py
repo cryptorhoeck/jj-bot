@@ -242,8 +242,11 @@ class CCXTConnector:
                 if self.credentials.password:
                     config["password"] = self.credentials.password
 
-            if self.sandbox:
-                config["sandbox"] = True
+            # NOTE: Don't set sandbox mode for WebSocket connections
+            # - WebSocket is used for real-time market data (read-only)
+            # - Many exchanges (Kraken, etc.) don't have sandbox WebSocket URLs
+            # - For paper trading, we use live market data but simulate trades
+            # - This is intentional - sandbox mode only affects order execution
 
             self.ws_exchange = ws_class(config)
             self._running = True
