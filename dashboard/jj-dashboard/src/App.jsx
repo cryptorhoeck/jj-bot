@@ -47,6 +47,7 @@ function App() {
   // API connection state
   const [apiReady, setApiReady] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [appVersion, setAppVersion] = useState('3.0.4');  // Default, will be fetched from API
 
   // Check if API is ready
   const checkApiReady = async () => {
@@ -55,6 +56,16 @@ function App() {
       if (response.ok) {
         setApiReady(true);
         setConnectionAttempts(0);
+        // Fetch version from API
+        try {
+          const versionResponse = await fetch(`${API_BASE}/api/system/version`);
+          if (versionResponse.ok) {
+            const versionData = await versionResponse.json();
+            setAppVersion(versionData.version || '3.0.4');
+          }
+        } catch (e) {
+          console.log('Could not fetch version:', e);
+        }
         return true;
       }
     } catch (error) {
@@ -408,7 +419,7 @@ function App() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold mb-2">JJ-Bot</h1>
-          <p className="text-muted mb-6">v2.4 Pro</p>
+          <p className="text-muted mb-6">v{appVersion} Pro</p>
 
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="spinner w-5 h-5 border-2 border-info border-t-transparent rounded-full animate-spin"></div>
@@ -445,7 +456,7 @@ function App() {
                 </div>
                 <div>
                   <h1 className="logo text-xl font-bold">JJ-Bot</h1>
-                  <p className="text-xs text-muted">v2.4 Pro</p>
+                  <p className="text-xs text-muted">v{appVersion} Pro</p>
                 </div>
               </div>
 
