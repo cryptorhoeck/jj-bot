@@ -199,6 +199,7 @@ class JJBotPro:
 
         # State - try to load from saved state first
         self.running = False
+        self._stopped = False  # Guard against double shutdown
         self._started_in_training_mode = False  # Track if bot was started in training mode
         saved_state = self._load_state()
 
@@ -239,6 +240,9 @@ class JJBotPro:
                 "avg_profit_factor": 0.0,
                 "avg_reward": 0.0,
             }
+
+        # Track equity at session start for accurate return calculation
+        self.session_starting_equity = self.equity
 
         # Positions and history
         self.positions: Dict[str, Position] = self._load_positions()
@@ -1721,6 +1725,11 @@ class JJBotPro:
 
     async def stop(self):
         """Stop the bot gracefully"""
+        # Guard against double shutdown
+        if self._stopped:
+            return
+        self._stopped = True
+
         logger.info("Stopping JJ-Bot Pro...")
         was_training = self.training_progress["is_training"]
         self.running = False
@@ -1788,14 +1797,18 @@ class JJBotPro:
         else:
             # Show trading statistics
             win_rate = (self.stats["winning_trades"] / max(self.stats["total_trades"], 1)) * 100
-            return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
+            # Session return (from when this session started)
+            session_return_pct = ((self.equity - self.session_starting_equity) / self.session_starting_equity) * 100
+            # All-time return (from initial capital)
+            alltime_return_pct = ((self.equity - self.config.initial_capital) / self.config.initial_capital) * 100
 
             logger.info("FINAL STATISTICS")
             logger.info("=" * 50)
             logger.info(f"Runtime: {runtime}")
-            logger.info(f"Initial Capital: ${self.config.initial_capital:,.2f}")
+            logger.info(f"Session Start: ${self.session_starting_equity:,.2f}")
             logger.info(f"Final Equity: ${self.equity:,.2f}")
-            logger.info(f"Total Return: {return_pct:.2f}%")
+            logger.info(f"Session Return: {session_return_pct:.2f}%")
+            logger.info(f"All-Time Return: {alltime_return_pct:.2f}% (from ${self.config.initial_capital:,.2f})")
             logger.info(f"Total Trades: {self.stats['total_trades']}")
             logger.info(f"Winning Trades: {self.stats['winning_trades']}")
             logger.info(f"Win Rate: {win_rate:.1f}%")
