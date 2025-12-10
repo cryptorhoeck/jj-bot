@@ -737,7 +737,8 @@ class JJBotPro:
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct,
-                max_steps=self.config.rl_max_steps
+                max_steps=self.config.rl_max_steps,
+                inference_only=(self.config.mode != "training")  # Skip dummy data in paper/live
             )
 
             self.rl_agent = create_agent(

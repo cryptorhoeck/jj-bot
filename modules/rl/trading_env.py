@@ -489,6 +489,7 @@ class TradingEnvironment:
         reward_scaling: float = 100.0,  # Increased 100x for effective RL learning
         risk_penalty: float = 0.1,
         trade_penalty: float = 0.001,  # Slightly higher to prevent overtrading
+        inference_only: bool = False,  # If True, skip reset (no dummy data warning)
     ):
         self.initial_balance = initial_balance
         self.max_position_size = max_position_size
@@ -499,6 +500,7 @@ class TradingEnvironment:
         self.reward_scaling = reward_scaling
         self.risk_penalty = risk_penalty
         self.trade_penalty = trade_penalty
+        self.inference_only = inference_only
 
         # State dimensions
         self.n_features = 20  # Price/indicator features
@@ -512,7 +514,9 @@ class TradingEnvironment:
         )
         self.action_space_dim = 4  # HOLD, BUY, SELL, CLOSE
 
-        self.reset()
+        # Only reset with data during training, not during inference
+        if not inference_only:
+            self.reset()
 
     def reset(self, price_data: Optional[np.ndarray] = None, use_real_data: bool = True) -> np.ndarray:
         """Reset environment to initial state
