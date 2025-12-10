@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from contextlib import contextmanager
@@ -9,7 +10,19 @@ import datetime
 # Path: glue/api/engine.py -> glue/api -> glue -> project root
 PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
 DB_PATH: Path = PROJECT_ROOT / "data" / "trades.db"
+STATE_PATH: Path = PROJECT_ROOT / "data" / "bot_state.json"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def get_saved_state() -> Optional[Dict[str, Any]]:
+    """Load saved bot state from bot_state.json"""
+    try:
+        if STATE_PATH.exists():
+            with open(STATE_PATH, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 @contextmanager
 def get_connection() -> sqlite3.Connection:
@@ -194,16 +207,24 @@ def get_summary() -> Dict[str, Any]:
             for row in open_positions_rows
         }
 
-        # Calculate current equity (starting capital + total PnL)
-        # Assume starting capital of 10,000 (should be configurable)
-        starting_capital = 10000.0
-        current_equity = starting_capital + total_pnl
+        # Calculate current equity from saved state or fallback to calculation
+        saved_state = get_saved_state()
+        if saved_state and "equity" in saved_state:
+            current_equity = saved_state["equity"]
+            starting_capital = saved_state.get("initial_capital", 10000.0)
+        else:
+            # Fallback: assume starting capital of 10,000
+            starting_capital = 10000.0
+            current_equity = starting_capital + total_pnl
 
         # Get latest trade timestamp
         cur.execute("SELECT MAX(timestamp) FROM trades")
         latest_trade = cur.fetchone()[0]
 
-        return {
+        # Calculate return percentage from equity vs starting capital
+        return_pct = round(((current_equity - starting_capital) / starting_capital * 100), 2) if starting_capital > 0 else 0.0
+
+        result = {
             "total_trades": total_trades,
             "total_pnl": round(total_pnl, 2),
             "avg_pnl": round(avg_pnl, 2),
@@ -218,9 +239,20 @@ def get_summary() -> Dict[str, Any]:
             "open_positions_count": len(open_positions),
             "starting_capital": starting_capital,
             "current_equity": round(current_equity, 2),
-            "return_pct": round((total_pnl / starting_capital * 100), 2) if starting_capital > 0 else 0.0,
+            "return_pct": return_pct,
             "latest_trade": latest_trade
         }
+
+        # Include IQ and training stats from saved state if available
+        if saved_state:
+            if "trading_iq" in saved_state:
+                result["trading_iq"] = saved_state["trading_iq"]
+            if "expertise_level" in saved_state:
+                result["expertise_level"] = saved_state["expertise_level"]
+            if "training_history" in saved_state:
+                result["training_history"] = saved_state["training_history"]
+
+        return result
 
 def clear_all_trades() -> None:
     """Clear all trades from database"""
