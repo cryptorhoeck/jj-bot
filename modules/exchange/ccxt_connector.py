@@ -131,6 +131,11 @@ class CCXTConnector:
     Supports REST API and WebSocket connections
     """
 
+    # Class-level error throttling to prevent log flooding
+    _last_ws_error_log: datetime = None
+    _ws_error_count: int = 0
+    _ws_error_throttle_seconds: float = 10.0  # Only log WS errors every 10 seconds
+
     # Exchange-specific configurations
     EXCHANGE_CONFIGS = {
         ExchangeType.BINANCE: {
@@ -280,6 +285,26 @@ class CCXTConnector:
                     logger.debug(f"Exchange close error: {e}")
 
         logger.info("Exchange connections closed")
+
+    def _log_ws_error(self, stream_type: str, error: Exception):
+        """Log WebSocket errors with throttling to prevent log flooding"""
+        CCXTConnector._ws_error_count += 1
+        now = datetime.now()
+
+        # Check if we should log
+        should_log = False
+        if CCXTConnector._last_ws_error_log is None:
+            should_log = True
+        elif (now - CCXTConnector._last_ws_error_log).total_seconds() >= CCXTConnector._ws_error_throttle_seconds:
+            should_log = True
+
+        if should_log:
+            if CCXTConnector._ws_error_count > 1:
+                logger.warning(f"WebSocket {stream_type} error ({CCXTConnector._ws_error_count} errors): {error}")
+            else:
+                logger.warning(f"WebSocket {stream_type} error: {error}")
+            CCXTConnector._last_ws_error_log = now
+            CCXTConnector._ws_error_count = 0
 
     # ========== Market Data Methods ==========
 
@@ -472,7 +497,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"Ticker stream error: {e}")
+                    self._log_ws_error("ticker", e)
                     await asyncio.sleep(1)
 
         task = asyncio.create_task(ticker_loop())
@@ -508,7 +533,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OHLCV stream error: {e}")
+                    self._log_ws_error("OHLCV", e)
                     # Exponential backoff on errors (1s, 2s, 4s, 8s, max 30s)
                     if not hasattr(ohlcv_loop, '_backoff'):
                         ohlcv_loop._backoff = 1
@@ -544,7 +569,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OrderBook stream error: {e}")
+                    self._log_ws_error("orderbook", e)
                     await asyncio.sleep(1)
 
         task = asyncio.create_task(orderbook_loop())

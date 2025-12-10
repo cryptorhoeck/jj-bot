@@ -678,6 +678,14 @@ class JJBotPro:
                         timeframes=["1m", "5m", "1h"]
                     )
                     logger.info("Live data feed started")
+
+                    # Verify historical candles were loaded
+                    candle_status = []
+                    for symbol in self.config.symbols[:3]:  # Check first 3 symbols
+                        candles = self.data_feed.get_candles(symbol, "1h", 50)
+                        candle_status.append(f"{symbol}: {len(candles)}")
+                    logger.info(f"Historical candles loaded: {', '.join(candle_status)}")
+
                 except Exception as e:
                     logger.warning(f"Live data feed failed: {e} - continuing in demo mode")
                     self._demo_mode = True
@@ -867,6 +875,38 @@ class JJBotPro:
         except Exception as e:
             logger.warning(f"REST API price fetch failed: {e}")
 
+    async def _refresh_candles_rest(self):
+        """Periodically refresh candle data via REST API when WebSocket fails"""
+        if not self.data_feed or not hasattr(self.data_feed, 'connector'):
+            return
+
+        try:
+            refreshed_count = 0
+            for symbol in self.config.symbols:
+                try:
+                    # Fetch fresh 1h candles (most important for RL)
+                    candles = await self.data_feed.connector.get_ohlcv(symbol, "1h", limit=100)
+                    if candles:
+                        # Update the data feed cache
+                        if symbol not in self.data_feed._candle_cache:
+                            self.data_feed._candle_cache[symbol] = {}
+                        if "1h" not in self.data_feed._candle_cache[symbol]:
+                            from collections import deque
+                            self.data_feed._candle_cache[symbol]["1h"] = deque(maxlen=1000)
+
+                        # Clear and refill with fresh data
+                        self.data_feed._candle_cache[symbol]["1h"].clear()
+                        for candle in candles:
+                            self.data_feed._candle_cache[symbol]["1h"].append(candle)
+                        refreshed_count += 1
+                except Exception as e:
+                    logger.debug(f"Failed to refresh candles for {symbol}: {e}")
+
+            if refreshed_count > 0:
+                logger.info(f"Refreshed candles for {refreshed_count}/{len(self.config.symbols)} symbols via REST")
+        except Exception as e:
+            logger.warning(f"Candle refresh failed: {e}")
+
     async def _demo_strategy(self, symbol: str, price: float):
         """Simple momentum strategy for demo mode - ACTUALLY TRADES"""
         import random
@@ -952,6 +992,10 @@ class JJBotPro:
         last_save_time = datetime.now()
         save_interval = 300  # Save state every 5 minutes
 
+        # Track time for periodic candle refresh (fallback when WebSocket fails)
+        last_candle_refresh = datetime.now()
+        candle_refresh_interval = 300  # Refresh candles every 5 minutes
+
         while self.running:
             try:
                 # Update prices - demo mode uses simulation, live mode uses REST API fallback
@@ -988,6 +1032,16 @@ class JJBotPro:
                                 "reason": ["Price feed stale", f"No updates for {time_since_update:.0f}s"],
                                 "timestamp": datetime.now().isoformat()
                             })
+
+                # Periodically refresh candles via REST (fallback when WebSocket fails)
+                if not self._demo_mode and self.data_feed:
+                    time_since_candle_refresh = (datetime.now() - last_candle_refresh).total_seconds()
+                    if time_since_candle_refresh >= candle_refresh_interval:
+                        try:
+                            await self._refresh_candles_rest()
+                            last_candle_refresh = datetime.now()
+                        except Exception as e:
+                            logger.debug(f"Candle refresh failed: {e}")
 
                 # Reset daily stats at midnight
                 await self._check_daily_reset()
@@ -1087,6 +1141,13 @@ class JJBotPro:
             try:
                 # Build state for RL
                 candles = self.data_feed.get_candles(symbol, "1h", 50) if self.data_feed else []
+                if len(candles) < 20:
+                    # Log this issue periodically (not every cycle)
+                    if not hasattr(self, '_candle_warning_count'):
+                        self._candle_warning_count = {}
+                    self._candle_warning_count[symbol] = self._candle_warning_count.get(symbol, 0) + 1
+                    if self._candle_warning_count[symbol] == 1 or self._candle_warning_count[symbol] % 60 == 0:
+                        logger.warning(f"Insufficient candles for {symbol}: {len(candles)}/20 required (check #{self._candle_warning_count[symbol]})")
                 if len(candles) >= 20:
                     # Simple state: returns and volatility
                     closes = [c.close for c in candles[-50:]]
@@ -1126,7 +1187,7 @@ class JJBotPro:
                             reason=f"RL agent sell signal (conf: {confidence:.1%})"
                         ))
             except Exception as e:
-                logger.debug(f"RL signal error for {symbol}: {e}")
+                logger.warning(f"RL signal error for {symbol}: {e}")
 
         # 4. Combine signals and decide
         if signals:
