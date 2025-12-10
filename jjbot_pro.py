@@ -713,8 +713,9 @@ class JJBotPro:
 
         # 5. RL Agent (optional - requires PyTorch)
         if self.config.use_rl_agent and RL_AVAILABLE:
-            # Load REAL historical data from Kraken for training
-            if load_historical_data_sync:
+            # Only load historical training data when actually training
+            # For paper/live trading, we just need the trained model
+            if self.config.mode == "training" and load_historical_data_sync:
                 # Validate symbols are configured
                 if not self.config.symbols:
                     error_msg = "No symbols selected! Please select trading symbols in Settings before training."
@@ -1154,7 +1155,8 @@ class JJBotPro:
                         logger.warning(f"Insufficient candles for {symbol}: {len(candles)}/20 required (check #{self._candle_warning_count[symbol]})")
                 if len(candles) >= 20:
                     # Simple state: returns and volatility
-                    closes = [c.close for c in candles[-50:]]
+                    # Ensure close prices are floats (API may return strings)
+                    closes = [float(c.close) if hasattr(c, 'close') else float(c.get('close', 0)) for c in candles[-50:]]
                     # Protect against division by zero
                     returns = [(closes[i] - closes[i-1]) / closes[i-1] if closes[i-1] > 0 else 0 for i in range(1, len(closes))]
 
