@@ -592,7 +592,11 @@ class JJBotPro:
         logger.info("=" * 50)
         logger.info(f"Mode: {self.config.mode}")
         logger.info(f"Symbols: {self.config.symbols}")
-        logger.info(f"Capital: ${self.config.initial_capital:,.2f}")
+        # Show actual equity (from saved state) not just initial config value
+        if self.equity != self.config.initial_capital:
+            logger.info(f"Current Equity: ${self.equity:,.2f} (started with ${self.config.initial_capital:,.2f})")
+        else:
+            logger.info(f"Capital: ${self.config.initial_capital:,.2f}")
 
         # CRITICAL WARNING: Sandbox mode
         if self.config.sandbox:
