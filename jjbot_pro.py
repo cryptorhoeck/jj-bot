@@ -96,6 +96,17 @@ except ImportError:
     create_health_server = None
     HEALTH_CHECK_AVAILABLE = False
 
+# Audit trail (optional)
+try:
+    from modules.audit_trail import AuditTrail, AuditEventType, get_audit_trail, init_audit_trail
+    AUDIT_AVAILABLE = True
+except ImportError:
+    AuditTrail = None
+    AuditEventType = None
+    get_audit_trail = None
+    init_audit_trail = None
+    AUDIT_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +152,11 @@ class BotConfig:
     max_daily_loss_pct: float = 0.05  # 5% daily loss limit
     max_drawdown_pct: float = 0.10  # 10% max drawdown
 
+    # Trailing stop settings
+    use_trailing_stop: bool = True  # Enable trailing stops
+    trailing_stop_activation_pct: float = 0.02  # Activate after 2% profit
+    trailing_stop_distance_pct: float = 0.01  # Trail by 1%
+
     # Strategy settings
     use_rl_agent: bool = True
     use_edge_strategies: bool = True
@@ -178,6 +194,10 @@ class BotConfig:
     dead_mans_switch_enabled: bool = False  # Disabled by default for safety
     dead_mans_switch_timeout: int = 300  # 5 minutes without heartbeat
     dead_mans_switch_close_positions: bool = True  # Close all positions when triggered
+
+    # Audit trail
+    audit_trail_enabled: bool = True
+    audit_trail_dir: str = "logs/audit"
 
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
@@ -260,6 +280,15 @@ class Position:
     entry_order_id: Optional[str] = None
     stop_order_id: Optional[str] = None  # Stop loss order on exchange
     tp_order_id: Optional[str] = None    # Take profit order on exchange
+    # Trailing stop tracking
+    trailing_stop_active: bool = False  # Whether trailing stop is activated
+    highest_price: float = 0.0  # Highest price since entry (for long)
+    lowest_price: float = float('inf')  # Lowest price since entry (for short)
+    trailing_stop_price: float = 0.0  # Current trailing stop price
+    # Slippage tracking
+    expected_entry_price: float = 0.0  # Price when signal was generated
+    entry_slippage: float = 0.0  # Actual slippage on entry
+    entry_slippage_pct: float = 0.0
 
 
 @dataclass
@@ -276,6 +305,11 @@ class TradeRecord:
     exit_time: datetime
     signal_source: str
     exit_reason: str
+    # Slippage tracking
+    entry_slippage: float = 0.0  # Entry slippage in dollars
+    entry_slippage_pct: float = 0.0  # Entry slippage as percentage
+    exit_slippage: float = 0.0  # Exit slippage in dollars
+    exit_slippage_pct: float = 0.0  # Exit slippage as percentage
 
 
 class JJBotPro:
@@ -335,6 +369,12 @@ class JJBotPro:
                 "avg_win_rate": 0.0,
                 "avg_profit_factor": 0.0,
                 "avg_reward": 0.0,
+                # Slippage tracking
+                "total_entry_slippage": 0.0,
+                "total_exit_slippage": 0.0,
+                "avg_entry_slippage_pct": 0.0,
+                "avg_exit_slippage_pct": 0.0,
+                "slippage_trades_count": 0,
             }
 
         # Track equity at session start for accurate return calculation
@@ -399,6 +439,15 @@ class JJBotPro:
         # Health check server
         self._health_server = None
         self._health_app = None
+
+        # Audit trail
+        self.audit: Optional[AuditTrail] = None
+        if AUDIT_AVAILABLE and self.config.audit_trail_enabled:
+            self.audit = init_audit_trail(
+                log_dir=self.config.audit_trail_dir,
+                enabled=True
+            )
+            logger.info("Audit trail enabled")
 
         # Price cache
         self.prices: Dict[str, float] = {}
@@ -1590,9 +1639,21 @@ class JJBotPro:
 
             # Get confidence (works with dict or object)
             conf = combined.get("confidence", 0) if isinstance(combined, dict) else getattr(combined, "confidence", 0)
+            direction = combined.get("direction", "unknown") if isinstance(combined, dict) else getattr(combined, "direction", "unknown")
+            edge_type = combined.get("edge_type", "unknown") if isinstance(combined, dict) else getattr(combined, "edge_type", "unknown")
 
             if combined and conf >= self.config.min_signal_confidence:
                 await self._handle_signal(symbol, combined)
+            elif combined and conf < self.config.min_signal_confidence:
+                # Log low confidence rejection
+                logger.debug(f"Signal rejected for {symbol}: confidence too low ({conf:.2%} < {self.config.min_signal_confidence:.2%})")
+                if self.audit:
+                    self.audit.log_signal_rejected(
+                        symbol=symbol,
+                        signal_type=f"{direction}_{edge_type}",
+                        reason="low_confidence",
+                        details={"confidence": conf, "min_required": self.config.min_signal_confidence}
+                    )
 
     async def _place_stop_order(self, symbol: str, side: str, amount: float, stop_price: float) -> Optional[str]:
         """
@@ -1657,22 +1718,71 @@ class JJBotPro:
                 return obj.get(key, default)
             return getattr(obj, key, default)
 
+        direction = get_attr(signal, "direction", "long")
+        confidence = get_attr(signal, "confidence", 0.5)
+        edge_type = get_attr(signal, "edge_type", "unknown")
+
         # Skip if already have position in this symbol
         if symbol in self.positions:
+            logger.debug(f"Signal rejected for {symbol}: already have position")
+            if self.audit:
+                self.audit.log_signal_rejected(
+                    symbol=symbol,
+                    signal_type=f"{direction}_{edge_type}",
+                    reason="position_exists",
+                    details={"confidence": confidence}
+                )
             return
 
         # Skip if max positions reached
         if len(self.positions) >= self.config.max_positions:
+            logger.debug(f"Signal rejected for {symbol}: max positions reached ({len(self.positions)}/{self.config.max_positions})")
+            if self.audit:
+                self.audit.log_signal_rejected(
+                    symbol=symbol,
+                    signal_type=f"{direction}_{edge_type}",
+                    reason="max_positions_reached",
+                    details={"current_positions": len(self.positions), "max_positions": self.config.max_positions, "confidence": confidence}
+                )
             return
 
-        direction = get_attr(signal, "direction", "long")
-        confidence = get_attr(signal, "confidence", 0.5)
-        edge_type = get_attr(signal, "edge_type", "unknown")
+        # Skip if risk limits not allowing trading
+        if not self._check_risk_limits():
+            logger.debug(f"Signal rejected for {symbol}: risk limits exceeded")
+            if self.audit:
+                self.audit.log_signal_rejected(
+                    symbol=symbol,
+                    signal_type=f"{direction}_{edge_type}",
+                    reason="risk_limits_exceeded",
+                    details={"daily_pnl": self.daily_pnl, "confidence": confidence}
+                )
+            return
+
+        # Skip if price feed is stale
+        if self._trading_paused_due_to_feed:
+            logger.debug(f"Signal rejected for {symbol}: price feed stale")
+            if self.audit:
+                self.audit.log_signal_rejected(
+                    symbol=symbol,
+                    signal_type=f"{direction}_{edge_type}",
+                    reason="price_feed_stale",
+                    details={"confidence": confidence}
+                )
+            return
+
         reason = get_attr(signal, "reason", "")
         entry_price = get_attr(signal, "entry_price", 0)
 
         price = self.prices.get(symbol, entry_price or 0)
         if price <= 0:
+            logger.debug(f"Signal rejected for {symbol}: invalid price ({price})")
+            if self.audit:
+                self.audit.log_signal_rejected(
+                    symbol=symbol,
+                    signal_type=f"{direction}_{edge_type}",
+                    reason="invalid_price",
+                    details={"price": price, "confidence": confidence}
+                )
             return
 
         # Calculate position size
@@ -1760,6 +1870,20 @@ class JJBotPro:
             stop_order_id = None
             logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f}")
 
+        # Calculate entry slippage (difference between expected and actual fill)
+        expected_price = price  # The price when we decided to trade
+        if direction == "long":
+            # For longs, positive slippage = paid more than expected
+            entry_slippage = filled_price - expected_price
+        else:
+            # For shorts, positive slippage = received less than expected
+            entry_slippage = expected_price - filled_price
+
+        entry_slippage_pct = (entry_slippage / expected_price) * 100 if expected_price > 0 else 0
+
+        if abs(entry_slippage_pct) > 0.01:  # Only log if slippage > 0.01%
+            logger.info(f"  Entry slippage: ${entry_slippage:.4f} ({entry_slippage_pct:+.3f}%)")
+
         # Record position
         entry_time = datetime.now()
         self.positions[symbol] = Position(
@@ -1772,7 +1896,14 @@ class JJBotPro:
             entry_time=entry_time,
             signal_source=edge_type,
             entry_order_id=entry_order_id,
-            stop_order_id=stop_order_id if self.config.mode == "live" else None
+            stop_order_id=stop_order_id if self.config.mode == "live" else None,
+            # Initialize trailing stop tracking
+            highest_price=filled_price,  # Start tracking from entry
+            lowest_price=filled_price,   # Start tracking from entry
+            # Slippage tracking
+            expected_entry_price=expected_price,
+            entry_slippage=entry_slippage,
+            entry_slippage_pct=entry_slippage_pct,
         )
 
         self.stats["total_trades"] += 1
@@ -1790,6 +1921,20 @@ class JJBotPro:
                 })
             except Exception as e:
                 logger.warning(f"Failed to log trade entry to database: {e}")
+
+        # Audit trail logging
+        if self.audit:
+            self.audit.log_trade_entry(
+                symbol=symbol,
+                side=direction,
+                entry_price=filled_price,
+                size=position_value,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                signal_source=edge_type,
+                order_id=entry_order_id,
+                slippage_pct=entry_slippage_pct
+            )
 
         # Publish trade event to WebSocket clients
         trade_event = {
@@ -1813,7 +1958,7 @@ class JJBotPro:
         self._save_state()
 
     async def _check_exits(self):
-        """Check positions for exit conditions"""
+        """Check positions for exit conditions including trailing stops"""
         positions_to_close = []
 
         for symbol, pos in self.positions.items():
@@ -1823,17 +1968,30 @@ class JJBotPro:
 
             exit_reason = None
 
-            # Check stop loss
-            if pos.side == "long" and price <= pos.stop_loss:
-                exit_reason = "stop_loss"
-            elif pos.side == "short" and price >= pos.stop_loss:
-                exit_reason = "stop_loss"
+            # Update trailing stop tracking
+            if self.config.use_trailing_stop:
+                self._update_trailing_stop(pos, price)
+
+            # Check trailing stop (takes precedence over fixed stop)
+            if pos.trailing_stop_active and pos.trailing_stop_price > 0:
+                if pos.side == "long" and price <= pos.trailing_stop_price:
+                    exit_reason = "trailing_stop"
+                elif pos.side == "short" and price >= pos.trailing_stop_price:
+                    exit_reason = "trailing_stop"
+
+            # Check fixed stop loss (if trailing not triggered)
+            if not exit_reason:
+                if pos.side == "long" and price <= pos.stop_loss:
+                    exit_reason = "stop_loss"
+                elif pos.side == "short" and price >= pos.stop_loss:
+                    exit_reason = "stop_loss"
 
             # Check take profit
-            if pos.side == "long" and price >= pos.take_profit:
-                exit_reason = "take_profit"
-            elif pos.side == "short" and price <= pos.take_profit:
-                exit_reason = "take_profit"
+            if not exit_reason:
+                if pos.side == "long" and price >= pos.take_profit:
+                    exit_reason = "take_profit"
+                elif pos.side == "short" and price <= pos.take_profit:
+                    exit_reason = "take_profit"
 
             if exit_reason:
                 positions_to_close.append((symbol, price, exit_reason))
@@ -1841,6 +1999,50 @@ class JJBotPro:
         # Close positions
         for symbol, exit_price, reason in positions_to_close:
             await self._close_position(symbol, exit_price, reason)
+
+    def _update_trailing_stop(self, pos: Position, current_price: float):
+        """Update trailing stop for a position"""
+        if pos.side == "long":
+            # Track highest price
+            if current_price > pos.highest_price:
+                pos.highest_price = current_price
+
+            # Calculate current profit percentage
+            profit_pct = (current_price - pos.entry_price) / pos.entry_price
+
+            # Activate trailing stop once profit threshold is reached
+            if not pos.trailing_stop_active and profit_pct >= self.config.trailing_stop_activation_pct:
+                pos.trailing_stop_active = True
+                pos.trailing_stop_price = current_price * (1 - self.config.trailing_stop_distance_pct)
+                logger.info(f"TRAILING STOP ACTIVATED: {pos.symbol} @ ${pos.trailing_stop_price:.2f} (profit: {profit_pct:.2%})")
+
+            # Update trailing stop price as price moves up
+            elif pos.trailing_stop_active:
+                new_stop = pos.highest_price * (1 - self.config.trailing_stop_distance_pct)
+                if new_stop > pos.trailing_stop_price:
+                    pos.trailing_stop_price = new_stop
+                    logger.debug(f"Trailing stop updated: {pos.symbol} @ ${pos.trailing_stop_price:.2f}")
+
+        else:  # Short position
+            # Track lowest price
+            if current_price < pos.lowest_price:
+                pos.lowest_price = current_price
+
+            # Calculate current profit percentage (inverted for shorts)
+            profit_pct = (pos.entry_price - current_price) / pos.entry_price
+
+            # Activate trailing stop once profit threshold is reached
+            if not pos.trailing_stop_active and profit_pct >= self.config.trailing_stop_activation_pct:
+                pos.trailing_stop_active = True
+                pos.trailing_stop_price = current_price * (1 + self.config.trailing_stop_distance_pct)
+                logger.info(f"TRAILING STOP ACTIVATED: {pos.symbol} @ ${pos.trailing_stop_price:.2f} (profit: {profit_pct:.2%})")
+
+            # Update trailing stop price as price moves down
+            elif pos.trailing_stop_active:
+                new_stop = pos.lowest_price * (1 + self.config.trailing_stop_distance_pct)
+                if new_stop < pos.trailing_stop_price:
+                    pos.trailing_stop_price = new_stop
+                    logger.debug(f"Trailing stop updated: {pos.symbol} @ ${pos.trailing_stop_price:.2f}")
 
     async def _close_position(self, symbol: str, exit_price: float, reason: str):
         """Close a position"""
@@ -1906,10 +2108,40 @@ class JJBotPro:
 
         pnl = pnl_pct * pos.size
 
+        # Calculate exit slippage (difference between expected and actual)
+        expected_exit = exit_price  # Price when we decided to close
+        if pos.side == "long":
+            # For longs closing (selling), positive slippage = received less than expected
+            exit_slippage = expected_exit - actual_exit_price
+        else:
+            # For shorts closing (buying), positive slippage = paid more than expected
+            exit_slippage = actual_exit_price - expected_exit
+
+        exit_slippage_pct = (exit_slippage / expected_exit) * 100 if expected_exit > 0 else 0
+
         logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${actual_exit_price:.2f}")
         logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
 
-        # Record trade (use actual_exit_price)
+        # Log slippage summary
+        total_slippage = pos.entry_slippage + exit_slippage
+        total_slippage_pct = pos.entry_slippage_pct + exit_slippage_pct
+        if abs(total_slippage_pct) > 0.01:
+            logger.info(f"  Slippage: ${total_slippage:.4f} ({total_slippage_pct:+.3f}%) [entry: {pos.entry_slippage_pct:+.3f}%, exit: {exit_slippage_pct:+.3f}%]")
+
+        # Update slippage stats
+        self.stats["total_entry_slippage"] = self.stats.get("total_entry_slippage", 0) + pos.entry_slippage
+        self.stats["total_exit_slippage"] = self.stats.get("total_exit_slippage", 0) + exit_slippage
+        self.stats["slippage_trades_count"] = self.stats.get("slippage_trades_count", 0) + 1
+        slippage_count = self.stats["slippage_trades_count"]
+        if slippage_count > 0:
+            self.stats["avg_entry_slippage_pct"] = (
+                (self.stats.get("avg_entry_slippage_pct", 0) * (slippage_count - 1) + pos.entry_slippage_pct) / slippage_count
+            )
+            self.stats["avg_exit_slippage_pct"] = (
+                (self.stats.get("avg_exit_slippage_pct", 0) * (slippage_count - 1) + exit_slippage_pct) / slippage_count
+            )
+
+        # Record trade (use actual_exit_price and include slippage)
         exit_time = datetime.now()
         trade = TradeRecord(
             symbol=symbol,
@@ -1922,7 +2154,11 @@ class JJBotPro:
             entry_time=pos.entry_time,
             exit_time=exit_time,
             signal_source=pos.signal_source,
-            exit_reason=reason
+            exit_reason=reason,
+            entry_slippage=pos.entry_slippage,
+            entry_slippage_pct=pos.entry_slippage_pct,
+            exit_slippage=exit_slippage,
+            exit_slippage_pct=exit_slippage_pct,
         )
         self.trade_history.append(trade)
 
@@ -1939,6 +2175,20 @@ class JJBotPro:
                 })
             except Exception as e:
                 logger.warning(f"Failed to log trade to database: {e}")
+
+        # Audit trail logging
+        if self.audit:
+            self.audit.log_trade_exit(
+                symbol=symbol,
+                side=pos.side,
+                entry_price=pos.entry_price,
+                exit_price=actual_exit_price,
+                size=pos.size,
+                pnl=pnl,
+                pnl_pct=pnl_pct * 100,
+                reason=reason,
+                slippage_pct=total_slippage_pct
+            )
 
         # Update stats
         self.stats["total_pnl"] += pnl
