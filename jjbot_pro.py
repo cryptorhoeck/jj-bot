@@ -27,6 +27,16 @@ from modules.exchange import create_connector, create_live_feed, CCXTConnector, 
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 from modules.event_bus import event_bus
 
+# Database for trade logging
+try:
+    from glue.api.engine import log_trade as db_log_trade, init_db, get_trades as db_get_trades
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+    db_log_trade = None
+    init_db = None
+    db_get_trades = None
+
 # Import version
 try:
     from config import APP_VERSION, APP_NAME
@@ -248,7 +258,7 @@ class JJBotPro:
 
         # Positions and history
         self.positions: Dict[str, Position] = self._load_positions()
-        self.trade_history: List[TradeRecord] = []
+        self.trade_history: List[TradeRecord] = self._load_trade_history()
 
         # Training state - initialize from loaded stats if available
         self.training_progress = {
@@ -338,6 +348,7 @@ class JJBotPro:
         saved_daily_start_equity = None
         saved_iq = 0
         saved_level = "Untrained"
+        saved_stats = {}  # Initialize empty - will be populated from state file if exists
         saved_training_history = {
             "training_sessions": 0,
             "total_training_episodes": 0,
@@ -381,17 +392,18 @@ class JJBotPro:
             # If we have saved state (equity or IQ), use it
             if saved_equity is not None or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
                 equity = saved_equity if saved_equity is not None else self.config.initial_capital
+                # Use stats from saved state file (not hardcoded zeros!)
                 return {
                     "equity": equity,
                     "peak_equity": saved_peak_equity if saved_peak_equity is not None else equity,
                     "daily_pnl": saved_daily_pnl,
                     "daily_start_equity": saved_daily_start_equity if saved_daily_start_equity is not None else equity,
                     "stats": {
-                        "total_trades": 0,
-                        "winning_trades": 0,
-                        "total_pnl": 0.0,
-                        "signals_analyzed": 0,
-                        "start_time": None,
+                        "total_trades": saved_stats.get("total_trades", 0),
+                        "winning_trades": saved_stats.get("winning_trades", 0),
+                        "total_pnl": saved_stats.get("total_pnl", 0.0),
+                        "signals_analyzed": saved_stats.get("signals_analyzed", 0),
+                        "start_time": saved_stats.get("start_time"),
                         "trading_iq": saved_iq,
                         "expertise_level": saved_level,
                         **saved_training_history,
@@ -547,6 +559,55 @@ class JJBotPro:
 
         return positions
 
+    def _load_trade_history(self) -> List[TradeRecord]:
+        """Load trade history from bot_state.json"""
+        project_root = Path(__file__).parent
+        state_file = project_root / "data" / "bot_state.json"
+
+        trade_history = []
+
+        if not state_file.exists():
+            return trade_history
+
+        try:
+            with open(state_file) as f:
+                saved_data = json.load(f)
+
+            trade_history_data = saved_data.get("trade_history", [])
+
+            for trade_data in trade_history_data:
+                # Parse datetime strings
+                entry_time = trade_data.get("entry_time")
+                if isinstance(entry_time, str):
+                    entry_time = datetime.fromisoformat(entry_time)
+
+                exit_time = trade_data.get("exit_time")
+                if isinstance(exit_time, str):
+                    exit_time = datetime.fromisoformat(exit_time)
+
+                trade = TradeRecord(
+                    symbol=trade_data.get("symbol", ""),
+                    side=trade_data.get("side", ""),
+                    entry_price=trade_data.get("entry_price", 0.0),
+                    exit_price=trade_data.get("exit_price", 0.0),
+                    size=trade_data.get("size", 0.0),
+                    pnl=trade_data.get("pnl", 0.0),
+                    pnl_pct=trade_data.get("pnl_pct", 0.0),
+                    entry_time=entry_time,
+                    exit_time=exit_time,
+                    signal_source=trade_data.get("signal_source", ""),
+                    exit_reason=trade_data.get("exit_reason", ""),
+                )
+                trade_history.append(trade)
+
+            if trade_history:
+                logger.info(f"Restored {len(trade_history)} trades from history")
+
+        except Exception as e:
+            logger.warning(f"Failed to load trade history: {e}")
+
+        return trade_history
+
     def _save_state(self):
         """Save bot state to file"""
         # Use absolute path relative to this file (same as _load_state does)
@@ -557,12 +618,30 @@ class JJBotPro:
             os.makedirs(project_root / "data", exist_ok=True)
             logger.info(f"Saving state to: {state_file}")
 
+            # Convert trade history to serializable format
+            trade_history_data = []
+            for trade in self.trade_history:
+                trade_history_data.append({
+                    "symbol": trade.symbol,
+                    "side": trade.side,
+                    "entry_price": trade.entry_price,
+                    "exit_price": trade.exit_price,
+                    "size": trade.size,
+                    "pnl": trade.pnl,
+                    "pnl_pct": trade.pnl_pct,
+                    "entry_time": trade.entry_time.isoformat() if isinstance(trade.entry_time, datetime) else trade.entry_time,
+                    "exit_time": trade.exit_time.isoformat() if isinstance(trade.exit_time, datetime) else trade.exit_time,
+                    "signal_source": trade.signal_source,
+                    "exit_reason": trade.exit_reason,
+                })
+
             state = {
                 "equity": self.equity,
                 "peak_equity": self.peak_equity,
                 "daily_pnl": self.daily_pnl,
                 "daily_start_equity": self.daily_start_equity,
                 "stats": self.stats.copy(),  # Make a copy to avoid modifying original
+                "trade_history": trade_history_data,  # Save full trade history
                 "last_updated": datetime.now().isoformat()
             }
             # Handle datetime in stats
@@ -1378,6 +1457,7 @@ class JJBotPro:
             logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f}")
 
         # Record position
+        entry_time = datetime.now()
         self.positions[symbol] = Position(
             symbol=symbol,
             side=direction,
@@ -1385,11 +1465,25 @@ class JJBotPro:
             size=position_value,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            entry_time=datetime.now(),
+            entry_time=entry_time,
             signal_source=edge_type
         )
 
         self.stats["total_trades"] += 1
+
+        # Log trade entry to database for persistence
+        if DB_AVAILABLE and db_log_trade:
+            try:
+                db_log_trade({
+                    "timestamp": entry_time.isoformat(),
+                    "symbol": symbol,
+                    "signal": f"OPEN_{direction.upper()}",
+                    "last_price": filled_price,
+                    "vwap": filled_price,
+                    "pnl": 0.0  # No P&L on entry
+                })
+            except Exception as e:
+                logger.warning(f"Failed to log trade entry to database: {e}")
 
         # Publish trade event to WebSocket clients
         event_bus.publish("TRADE_EXECUTED", {
@@ -1471,6 +1565,7 @@ class JJBotPro:
             await self.exchange.create_order(order)
 
         # Record trade
+        exit_time = datetime.now()
         trade = TradeRecord(
             symbol=symbol,
             side=pos.side,
@@ -1480,11 +1575,25 @@ class JJBotPro:
             pnl=pnl,
             pnl_pct=pnl_pct,
             entry_time=pos.entry_time,
-            exit_time=datetime.now(),
+            exit_time=exit_time,
             signal_source=pos.signal_source,
             exit_reason=reason
         )
         self.trade_history.append(trade)
+
+        # Log trade to database for persistence
+        if DB_AVAILABLE and db_log_trade:
+            try:
+                db_log_trade({
+                    "timestamp": exit_time.isoformat(),
+                    "symbol": symbol,
+                    "signal": f"CLOSE_{pos.side.upper()}",
+                    "last_price": exit_price,
+                    "vwap": (pos.entry_price + exit_price) / 2,
+                    "pnl": pnl
+                })
+            except Exception as e:
+                logger.warning(f"Failed to log trade to database: {e}")
 
         # Update stats
         self.stats["total_pnl"] += pnl
