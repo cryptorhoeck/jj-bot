@@ -720,6 +720,72 @@ class JJBotPro:
         except Exception as e:
             logger.warning(f"Failed to update config mode: {e}")
 
+    async def _sync_positions_with_exchange(self):
+        """
+        Synchronize local position state with actual exchange positions.
+        Detects phantom positions (local but not on exchange) and
+        orphan positions (on exchange but not tracked locally).
+        """
+        if self.config.mode != "live" or not self.exchange:
+            return
+
+        try:
+            # Get actual positions from exchange
+            exchange_positions = await self.exchange.get_positions()
+
+            # Build set of symbols with open positions on exchange
+            exchange_symbols = set()
+            for pos in exchange_positions:
+                if pos and pos.get("contracts", 0) != 0:
+                    symbol = pos.get("symbol")
+                    if symbol:
+                        exchange_symbols.add(symbol)
+
+            # Check for phantom positions (local but not on exchange)
+            local_symbols = set(self.positions.keys())
+            phantom_positions = local_symbols - exchange_symbols
+
+            for symbol in phantom_positions:
+                logger.warning(f"PHANTOM POSITION DETECTED: {symbol} exists locally but not on exchange")
+                # The position may have been closed externally (e.g., by exchange stop)
+                pos = self.positions[symbol]
+                # Close the phantom position at last known price
+                price = self.prices.get(symbol, pos.entry_price)
+                await self._close_position(symbol, price, "phantom_cleanup")
+
+            # Check for orphan positions (on exchange but not tracked)
+            orphan_positions = exchange_symbols - local_symbols
+
+            for symbol in orphan_positions:
+                logger.warning(f"ORPHAN POSITION DETECTED: {symbol} exists on exchange but not tracked locally")
+                # Find the position details
+                for pos in exchange_positions:
+                    if pos.get("symbol") == symbol:
+                        contracts = pos.get("contracts", 0)
+                        entry_price = pos.get("entryPrice", 0)
+                        side = "long" if contracts > 0 else "short"
+                        logger.warning(f"  Orphan details: {side} {abs(contracts)} @ ${entry_price:.2f}")
+                        # Option: Auto-close orphan or track it
+                        # For safety, we'll just warn - user should manually reconcile
+                        break
+
+            # Also sync account balance
+            balance = await self.exchange.get_balance()
+            if balance:
+                total_balance = balance.get("total", {}).get("USDT", 0) or \
+                               balance.get("total", {}).get("USD", 0)
+                if total_balance > 0:
+                    # Log if significant discrepancy (>5%)
+                    local_equity = self.equity
+                    diff_pct = abs(total_balance - local_equity) / local_equity if local_equity else 0
+                    if diff_pct > 0.05:
+                        logger.warning(f"Balance discrepancy: Local=${local_equity:.2f}, Exchange=${total_balance:.2f} ({diff_pct:.1%} diff)")
+
+            logger.debug("Position sync completed successfully")
+
+        except Exception as e:
+            logger.warning(f"Position sync failed: {e}")
+
     async def start(self):
         """Start the trading bot"""
         logger.info("=" * 50)
@@ -892,6 +958,11 @@ class JJBotPro:
                 logger.info("No existing RL model found - starting fresh")
         elif self.config.use_rl_agent:
             logger.warning("RL agent requested but PyTorch not available - trading without AI")
+
+        # 6. Sync positions with exchange on startup (live mode only)
+        if self.config.mode == "live" and not self._demo_mode:
+            logger.info("Syncing positions with exchange...")
+            await self._sync_positions_with_exchange()
 
         logger.info("All components initialized")
 
@@ -1137,6 +1208,10 @@ class JJBotPro:
         last_candle_refresh = datetime.now()
         candle_refresh_interval = 300  # Refresh candles every 5 minutes
 
+        # Track time for position sync with exchange
+        last_position_sync = datetime.now()
+        position_sync_interval = 300  # Sync positions every 5 minutes
+
         while self.running:
             try:
                 # Update prices - demo mode uses simulation, live mode uses REST API fallback
@@ -1183,6 +1258,16 @@ class JJBotPro:
                             last_candle_refresh = datetime.now()
                         except Exception as e:
                             logger.debug(f"Candle refresh failed: {e}")
+
+                # Periodic position sync with exchange (live mode only)
+                if self.config.mode == "live" and not self._demo_mode:
+                    time_since_sync = (datetime.now() - last_position_sync).total_seconds()
+                    if time_since_sync >= position_sync_interval:
+                        try:
+                            await self._sync_positions_with_exchange()
+                            last_position_sync = datetime.now()
+                        except Exception as e:
+                            logger.warning(f"Position sync failed: {e}")
 
                 # Reset daily stats at midnight
                 await self._check_daily_reset()

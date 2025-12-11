@@ -736,6 +736,66 @@ class CCXTConnector:
             logger.error(f"Error fetching order {order_id}: {e}")
             return None
 
+    async def wait_for_order_fill(
+        self,
+        order_id: str,
+        symbol: str,
+        timeout_seconds: float = 30.0,
+        poll_interval: float = 0.5
+    ) -> Optional[OrderResult]:
+        """
+        Wait for an order to be filled with polling.
+
+        Args:
+            order_id: The order ID to monitor
+            symbol: Trading pair symbol
+            timeout_seconds: Maximum time to wait (default 30s)
+            poll_interval: Time between status checks (default 0.5s)
+
+        Returns:
+            Final OrderResult if filled/closed, None if timeout or error
+        """
+        start_time = datetime.now()
+        last_status = None
+
+        while True:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed >= timeout_seconds:
+                logger.warning(f"Order {order_id} timeout after {elapsed:.1f}s - last status: {last_status}")
+                return None
+
+            try:
+                order = await self.get_order(order_id, symbol)
+                if not order:
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                last_status = order.status
+
+                # Check if order is complete
+                if order.status in [OrderStatus.CLOSED]:
+                    if order.filled > 0:
+                        logger.info(f"Order {order_id} filled: {order.filled}/{order.amount} @ ${order.price:.2f}")
+                        return order
+                    else:
+                        logger.warning(f"Order {order_id} closed but not filled")
+                        return order
+
+                # Check if order was canceled or rejected
+                if order.status in [OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED]:
+                    logger.warning(f"Order {order_id} {order.status.value}")
+                    return order
+
+                # Check for partial fill - continue waiting but log progress
+                if order.filled > 0 and order.remaining > 0:
+                    fill_pct = order.filled / order.amount * 100
+                    logger.debug(f"Order {order_id} partial fill: {fill_pct:.1f}%")
+
+            except Exception as e:
+                logger.warning(f"Error polling order {order_id}: {e}")
+
+            await asyncio.sleep(poll_interval)
+
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderResult]:
         """Get all open orders"""
         try:
