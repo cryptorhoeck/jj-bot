@@ -152,6 +152,7 @@ class BotConfig:
     take_profit_pct: float = 0.04  # 4% take profit
     max_daily_loss_pct: float = 0.05  # 5% daily loss limit
     max_drawdown_pct: float = 0.10  # 10% max drawdown
+    risk_per_trade: float = 0.02  # 2% of account per trade risk
 
     # Trailing stop settings
     use_trailing_stop: bool = True  # Enable trailing stops
