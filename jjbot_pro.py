@@ -26,6 +26,7 @@ import numpy as np
 from modules.exchange import create_connector, create_live_feed, CCXTConnector, LiveDataFeed
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 from modules.event_bus import event_bus
+from modules.risk import RiskManager, RiskLimits
 
 # Database for trade logging
 try:
@@ -199,6 +200,14 @@ class BotConfig:
     audit_trail_enabled: bool = True
     audit_trail_dir: str = "logs/audit"
 
+    # Configurable timeouts (seconds)
+    order_fill_timeout: float = 30.0  # Max wait for order to fill
+    price_feed_stale_timeout: float = 300.0  # 5 min - mark feed as stale
+    state_save_interval: float = 300.0  # Save state every 5 min
+    candle_refresh_interval: float = 300.0  # Refresh candles every 5 min
+    position_sync_interval: float = 300.0  # Sync positions with exchange every 5 min
+    order_dedup_window: float = 5.0  # Seconds between same-symbol orders
+
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
         # Environment variable names follow pattern: {EXCHANGE}_API_KEY, {EXCHANGE}_API_SECRET
@@ -270,12 +279,14 @@ class Position:
     symbol: str
     side: str  # "long" or "short"
     entry_price: float
-    size: float
+    size: float  # Position value in USD
     stop_loss: float
     take_profit: float
     entry_time: datetime
     signal_source: str
     unrealized_pnl: float = 0.0
+    # Actual filled contracts/coins from exchange (for accurate close orders)
+    actual_contracts: float = 0.0
     # Exchange order IDs for tracking
     entry_order_id: Optional[str] = None
     stop_order_id: Optional[str] = None  # Stop loss order on exchange
@@ -384,6 +395,14 @@ class JJBotPro:
         self.positions: Dict[str, Position] = self._load_positions()
         self.trade_history: List[TradeRecord] = self._load_trade_history()
 
+        # Lock for thread-safe position modifications
+        self._position_lock = asyncio.Lock()
+        self._state_lock = asyncio.Lock()  # Lock for state file operations
+
+        # Order deduplication - track recent order requests to prevent duplicates
+        self._recent_orders: Dict[str, datetime] = {}  # symbol -> last_order_time
+        self._order_dedup_window = self.config.order_dedup_window
+
         # Training state - initialize from loaded stats if available
         self.training_progress = {
             "is_training": False,
@@ -449,13 +468,25 @@ class JJBotPro:
             )
             logger.info("Audit trail enabled")
 
+        # Risk manager with circuit breaker and comprehensive checks
+        self.risk_manager = RiskManager(RiskLimits(
+            max_risk_per_trade=self.config.risk_per_trade,
+            max_total_exposure=0.20,  # 20% max exposure
+            max_drawdown_pct=self.config.max_drawdown_pct,
+            max_daily_loss=self.config.max_daily_loss_pct * self.config.initial_capital,
+            max_open_positions=self.config.max_positions,
+            circuit_breaker_loss_count=3,
+            circuit_breaker_cooldown_minutes=30,
+        ))
+        logger.info("Risk manager initialized")
+
         # Price cache
         self.prices: Dict[str, float] = {}
 
         # Price feed health tracking
         self._last_price_update: datetime = datetime.now()
         self._last_rest_fetch: datetime = datetime.min  # Track REST API fetches separately
-        self._price_feed_stale_threshold = 300  # 5 minutes without price updates = stale
+        self._price_feed_stale_threshold = self.config.price_feed_stale_timeout
         self._trading_paused_due_to_feed = False
 
         logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
@@ -760,14 +791,15 @@ class JJBotPro:
         return trade_history
 
     def _save_state(self):
-        """Save bot state to file"""
+        """Save bot state to file (atomic write using temp file + rename)"""
         # Use absolute path relative to this file (same as _load_state does)
         project_root = Path(__file__).parent
         state_file = project_root / "data" / "bot_state.json"
+        temp_file = project_root / "data" / "bot_state.json.tmp"
 
         try:
             os.makedirs(project_root / "data", exist_ok=True)
-            logger.info(f"Saving state to: {state_file}")
+            logger.debug(f"Saving state to: {state_file}")
 
             # Convert trade history to serializable format
             trade_history_data = []
@@ -799,12 +831,25 @@ class JJBotPro:
             if state["stats"].get("start_time"):
                 state["stats"]["start_time"] = state["stats"]["start_time"].isoformat() if isinstance(state["stats"]["start_time"], datetime) else state["stats"]["start_time"]
 
-            with open(state_file, "w") as f:
+            # ATOMIC WRITE: Write to temp file first, then rename
+            # This prevents corrupt state files from crashes during write
+            with open(temp_file, "w") as f:
                 json.dump(state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is written to disk
 
-            logger.info(f"State saved successfully: equity=${self.equity:.2f}, IQ={self.stats.get('trading_iq', 0)}")
+            # Atomic rename (works on POSIX systems including Linux)
+            os.replace(temp_file, state_file)
+
+            logger.debug(f"State saved: equity=${self.equity:.2f}, IQ={self.stats.get('trading_iq', 0)}")
         except Exception as e:
             logger.error(f"FAILED to save state: {e}", exc_info=True)
+            # Clean up temp file if it exists
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except Exception:
+                pass
 
     def _save_mode_to_config(self, mode: str):
         """Save mode to bot_config.json so next start uses correct mode"""
@@ -1314,15 +1359,15 @@ class JJBotPro:
 
         # Track time for periodic saves
         last_save_time = datetime.now()
-        save_interval = 300  # Save state every 5 minutes
+        save_interval = self.config.state_save_interval
 
         # Track time for periodic candle refresh (fallback when WebSocket fails)
         last_candle_refresh = datetime.now()
-        candle_refresh_interval = 300  # Refresh candles every 5 minutes
+        candle_refresh_interval = self.config.candle_refresh_interval
 
         # Track time for position sync with exchange
         last_position_sync = datetime.now()
-        position_sync_interval = 300  # Sync positions every 5 minutes
+        position_sync_interval = self.config.position_sync_interval
 
         while self.running:
             try:
@@ -1712,6 +1757,12 @@ class JJBotPro:
 
     async def _handle_signal(self, symbol: str, signal):
         """Handle a trading signal (dict or TradeSignal object)"""
+        # Acquire position lock for thread-safe modifications
+        async with self._position_lock:
+            await self._handle_signal_locked(symbol, signal)
+
+    async def _handle_signal_locked(self, symbol: str, signal):
+        """Internal signal handler (must be called with _position_lock held)"""
         # Helper to get attribute from dict or object
         def get_attr(obj, key, default=None):
             if isinstance(obj, dict):
@@ -1734,27 +1785,50 @@ class JJBotPro:
                 )
             return
 
-        # Skip if max positions reached
-        if len(self.positions) >= self.config.max_positions:
-            logger.debug(f"Signal rejected for {symbol}: max positions reached ({len(self.positions)}/{self.config.max_positions})")
-            if self.audit:
-                self.audit.log_signal_rejected(
-                    symbol=symbol,
-                    signal_type=f"{direction}_{edge_type}",
-                    reason="max_positions_reached",
-                    details={"current_positions": len(self.positions), "max_positions": self.config.max_positions, "confidence": confidence}
-                )
-            return
+        # Order deduplication - prevent rapid duplicate orders for same symbol
+        now = datetime.now()
+        if symbol in self._recent_orders:
+            time_since_last = (now - self._recent_orders[symbol]).total_seconds()
+            if time_since_last < self._order_dedup_window:
+                logger.warning(f"Signal rejected for {symbol}: duplicate order (last order {time_since_last:.1f}s ago)")
+                if self.audit:
+                    self.audit.log_signal_rejected(
+                        symbol=symbol,
+                        signal_type=f"{direction}_{edge_type}",
+                        reason="duplicate_order",
+                        details={"seconds_since_last": time_since_last, "window": self._order_dedup_window}
+                    )
+                return
 
-        # Skip if risk limits not allowing trading
-        if not self._check_risk_limits():
-            logger.debug(f"Signal rejected for {symbol}: risk limits exceeded")
+        # Clean up old entries from dedup tracker (older than 60 seconds)
+        stale_cutoff = now - timedelta(seconds=60)
+        self._recent_orders = {s: t for s, t in self._recent_orders.items() if t > stale_cutoff}
+
+        # Comprehensive risk check using RiskManager (includes circuit breaker, drawdown, daily loss, max positions)
+        current_drawdown = self.peak_equity - self.total_equity
+        recent_trades = [
+            {"timestamp": t.exit_time.isoformat() if isinstance(t.exit_time, datetime) else t.exit_time, "pnl": t.pnl}
+            for t in self.trade_history[-10:]  # Last 10 trades
+        ]
+        risk_check = self.risk_manager.check_can_trade(
+            current_equity=self.equity,
+            current_drawdown=current_drawdown,
+            open_positions_count=len(self.positions),
+            recent_trades=recent_trades
+        )
+        if not risk_check["can_trade"]:
+            logger.warning(f"Signal rejected for {symbol}: {risk_check['reason']} [{risk_check['code']}]")
             if self.audit:
                 self.audit.log_signal_rejected(
                     symbol=symbol,
                     signal_type=f"{direction}_{edge_type}",
-                    reason="risk_limits_exceeded",
-                    details={"daily_pnl": self.daily_pnl, "confidence": confidence}
+                    reason=risk_check["code"].lower(),
+                    details={
+                        "message": risk_check["reason"],
+                        "confidence": confidence,
+                        "daily_pnl": self.daily_pnl,
+                        "drawdown": current_drawdown
+                    }
                 )
             return
 
@@ -1825,11 +1899,11 @@ class JJBotPro:
             if result.remaining > 0:
                 logger.warning(f"PARTIAL FILL: {filled_amount:.6f}/{requested_amount:.6f} filled")
 
-                # Wait for the order to fully fill (up to 30 seconds)
+                # Wait for the order to fully fill
                 final_result = await self.exchange.wait_for_order_fill(
                     order_id=result.order_id,
                     symbol=symbol,
-                    timeout_seconds=30.0
+                    timeout_seconds=self.config.order_fill_timeout
                 )
 
                 if final_result and final_result.filled > filled_amount:
@@ -1866,9 +1940,10 @@ class JJBotPro:
         else:
             # Paper trading
             filled_price = price
+            filled_amount = position_value / price  # Calculate contracts for paper trading
             entry_order_id = None
             stop_order_id = None
-            logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f}")
+            logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f} (qty: {filled_amount:.6f})")
 
         # Calculate entry slippage (difference between expected and actual fill)
         expected_price = price  # The price when we decided to trade
@@ -1895,6 +1970,7 @@ class JJBotPro:
             take_profit=take_profit,
             entry_time=entry_time,
             signal_source=edge_type,
+            actual_contracts=filled_amount,  # Store actual filled amount for accurate close
             entry_order_id=entry_order_id,
             stop_order_id=stop_order_id if self.config.mode == "live" else None,
             # Initialize trailing stop tracking
@@ -1907,6 +1983,9 @@ class JJBotPro:
         )
 
         self.stats["total_trades"] += 1
+
+        # Record order time for deduplication
+        self._recent_orders[symbol] = entry_time
 
         # Log trade entry to database for persistence
         if DB_AVAILABLE and db_log_trade:
@@ -1959,46 +2038,48 @@ class JJBotPro:
 
     async def _check_exits(self):
         """Check positions for exit conditions including trailing stops"""
-        positions_to_close = []
+        # Acquire position lock for thread-safe modifications
+        async with self._position_lock:
+            positions_to_close = []
 
-        for symbol, pos in self.positions.items():
-            price = self.prices.get(symbol, 0)
-            if price <= 0:
-                continue
+            for symbol, pos in self.positions.items():
+                price = self.prices.get(symbol, 0)
+                if price <= 0:
+                    continue
 
-            exit_reason = None
+                exit_reason = None
 
-            # Update trailing stop tracking
-            if self.config.use_trailing_stop:
-                self._update_trailing_stop(pos, price)
+                # Update trailing stop tracking
+                if self.config.use_trailing_stop:
+                    self._update_trailing_stop(pos, price)
 
-            # Check trailing stop (takes precedence over fixed stop)
-            if pos.trailing_stop_active and pos.trailing_stop_price > 0:
-                if pos.side == "long" and price <= pos.trailing_stop_price:
-                    exit_reason = "trailing_stop"
-                elif pos.side == "short" and price >= pos.trailing_stop_price:
-                    exit_reason = "trailing_stop"
+                # Check trailing stop (takes precedence over fixed stop)
+                if pos.trailing_stop_active and pos.trailing_stop_price > 0:
+                    if pos.side == "long" and price <= pos.trailing_stop_price:
+                        exit_reason = "trailing_stop"
+                    elif pos.side == "short" and price >= pos.trailing_stop_price:
+                        exit_reason = "trailing_stop"
 
-            # Check fixed stop loss (if trailing not triggered)
-            if not exit_reason:
-                if pos.side == "long" and price <= pos.stop_loss:
-                    exit_reason = "stop_loss"
-                elif pos.side == "short" and price >= pos.stop_loss:
-                    exit_reason = "stop_loss"
+                # Check fixed stop loss (if trailing not triggered)
+                if not exit_reason:
+                    if pos.side == "long" and price <= pos.stop_loss:
+                        exit_reason = "stop_loss"
+                    elif pos.side == "short" and price >= pos.stop_loss:
+                        exit_reason = "stop_loss"
 
-            # Check take profit
-            if not exit_reason:
-                if pos.side == "long" and price >= pos.take_profit:
-                    exit_reason = "take_profit"
-                elif pos.side == "short" and price <= pos.take_profit:
-                    exit_reason = "take_profit"
+                # Check take profit
+                if not exit_reason:
+                    if pos.side == "long" and price >= pos.take_profit:
+                        exit_reason = "take_profit"
+                    elif pos.side == "short" and price <= pos.take_profit:
+                        exit_reason = "take_profit"
 
-            if exit_reason:
-                positions_to_close.append((symbol, price, exit_reason))
+                if exit_reason:
+                    positions_to_close.append((symbol, price, exit_reason))
 
-        # Close positions
-        for symbol, exit_price, reason in positions_to_close:
-            await self._close_position(symbol, exit_price, reason)
+            # Close positions (lock already held)
+            for symbol, exit_price, reason in positions_to_close:
+                await self._close_position_locked(symbol, exit_price, reason)
 
     def _update_trailing_stop(self, pos: Position, current_price: float):
         """Update trailing stop for a position"""
@@ -2044,8 +2125,8 @@ class JJBotPro:
                     pos.trailing_stop_price = new_stop
                     logger.debug(f"Trailing stop updated: {pos.symbol} @ ${pos.trailing_stop_price:.2f}")
 
-    async def _close_position(self, symbol: str, exit_price: float, reason: str):
-        """Close a position"""
+    async def _close_position_locked(self, symbol: str, exit_price: float, reason: str):
+        """Close a position (must be called with _position_lock held)"""
         if symbol not in self.positions:
             return
 
@@ -2065,40 +2146,57 @@ class JJBotPro:
 
         # Execute close order in live mode (skip if exchange stop already executed)
         actual_exit_price = exit_price  # Will be updated with actual fill price
+        close_order_failed = False
         if self.config.mode == "live" and reason != "stop_loss_exchange":
-            side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
-            close_amount = pos.size / exit_price
-            order = OrderRequest(
-                symbol=symbol,
-                side=side,
-                order_type=OrderType.MARKET,
-                amount=close_amount,
-            )
-            result = await self.exchange.create_order(order)
+            try:
+                side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
+                # Use actual contracts if available (accurate), else calculate from USD value
+                close_amount = pos.actual_contracts if pos.actual_contracts > 0 else pos.size / exit_price
+                order = OrderRequest(
+                    symbol=symbol,
+                    side=side,
+                    order_type=OrderType.MARKET,
+                    amount=close_amount,
+                )
+                result = await self.exchange.create_order(order)
 
-            if result:
-                actual_exit_price = result.price
+                if result:
+                    actual_exit_price = result.price
 
-                # Handle partial fills on close
-                if result.remaining > 0:
-                    logger.warning(f"PARTIAL CLOSE: {result.filled:.6f}/{close_amount:.6f} filled")
+                    # Handle partial fills on close
+                    if result.remaining > 0:
+                        logger.warning(f"PARTIAL CLOSE: {result.filled:.6f}/{close_amount:.6f} filled")
 
-                    # Wait for full fill
-                    final_result = await self.exchange.wait_for_order_fill(
-                        order_id=result.order_id,
-                        symbol=symbol,
-                        timeout_seconds=30.0
+                        # Wait for full fill
+                        final_result = await self.exchange.wait_for_order_fill(
+                            order_id=result.order_id,
+                            symbol=symbol,
+                            timeout_seconds=self.config.order_fill_timeout
+                        )
+
+                        if final_result:
+                            actual_exit_price = final_result.price
+                            if final_result.remaining > 0:
+                                # Still not fully filled - log warning but proceed
+                                # The position will be marked as closed but some may remain on exchange
+                                logger.warning(f"Close order not fully filled - {final_result.remaining:.6f} may remain on exchange")
+                else:
+                    logger.error(f"Failed to execute close order for {symbol}")
+                    close_order_failed = True
+                    # Continue with estimated exit price for record keeping
+            except Exception as e:
+                logger.error(f"EXCEPTION closing position {symbol}: {e}", exc_info=True)
+                close_order_failed = True
+                # Log to audit trail
+                if self.audit:
+                    self.audit.log_error(
+                        error_type="close_order_exception",
+                        message=f"Failed to close {symbol}: {e}",
+                        details={"reason": reason, "exit_price": exit_price},
+                        symbol=symbol
                     )
-
-                    if final_result:
-                        actual_exit_price = final_result.price
-                        if final_result.remaining > 0:
-                            # Still not fully filled - log warning but proceed
-                            # The position will be marked as closed but some may remain on exchange
-                            logger.warning(f"Close order not fully filled - {final_result.remaining:.6f} may remain on exchange")
-            else:
-                logger.error(f"Failed to execute close order for {symbol}")
-                # Continue with estimated exit price for record keeping
+                # Continue with estimated exit price - position will be marked closed locally
+                # but may still exist on exchange - sync will reconcile
 
         # Calculate P&L using actual fill price
         if pos.side == "long":
@@ -2196,6 +2294,9 @@ class JJBotPro:
         if pnl > 0:
             self.stats["winning_trades"] += 1
 
+        # Record trade result in RiskManager for circuit breaker tracking
+        self.risk_manager.record_trade_result(pnl)
+
         # Update equity
         self.equity += pnl
         self.peak_equity = max(self.peak_equity, self.equity)
@@ -2225,6 +2326,11 @@ class JJBotPro:
 
         # Save state after each trade
         self._save_state()
+
+    async def _close_position(self, symbol: str, exit_price: float, reason: str):
+        """Close a position (thread-safe wrapper that acquires lock)"""
+        async with self._position_lock:
+            await self._close_position_locked(symbol, exit_price, reason)
 
     def _check_risk_limits(self) -> bool:
         """Check if risk limits allow trading"""
