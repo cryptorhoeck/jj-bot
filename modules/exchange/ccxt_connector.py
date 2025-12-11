@@ -136,6 +136,11 @@ class CCXTConnector:
     _ws_error_count: int = 0
     _ws_error_throttle_seconds: float = 10.0  # Only log WS errors every 10 seconds
 
+    # Reconnection settings
+    RECONNECT_MAX_RETRIES: int = 10
+    RECONNECT_BASE_DELAY: float = 1.0  # seconds
+    RECONNECT_MAX_DELAY: float = 60.0  # seconds
+
     # Exchange-specific configurations
     EXCHANGE_CONFIGS = {
         ExchangeType.BINANCE: {
@@ -185,6 +190,11 @@ class CCXTConnector:
         self._ws_callbacks: Dict[str, List[Callable]] = {}
         self._running = False
         self._ws_tasks: List[asyncio.Task] = []
+        # Connection state tracking
+        self._connected = False
+        self._ws_connected = False
+        self._reconnect_attempt = 0
+        self._last_successful_operation = datetime.now()
 
     async def connect(self) -> bool:
         """Initialize exchange connection"""
@@ -220,11 +230,53 @@ class CCXTConnector:
 
             mode = "paper" if self.sandbox else "live"
             logger.info(f"Connected to {exchange_id} ({mode} mode - using live prices)")
+            self._connected = True
+            self._reconnect_attempt = 0
+            self._last_successful_operation = datetime.now()
             return True
 
         except Exception as e:
             logger.error(f"Failed to connect to exchange: {e}")
+            self._connected = False
             return False
+
+    async def reconnect_with_backoff(self) -> bool:
+        """
+        Attempt to reconnect with exponential backoff.
+        Returns True if reconnection successful.
+        """
+        for attempt in range(self.RECONNECT_MAX_RETRIES):
+            self._reconnect_attempt = attempt + 1
+
+            # Calculate delay with exponential backoff
+            delay = min(
+                self.RECONNECT_BASE_DELAY * (2 ** attempt),
+                self.RECONNECT_MAX_DELAY
+            )
+
+            logger.warning(f"Reconnection attempt {attempt + 1}/{self.RECONNECT_MAX_RETRIES} "
+                          f"in {delay:.1f}s...")
+
+            await asyncio.sleep(delay)
+
+            # Try to reconnect
+            self._connected = False
+            self.exchange = None
+
+            if await self.connect():
+                logger.info(f"Reconnected successfully after {attempt + 1} attempts")
+                return True
+
+        logger.error(f"Failed to reconnect after {self.RECONNECT_MAX_RETRIES} attempts")
+        return False
+
+    async def ensure_connected(self) -> bool:
+        """Ensure exchange is connected, reconnecting if necessary."""
+        if self._connected and self.exchange:
+            return True
+
+        logger.warning("Exchange disconnected, attempting reconnection...")
+        return await self.reconnect_with_backoff()
 
     async def connect_websocket(self) -> bool:
         """Initialize WebSocket connection for real-time data"""
@@ -578,10 +630,12 @@ class CCXTConnector:
     # ========== Trading Methods ==========
 
     async def create_order(self, order: OrderRequest) -> Optional[OrderResult]:
-        """Create a new order"""
+        """Create a new order with automatic reconnection on failure"""
         try:
-            if not self.exchange:
-                await self.connect()
+            # Ensure we're connected, reconnect if needed
+            if not await self.ensure_connected():
+                logger.error("Cannot create order - exchange not connected")
+                return None
 
             if not self.credentials:
                 logger.error("Cannot create order without credentials")
@@ -606,6 +660,9 @@ class CCXTConnector:
                 params
             )
 
+            # Track successful operation
+            self._last_successful_operation = datetime.now()
+
             return OrderResult(
                 order_id=result["id"],
                 symbol=result["symbol"],
@@ -621,6 +678,15 @@ class CCXTConnector:
                 timestamp=datetime.fromtimestamp(result["timestamp"] / 1000) if result.get("timestamp") else datetime.now(),
                 raw=result
             )
+
+        except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
+            # Connection lost - try to reconnect and retry once
+            logger.warning(f"Network error creating order: {e}")
+            self._connected = False
+            if await self.reconnect_with_backoff():
+                logger.info("Retrying order after reconnection...")
+                return await self.create_order(order)  # Retry once
+            return None
 
         except Exception as e:
             logger.error(f"Error creating order: {e}")

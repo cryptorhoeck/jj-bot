@@ -145,6 +145,47 @@ class BotConfig:
     log_level: str = "INFO"
     log_trades: bool = True
 
+    def __post_init__(self):
+        """Load API keys from environment variables if not set in config"""
+        # Environment variable names follow pattern: {EXCHANGE}_API_KEY, {EXCHANGE}_API_SECRET
+        exchange_upper = self.exchange.upper().replace("-", "_")
+
+        # Try exchange-specific env vars first, then generic fallback
+        env_key_names = [
+            f"{exchange_upper}_API_KEY",
+            "EXCHANGE_API_KEY",
+            "API_KEY"
+        ]
+        env_secret_names = [
+            f"{exchange_upper}_API_SECRET",
+            "EXCHANGE_API_SECRET",
+            "API_SECRET"
+        ]
+
+        # Load API key from environment if not set
+        if not self.api_key:
+            for env_name in env_key_names:
+                env_value = os.environ.get(env_name)
+                if env_value:
+                    self.api_key = env_value
+                    logger.info(f"Loaded API key from environment variable: {env_name}")
+                    break
+
+        # Load API secret from environment if not set
+        if not self.api_secret:
+            for env_name in env_secret_names:
+                env_value = os.environ.get(env_name)
+                if env_value:
+                    self.api_secret = env_value
+                    logger.info(f"Loaded API secret from environment variable: {env_name}")
+                    break
+
+        # Also check for trading mode override from environment
+        env_mode = os.environ.get("TRADING_MODE")
+        if env_mode and env_mode in ["paper", "live", "training", "backtest"]:
+            self.mode = env_mode
+            logger.info(f"Trading mode set from environment: {env_mode}")
+
     @classmethod
     def load(cls, path: str = "config/bot_config.json") -> "BotConfig":
         """Load config from file, ignoring unknown fields"""
@@ -154,14 +195,19 @@ class BotConfig:
                 # Filter to only known fields to avoid errors from old config files
                 valid_fields = {f.name for f in fields(cls)}
                 filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-                return cls(**filtered_data)
+                config = cls(**filtered_data)
+                return config
         return cls()
 
     def save(self, path: str = "config/bot_config.json"):
-        """Save config to file"""
+        """Save config to file (excludes API keys for security)"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = asdict(self)
+        # Don't save API keys to file for security
+        data["api_key"] = ""
+        data["api_secret"] = ""
         with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2)
+            json.dump(data, f, indent=2)
 
 
 @dataclass
@@ -176,6 +222,10 @@ class Position:
     entry_time: datetime
     signal_source: str
     unrealized_pnl: float = 0.0
+    # Exchange order IDs for tracking
+    entry_order_id: Optional[str] = None
+    stop_order_id: Optional[str] = None  # Stop loss order on exchange
+    tp_order_id: Optional[str] = None    # Take profit order on exchange
 
 
 @dataclass
@@ -1392,6 +1442,61 @@ class JJBotPro:
             if combined and conf >= self.config.min_signal_confidence:
                 await self._handle_signal(symbol, combined)
 
+    async def _place_stop_order(self, symbol: str, side: str, amount: float, stop_price: float) -> Optional[str]:
+        """
+        Place a stop-loss order on the exchange.
+
+        Args:
+            symbol: Trading pair
+            side: Original position side ("long" or "short")
+            amount: Position size in base currency
+            stop_price: Price at which stop should trigger
+
+        Returns:
+            Order ID if successful, None otherwise
+        """
+        if not self.exchange or self.config.mode != "live":
+            return None
+
+        try:
+            # Stop order is opposite of position side
+            # Long position -> Sell stop (to close)
+            # Short position -> Buy stop (to close)
+            stop_side = OrderSide.SELL if side == "long" else OrderSide.BUY
+
+            # Create stop-market order
+            order = OrderRequest(
+                symbol=symbol,
+                side=stop_side,
+                order_type=OrderType.STOP_LOSS,
+                amount=amount,
+                stop_price=stop_price,
+                params={"stopPrice": stop_price, "type": "stop_market"}
+            )
+
+            result = await self.exchange.create_order(order)
+            if result:
+                return result.order_id
+            return None
+
+        except Exception as e:
+            logger.warning(f"Failed to place stop order for {symbol}: {e}")
+            return None
+
+    async def _cancel_stop_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an existing stop order on the exchange."""
+        if not self.exchange or not order_id:
+            return False
+
+        try:
+            success = await self.exchange.cancel_order(order_id, symbol)
+            if success:
+                logger.info(f"Cancelled stop order {order_id} for {symbol}")
+            return success
+        except Exception as e:
+            logger.warning(f"Failed to cancel stop order {order_id}: {e}")
+            return False
+
     async def _handle_signal(self, symbol: str, signal):
         """Handle a trading signal (dict or TradeSignal object)"""
         # Helper to get attribute from dict or object
@@ -1447,13 +1552,28 @@ class JJBotPro:
             result = await self.exchange.create_order(order)
             if result:
                 filled_price = result.price
+                entry_order_id = result.order_id
                 logger.info(f"ORDER FILLED: {result.order_id} @ ${filled_price:.2f}")
+
+                # Place exchange-based stop loss order for protection
+                stop_order_id = await self._place_stop_order(
+                    symbol=symbol,
+                    side=direction,
+                    amount=position_value / filled_price,
+                    stop_price=stop_loss
+                )
+                if stop_order_id:
+                    logger.info(f"STOP ORDER PLACED: {stop_order_id} @ ${stop_loss:.2f}")
+                else:
+                    logger.warning(f"Failed to place stop order - local monitoring only")
             else:
                 logger.error("Order failed")
                 return
         else:
             # Paper trading
             filled_price = price
+            entry_order_id = None
+            stop_order_id = None
             logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f}")
 
         # Record position
@@ -1466,7 +1586,9 @@ class JJBotPro:
             stop_loss=stop_loss,
             take_profit=take_profit,
             entry_time=entry_time,
-            signal_source=edge_type
+            signal_source=edge_type,
+            entry_order_id=entry_order_id,
+            stop_order_id=stop_order_id if self.config.mode == "live" else None
         )
 
         self.stats["total_trades"] += 1
@@ -1553,8 +1675,12 @@ class JJBotPro:
         logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${exit_price:.2f}")
         logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
 
-        # Execute close order in live mode
-        if self.config.mode == "live":
+        # Cancel exchange stop order if exists (unless this close IS the stop trigger)
+        if self.config.mode == "live" and pos.stop_order_id and reason != "stop_loss_exchange":
+            await self._cancel_stop_order(symbol, pos.stop_order_id)
+
+        # Execute close order in live mode (skip if exchange stop already executed)
+        if self.config.mode == "live" and reason != "stop_loss_exchange":
             side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
             order = OrderRequest(
                 symbol=symbol,
