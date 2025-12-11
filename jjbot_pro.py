@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 import signal
+import numpy as np
 
 # Internal modules
 from modules.exchange import create_connector, create_live_feed, CCXTConnector, LiveDataFeed
@@ -36,13 +37,14 @@ except ImportError:
 # RL modules are optional (require PyTorch)
 try:
     from modules.rl import TradingEnvironment, create_agent, PPOAgent
-    from modules.rl.trading_env import load_historical_data_sync
+    from modules.rl.trading_env import load_historical_data_sync, calculate_features
     RL_AVAILABLE = True
 except ImportError:
     TradingEnvironment = None
     create_agent = None
     PPOAgent = None
     load_historical_data_sync = None
+    calculate_features = None
     RL_AVAILABLE = False
 
 # Alternative data modules (optional)
@@ -1092,6 +1094,108 @@ class JJBotPro:
                 logger.error(f"Trading loop error: {e}", exc_info=True)
                 await asyncio.sleep(10)
 
+    def _build_rl_observation(self, symbol: str, candles: list) -> Optional[np.ndarray]:
+        """
+        Build the full RL observation matching training environment.
+
+        Returns 1007-feature observation:
+        - 50 candles × 20 technical indicators = 1000 features
+        - 4 position features (side, unrealized P&L, holding time, size)
+        - 3 account features (equity change, drawdown, recent volatility)
+        """
+        if not candles or len(candles) < 50:
+            return None
+
+        try:
+            # Convert candles to OHLCV numpy array format
+            # calculate_features expects: [timestamp, open, high, low, close, volume]
+            ohlcv_data = []
+            for c in candles[-50:]:  # Use last 50 candles
+                if hasattr(c, 'timestamp'):
+                    ts = c.timestamp.timestamp() * 1000 if hasattr(c.timestamp, 'timestamp') else float(c.timestamp)
+                else:
+                    ts = 0
+                ohlcv_data.append([
+                    ts,
+                    float(c.open) if hasattr(c, 'open') else float(c.get('open', 0)),
+                    float(c.high) if hasattr(c, 'high') else float(c.get('high', 0)),
+                    float(c.low) if hasattr(c, 'low') else float(c.get('low', 0)),
+                    float(c.close) if hasattr(c, 'close') else float(c.get('close', 0)),
+                    float(c.volume) if hasattr(c, 'volume') else float(c.get('volume', 0)),
+                ])
+
+            ohlcv_array = np.array(ohlcv_data, dtype=np.float64)
+
+            # Calculate technical features using the same function as training
+            if calculate_features is None:
+                return None
+            features = calculate_features(ohlcv_array)
+
+            if features is None or len(features) < 50:
+                return None
+
+            # Build observation matching training environment's _get_observation()
+            obs = []
+
+            # Use the last 50 candles of features (lookback_window=50)
+            window_data = features[-50:]
+
+            # Normalize price features (same as training)
+            price_mean = np.mean(window_data[:, 0])
+            price_std = np.std(window_data[:, 0]) + 1e-8
+            normalized_prices = (window_data[:, 0] - price_mean) / price_std
+            obs.extend(normalized_prices.flatten())
+
+            # Add other features (already normalized in calculate_features)
+            for i in range(1, min(20, window_data.shape[1])):
+                feature = window_data[:, i]
+                feature = np.clip(feature, -5, 5)  # Clip extreme values
+                obs.extend(feature.flatten())
+
+            # Pad if needed to reach 1000 price features
+            while len(obs) < 50 * 20:
+                obs.append(0.0)
+
+            # Position features (4 features)
+            position = self.positions.get(symbol)
+            if position:
+                # Position side encoding
+                position_encoding = {"flat": 0.0, "long": 1.0, "short": -1.0}
+                obs.append(position_encoding.get(position.side, 0.0))
+                # Unrealized P&L (normalized)
+                unrealized_pnl_pct = position.unrealized_pnl / self.config.initial_capital
+                obs.append(np.clip(unrealized_pnl_pct, -1, 1))
+                # Holding time (normalized) - assume entry_time is datetime
+                if hasattr(position, 'entry_time') and position.entry_time:
+                    holding_hours = (datetime.now() - position.entry_time).total_seconds() / 3600
+                    obs.append(np.clip(holding_hours / 100, 0, 1))
+                else:
+                    obs.append(0.0)
+                # Position size (normalized)
+                obs.append(position.size / self.config.initial_capital if self.config.initial_capital else 0)
+            else:
+                # No position - flat state
+                obs.extend([0.0, 0.0, 0.0, 0.0])
+
+            # Account features (3 features)
+            # Equity change
+            equity_change = (self.equity - self.config.initial_capital) / self.config.initial_capital
+            obs.append(np.clip(equity_change, -1, 1))
+
+            # Drawdown
+            drawdown = (self.peak_equity - self.equity) / self.peak_equity if self.peak_equity else 0
+            obs.append(np.clip(drawdown, 0, 1))
+
+            # Recent volatility (use daily P&L as proxy)
+            recent_vol = abs(self.daily_pnl / self.equity) if self.equity else 0
+            obs.append(np.clip(recent_vol * 10, 0, 1))
+
+            return np.array(obs, dtype=np.float32)
+
+        except Exception as e:
+            logger.warning(f"Error building RL observation for {symbol}: {e}")
+            return None
+
     async def _analyze_symbol(self, symbol: str):
         """Analyze a symbol for trading opportunities"""
         self.stats["signals_analyzed"] += 1
@@ -1146,57 +1250,52 @@ class JJBotPro:
                 except Exception as e:
                     logger.debug(f"Alt data error for {symbol}: {e}")
 
-        # 3. Get RL agent signal (if no position)
-        if self.rl_agent and symbol not in self.positions:
+        # 3. Get RL agent signal
+        if self.rl_agent:
             try:
-                # Build state for RL
-                candles = self.data_feed.get_candles(symbol, "1h", 50) if self.data_feed else []
-                if len(candles) < 20:
+                # Get candles for RL observation (need 50 for full technical indicator calculation)
+                candles = self.data_feed.get_candles(symbol, "1h", 100) if self.data_feed else []
+
+                if len(candles) < 50:
                     # Log this issue periodically (not every cycle)
                     if not hasattr(self, '_candle_warning_count'):
                         self._candle_warning_count = {}
                     self._candle_warning_count[symbol] = self._candle_warning_count.get(symbol, 0) + 1
                     if self._candle_warning_count[symbol] == 1 or self._candle_warning_count[symbol] % 60 == 0:
-                        logger.warning(f"Insufficient candles for {symbol}: {len(candles)}/20 required (check #{self._candle_warning_count[symbol]})")
-                if len(candles) >= 20:
-                    # Simple state: returns and volatility
-                    # Ensure close prices are floats (API may return strings)
-                    closes = [float(c.close) if hasattr(c, 'close') else float(c.get('close', 0)) for c in candles[-50:]]
-                    # Protect against division by zero
-                    returns = [(closes[i] - closes[i-1]) / closes[i-1] if closes[i-1] > 0 else 0 for i in range(1, len(closes))]
+                        logger.warning(f"Insufficient candles for {symbol}: {len(candles)}/50 required (check #{self._candle_warning_count[symbol]})")
+                else:
+                    # Build proper RL observation with all 1007 features matching training
+                    state = self._build_rl_observation(symbol, candles)
 
-                    state = list(returns[-20:]) + [0] * (self.rl_env.observation_space_dim - 20)
-                    state = state[:self.rl_env.observation_space_dim]
+                    if state is not None:
+                        action, log_prob, value = self.rl_agent.select_action(state, training=False)
 
-                    import numpy as np
-                    action, log_prob, value = self.rl_agent.select_action(np.array(state), training=False)
+                        # Convert log_prob to confidence (probability of chosen action)
+                        # log_prob is negative, so exp(log_prob) gives probability [0, 1]
+                        confidence = float(np.exp(log_prob))
+                        # Ensure confidence is in reasonable range [0.5, 0.95]
+                        confidence = max(0.5, min(0.95, confidence))
 
-                    # Convert log_prob to confidence (probability of chosen action)
-                    # log_prob is negative, so exp(log_prob) gives probability [0, 1]
-                    confidence = float(np.exp(log_prob))
-                    # Ensure confidence is in reasonable range [0.5, 0.95]
-                    confidence = max(0.5, min(0.95, confidence))
-
-                    if action == 1:  # BUY
-                        signals.append(TradeSignal(
-                            symbol=symbol,
-                            direction="long",
-                            strength=2,
-                            confidence=confidence,
-                            edge_type="rl_agent",
-                            entry_price=price,
-                            reason=f"RL agent buy signal (conf: {confidence:.1%})"
-                        ))
-                    elif action == 2:  # SELL
-                        signals.append(TradeSignal(
-                            symbol=symbol,
-                            direction="short",
-                            strength=2,
-                            confidence=confidence,
-                            edge_type="rl_agent",
-                            entry_price=price,
-                            reason=f"RL agent sell signal (conf: {confidence:.1%})"
-                        ))
+                        if action == 1:  # BUY
+                            signals.append(TradeSignal(
+                                symbol=symbol,
+                                direction="long",
+                                strength=2,
+                                confidence=confidence,
+                                edge_type="rl_agent",
+                                entry_price=price,
+                                reason=f"RL agent buy signal (conf: {confidence:.1%})"
+                            ))
+                        elif action == 2:  # SELL
+                            signals.append(TradeSignal(
+                                symbol=symbol,
+                                direction="short",
+                                strength=2,
+                                confidence=confidence,
+                                edge_type="rl_agent",
+                                entry_price=price,
+                                reason=f"RL agent sell signal (conf: {confidence:.1%})"
+                            ))
             except Exception as e:
                 logger.warning(f"RL signal error for {symbol}: {e}")
 
