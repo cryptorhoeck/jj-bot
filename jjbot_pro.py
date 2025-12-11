@@ -77,6 +77,25 @@ except ImportError:
     TradeSignal = None
     EDGE_AVAILABLE = False
 
+# Notifications (optional)
+try:
+    from modules.notifications import NotificationManager, NotificationConfig, create_notifier
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NotificationManager = None
+    NotificationConfig = None
+    create_notifier = None
+    NOTIFICATIONS_AVAILABLE = False
+
+# Health check server (optional)
+try:
+    from modules.health_check import HealthCheckServer, create_health_server
+    HEALTH_CHECK_AVAILABLE = True
+except ImportError:
+    HealthCheckServer = None
+    create_health_server = None
+    HEALTH_CHECK_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +163,21 @@ class BotConfig:
     # Logging
     log_level: str = "INFO"
     log_trades: bool = True
+
+    # Notifications (set via environment variables or config)
+    telegram_bot_token: str = ""  # TELEGRAM_BOT_TOKEN env var
+    telegram_chat_id: str = ""    # TELEGRAM_CHAT_ID env var
+    discord_webhook_url: str = "" # DISCORD_WEBHOOK_URL env var
+    notify_on_trades: bool = True
+
+    # Health check server
+    health_check_enabled: bool = True
+    health_check_port: int = 8080
+
+    # Dead man's switch - auto-close positions if bot becomes unresponsive
+    dead_mans_switch_enabled: bool = False  # Disabled by default for safety
+    dead_mans_switch_timeout: int = 300  # 5 minutes without heartbeat
+    dead_mans_switch_close_positions: bool = True  # Close all positions when triggered
 
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
@@ -347,6 +381,24 @@ class JJBotPro:
         self.edge_manager: Optional[EdgeStrategyManager] = None
         self.rl_agent: Optional[PPOAgent] = None
         self.rl_env: Optional[TradingEnvironment] = None
+
+        # Notifications
+        self.notifier: Optional[NotificationManager] = None
+        if NOTIFICATIONS_AVAILABLE:
+            notif_config = NotificationConfig(
+                telegram_bot_token=self.config.telegram_bot_token,
+                telegram_chat_id=self.config.telegram_chat_id,
+                discord_webhook_url=self.config.discord_webhook_url,
+                notify_on_entry=self.config.notify_on_trades,
+                notify_on_exit=self.config.notify_on_trades,
+            )
+            self.notifier = create_notifier(notif_config)
+            if self.notifier.is_enabled:
+                logger.info("Trade notifications enabled")
+
+        # Health check server
+        self._health_server = None
+        self._health_app = None
 
         # Price cache
         self.prices: Dict[str, float] = {}
@@ -964,6 +1016,17 @@ class JJBotPro:
             logger.info("Syncing positions with exchange...")
             await self._sync_positions_with_exchange()
 
+        # 7. Health check server (for monitoring)
+        if HEALTH_CHECK_AVAILABLE and self.config.health_check_enabled:
+            self._health_server = HealthCheckServer(
+                port=self.config.health_check_port,
+                status_callback=self._get_health_status,
+                dead_mans_switch_timeout=float(self.config.dead_mans_switch_timeout),
+                dead_mans_switch_callback=self._on_dead_mans_switch if self.config.dead_mans_switch_close_positions else None,
+                dead_mans_switch_enabled=self.config.dead_mans_switch_enabled
+            )
+            await self._health_server.start()
+
         logger.info("All components initialized")
 
     def _on_price_update(self, update):
@@ -1214,6 +1277,10 @@ class JJBotPro:
 
         while self.running:
             try:
+                # Update heartbeat for health monitoring
+                if self._health_server:
+                    self._health_server.update_heartbeat()
+
                 # Update prices - demo mode uses simulation, live mode uses REST API fallback
                 if self._demo_mode:
                     await self._update_demo_prices()
@@ -1627,33 +1694,65 @@ class JJBotPro:
         if self.config.mode == "live":
             # Real order execution
             side = OrderSide.BUY if direction == "long" else OrderSide.SELL
+            requested_amount = position_value / price
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
                 order_type=OrderType.MARKET,
-                amount=position_value / price,
+                amount=requested_amount,
             )
 
             result = await self.exchange.create_order(order)
-            if result:
-                filled_price = result.price
-                entry_order_id = result.order_id
-                logger.info(f"ORDER FILLED: {result.order_id} @ ${filled_price:.2f}")
-
-                # Place exchange-based stop loss order for protection
-                stop_order_id = await self._place_stop_order(
-                    symbol=symbol,
-                    side=direction,
-                    amount=position_value / filled_price,
-                    stop_price=stop_loss
-                )
-                if stop_order_id:
-                    logger.info(f"STOP ORDER PLACED: {stop_order_id} @ ${stop_loss:.2f}")
-                else:
-                    logger.warning(f"Failed to place stop order - local monitoring only")
-            else:
+            if not result:
                 logger.error("Order failed")
                 return
+
+            entry_order_id = result.order_id
+            filled_amount = result.filled
+            filled_price = result.price
+
+            # Handle partial fills
+            if result.remaining > 0:
+                logger.warning(f"PARTIAL FILL: {filled_amount:.6f}/{requested_amount:.6f} filled")
+
+                # Wait for the order to fully fill (up to 30 seconds)
+                final_result = await self.exchange.wait_for_order_fill(
+                    order_id=result.order_id,
+                    symbol=symbol,
+                    timeout_seconds=30.0
+                )
+
+                if final_result and final_result.filled > filled_amount:
+                    filled_amount = final_result.filled
+                    filled_price = final_result.price
+                    logger.info(f"ORDER FILL UPDATE: {filled_amount:.6f} filled @ ${filled_price:.2f}")
+
+                # Check if still partially filled
+                if filled_amount < requested_amount * 0.95:  # Less than 95% filled
+                    # Cancel remaining order
+                    try:
+                        await self.exchange.cancel_order(result.order_id, symbol)
+                        logger.info(f"Cancelled unfilled portion of order {result.order_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cancel partial order: {e}")
+
+                    # Adjust position size to actual filled amount
+                    position_value = filled_amount * filled_price
+                    logger.info(f"Adjusted position size to ${position_value:.2f} based on fill")
+
+            logger.info(f"ORDER FILLED: {result.order_id} @ ${filled_price:.2f} (qty: {filled_amount:.6f})")
+
+            # Place exchange-based stop loss order for protection
+            stop_order_id = await self._place_stop_order(
+                symbol=symbol,
+                side=direction,
+                amount=filled_amount,  # Use actual filled amount
+                stop_price=stop_loss
+            )
+            if stop_order_id:
+                logger.info(f"STOP ORDER PLACED: {stop_order_id} @ ${stop_loss:.2f}")
+            else:
+                logger.warning(f"Failed to place stop order - local monitoring only")
         else:
             # Paper trading
             filled_price = price
@@ -1693,14 +1792,22 @@ class JJBotPro:
                 logger.warning(f"Failed to log trade entry to database: {e}")
 
         # Publish trade event to WebSocket clients
-        event_bus.publish("TRADE_EXECUTED", {
+        trade_event = {
             "symbol": symbol,
             "action": "OPEN_" + direction.upper(),
             "price": filled_price,
             "quantity": position_value,
             "pnl": 0,  # No P&L on open
             "timestamp": datetime.now().isoformat()
-        })
+        }
+        event_bus.publish("TRADE_EXECUTED", trade_event)
+
+        # Send trade notification (Telegram/Discord)
+        if self.notifier and self.notifier.is_enabled:
+            try:
+                await self.notifier.notify_trade_entry(trade_event)
+            except Exception as e:
+                logger.warning(f"Failed to send trade notification: {e}")
 
         # Save state after opening position
         self._save_state()
@@ -1748,40 +1855,67 @@ class JJBotPro:
             del self.positions[symbol]
             return
 
-        # Calculate P&L
-        if pos.side == "long":
-            pnl_pct = (exit_price - pos.entry_price) / pos.entry_price
-        else:
-            pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
-
-        pnl = pnl_pct * pos.size
-
         logger.info(f"CLOSE: {pos.side.upper()} {symbol}")
-        logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${exit_price:.2f}")
-        logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
 
         # Cancel exchange stop order if exists (unless this close IS the stop trigger)
         if self.config.mode == "live" and pos.stop_order_id and reason != "stop_loss_exchange":
             await self._cancel_stop_order(symbol, pos.stop_order_id)
 
         # Execute close order in live mode (skip if exchange stop already executed)
+        actual_exit_price = exit_price  # Will be updated with actual fill price
         if self.config.mode == "live" and reason != "stop_loss_exchange":
             side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
+            close_amount = pos.size / exit_price
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
                 order_type=OrderType.MARKET,
-                amount=pos.size / exit_price,
+                amount=close_amount,
             )
-            await self.exchange.create_order(order)
+            result = await self.exchange.create_order(order)
 
-        # Record trade
+            if result:
+                actual_exit_price = result.price
+
+                # Handle partial fills on close
+                if result.remaining > 0:
+                    logger.warning(f"PARTIAL CLOSE: {result.filled:.6f}/{close_amount:.6f} filled")
+
+                    # Wait for full fill
+                    final_result = await self.exchange.wait_for_order_fill(
+                        order_id=result.order_id,
+                        symbol=symbol,
+                        timeout_seconds=30.0
+                    )
+
+                    if final_result:
+                        actual_exit_price = final_result.price
+                        if final_result.remaining > 0:
+                            # Still not fully filled - log warning but proceed
+                            # The position will be marked as closed but some may remain on exchange
+                            logger.warning(f"Close order not fully filled - {final_result.remaining:.6f} may remain on exchange")
+            else:
+                logger.error(f"Failed to execute close order for {symbol}")
+                # Continue with estimated exit price for record keeping
+
+        # Calculate P&L using actual fill price
+        if pos.side == "long":
+            pnl_pct = (actual_exit_price - pos.entry_price) / pos.entry_price
+        else:
+            pnl_pct = (pos.entry_price - actual_exit_price) / pos.entry_price
+
+        pnl = pnl_pct * pos.size
+
+        logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${actual_exit_price:.2f}")
+        logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
+
+        # Record trade (use actual_exit_price)
         exit_time = datetime.now()
         trade = TradeRecord(
             symbol=symbol,
             side=pos.side,
             entry_price=pos.entry_price,
-            exit_price=exit_price,
+            exit_price=actual_exit_price,
             size=pos.size,
             pnl=pnl,
             pnl_pct=pnl_pct,
@@ -1799,8 +1933,8 @@ class JJBotPro:
                     "timestamp": exit_time.isoformat(),
                     "symbol": symbol,
                     "signal": f"CLOSE_{pos.side.upper()}",
-                    "last_price": exit_price,
-                    "vwap": (pos.entry_price + exit_price) / 2,
+                    "last_price": actual_exit_price,
+                    "vwap": (pos.entry_price + actual_exit_price) / 2,
                     "pnl": pnl
                 })
             except Exception as e:
@@ -1820,16 +1954,24 @@ class JJBotPro:
         del self.positions[symbol]
 
         # Publish trade event to WebSocket clients
-        event_bus.publish("TRADE_EXECUTED", {
+        trade_event = {
             "symbol": symbol,
             "action": "CLOSE_" + pos.side.upper(),
-            "price": exit_price,
+            "price": actual_exit_price,
             "quantity": pos.size,
             "pnl": pnl,
             "pnl_pct": pnl_pct * 100,
             "reason": reason,
             "timestamp": datetime.now().isoformat()
-        })
+        }
+        event_bus.publish("TRADE_EXECUTED", trade_event)
+
+        # Send trade notification (Telegram/Discord)
+        if self.notifier and self.notifier.is_enabled:
+            try:
+                await self.notifier.notify_trade_exit(trade_event)
+            except Exception as e:
+                logger.warning(f"Failed to send trade notification: {e}")
 
         # Save state after each trade
         self._save_state()
@@ -2179,6 +2321,14 @@ class JJBotPro:
         if self.alt_data:
             await self.alt_data.close()
 
+        # Stop health check server
+        if self._health_server:
+            await self._health_server.stop()
+
+        # Close notification manager
+        if self.notifier:
+            await self.notifier.close()
+
         # Log final stats
         self._log_final_stats()
 
@@ -2270,6 +2420,54 @@ class JJBotPro:
             "daily_pnl": self.daily_pnl,
             "start_time": self.stats["start_time"].isoformat() if self.stats["start_time"] else None,
         }
+
+    def _get_health_status(self) -> Dict:
+        """Get health status for monitoring endpoint"""
+        return {
+            "running": self.running,
+            "mode": self.config.mode,
+            "equity": self.equity,
+            "total_pnl": self.stats["total_pnl"],
+            "daily_pnl": self.daily_pnl,
+            "total_trades": self.stats["total_trades"],
+            "open_positions": len(self.positions),
+            "exchange_connected": self.exchange is not None and self.exchange._exchange is not None,
+            "price_feed_stale": self._trading_paused_due_to_feed,
+        }
+
+    async def _on_dead_mans_switch(self):
+        """
+        Called when the dead man's switch triggers (bot unresponsive).
+        Emergency close all positions to protect capital.
+        """
+        logger.warning("=" * 60)
+        logger.warning("[DEAD MAN'S SWITCH] EMERGENCY POSITION CLOSE TRIGGERED")
+        logger.warning("=" * 60)
+
+        # Send notification if available
+        if self.notifier and self.notifier.is_enabled:
+            try:
+                await self.notifier.notify_error(
+                    "Dead Man's Switch",
+                    "Bot unresponsive - emergency closing all positions"
+                )
+            except Exception:
+                pass
+
+        # Close all positions
+        positions_to_close = list(self.positions.keys())
+        for symbol in positions_to_close:
+            try:
+                price = self.prices.get(symbol, self.positions[symbol].entry_price)
+                await self._close_position(symbol, price, "dead_mans_switch")
+                logger.info(f"[DEAD MAN'S SWITCH] Closed {symbol}")
+            except Exception as e:
+                logger.error(f"[DEAD MAN'S SWITCH] Failed to close {symbol}: {e}")
+
+        # Save state
+        self._save_state()
+
+        logger.warning("[DEAD MAN'S SWITCH] Emergency close complete")
 
     def get_positions(self) -> List[Dict]:
         """Get open positions (for API)"""
