@@ -199,15 +199,14 @@ h4 { font-size: 1.125rem; }
 }
 
 .stat-value {
-  /* Base font size - can be overridden inline for auto-scaling */
-  font-size: clamp(1.1rem, 0.9rem + 1.5vw, 1.5rem);
+  /* Font size controlled by inline style for dynamic scaling */
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
-  /* Allow text to wrap or shrink instead of truncating */
-  word-break: break-word;
-  overflow-wrap: break-word;
-  /* Ensure it fits in container */
+  /* NEVER wrap - shrink font instead */
+  white-space: nowrap;
+  overflow: hidden;
   max-width: 100%;
 }
 
@@ -657,8 +656,7 @@ h4 { font-size: 1.125rem; }
   }
 
   .stat-value {
-    /* Smaller fluid size for mobile: 0.95rem to 1.15rem */
-    font-size: clamp(0.95rem, 0.8rem + 2vw, 1.15rem);
+    /* Font size controlled by inline style - no override here */
   }
 
   h1 {
@@ -673,7 +671,7 @@ h4 { font-size: 1.125rem; }
 /* Extra small screens */
 @media (max-width: 480px) {
   .stat-value {
-    font-size: clamp(0.85rem, 0.7rem + 2.5vw, 1rem);
+    /* Font size controlled by inline style - no override here */
   }
 
   .stat-label {

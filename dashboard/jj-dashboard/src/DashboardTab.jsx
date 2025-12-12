@@ -24,15 +24,16 @@ const formatCurrency = (value, currency = 'CAD') => {
 };
 
 // Calculate font size based on text length to auto-fit in container
-const getAutoFontSize = (text, baseSize = 1.5, minSize = 0.75) => {
+const getAutoFontSize = (text, baseSize = 1.5, minSize = 0.65) => {
   const len = String(text).length;
-  // Scale down as text gets longer
-  if (len <= 10) return `${baseSize}rem`;
-  if (len <= 12) return `${baseSize * 0.9}rem`;
-  if (len <= 14) return `${baseSize * 0.8}rem`;
-  if (len <= 16) return `${baseSize * 0.7}rem`;
-  if (len <= 18) return `${baseSize * 0.6}rem`;
-  return `${minSize}rem`;
+  // Scale down aggressively as text gets longer - must fit on ONE line
+  if (len <= 8) return `${baseSize}rem`;        // $10,000 = 1.5rem
+  if (len <= 10) return `${baseSize * 0.85}rem`; // $100,000.00 = 1.275rem
+  if (len <= 12) return `${baseSize * 0.75}rem`; // C$137,274.76 = 1.125rem
+  if (len <= 14) return `${baseSize * 0.65}rem`; // +C$1,234.56 = 0.975rem
+  if (len <= 16) return `${baseSize * 0.58}rem`; // longer = 0.87rem
+  if (len <= 18) return `${baseSize * 0.52}rem`; // even longer = 0.78rem
+  return `${minSize}rem`;                        // max length = 0.65rem
 };
 
 export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
