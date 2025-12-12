@@ -381,8 +381,8 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
             </div>
             <div>
               <p className="text-2xl font-bold">
-                {isTraining && trainingProgress?.profit_factor
-                  ? trainingProgress.profit_factor.toFixed(2)
+                {isTraining && trainingProgress?.avg_profit_factor
+                  ? trainingProgress.avg_profit_factor.toFixed(2)
                   : trainingHistory.avg_profit_factor?.toFixed(2) || '—'}
               </p>
               <p className="text-xs text-muted">{isTraining ? 'Current' : 'Avg'} Profit Factor</p>
@@ -551,8 +551,8 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               </div>
               <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.profit_factor && metrics.profit_factor > 0
-                    ? metrics.profit_factor.toFixed(2)
+                  {metrics.avg_profit_factor && metrics.avg_profit_factor > 0
+                    ? metrics.avg_profit_factor.toFixed(2)
                     : '—'}
                 </p>
                 <p className="text-xs text-muted">Profit Factor</p>
