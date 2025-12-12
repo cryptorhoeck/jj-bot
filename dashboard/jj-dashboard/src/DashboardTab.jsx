@@ -50,6 +50,10 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   const [chartRange, setChartRange] = useState('all'); // '1h', '4h', '1d', '1w', 'all'
   const [chartHeight, setChartHeight] = useState(300);
 
+  // Y-axis zoom state (dollar range)
+  const [yAxisZoom, setYAxisZoom] = useState(100); // percentage of data range to show (100 = full, 50 = zoomed in 2x)
+  const [yAxisOffset, setYAxisOffset] = useState(50); // where the zoom window is centered (0-100)
+
   // Save currency preference
   useEffect(() => {
     localStorage.setItem('jjbot_currency', currency);
@@ -181,6 +185,53 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   // Chart height options
   const heightOptions = [200, 300, 400, 500];
 
+  // Calculate Y-axis domain based on zoom level and offset
+  const getYAxisDomain = () => {
+    if (!filteredEquityCurve.length) return ['auto', 'auto'];
+
+    // Get min/max equity values from data
+    const equityValues = filteredEquityCurve.map(d => d.equity).filter(v => v != null);
+    if (!equityValues.length) return ['auto', 'auto'];
+
+    const dataMin = Math.min(...equityValues);
+    const dataMax = Math.max(...equityValues);
+    const dataRange = dataMax - dataMin;
+
+    // Add 5% padding to the full range
+    const padding = dataRange * 0.05;
+    const fullMin = dataMin - padding;
+    const fullMax = dataMax + padding;
+    const fullRange = fullMax - fullMin;
+
+    // If zoom is 100%, show full range
+    if (yAxisZoom >= 100) {
+      return [fullMin, fullMax];
+    }
+
+    // Calculate zoomed range
+    const zoomFactor = yAxisZoom / 100;
+    const zoomedRange = fullRange * zoomFactor;
+
+    // Calculate center point based on offset (0-100)
+    // offset 50 = center of data, 0 = bottom, 100 = top
+    const offsetFactor = yAxisOffset / 100;
+    const centerValue = fullMin + (fullRange * offsetFactor);
+
+    // Calculate new min/max centered on the offset point
+    let yMin = centerValue - (zoomedRange / 2);
+    let yMax = centerValue + (zoomedRange / 2);
+
+    // Clamp to reasonable bounds (don't go too far outside data)
+    const clampMin = fullMin - fullRange * 0.5;
+    const clampMax = fullMax + fullRange * 0.5;
+    yMin = Math.max(clampMin, yMin);
+    yMax = Math.min(clampMax, yMax);
+
+    return [yMin, yMax];
+  };
+
+  const yAxisDomain = getYAxisDomain();
+
   // Currency selector component
   const CurrencySelector = () => (
     <select
@@ -211,8 +262,12 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         {/* Current Equity - with auto-scaling text */}
         <div className="stat-card">
           <p className="stat-label">Current Equity</p>
-          <p className="stat-value text-info" style={{ fontSize: (summary.current_equity || 10000) >= 100000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }} title={formatCurrency(summary.current_equity || 10000, currency)}>
-            {formatCurrency(summary.current_equity || 10000, currency, (summary.current_equity || 10000) >= 100000)}
+          <p
+            className="stat-value text-info"
+            style={{ fontSize: (summary.current_equity || 10000) * (CURRENCIES[currency]?.rate || 1) >= 100000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
+            title={formatCurrency(summary.current_equity || 10000, currency)}
+          >
+            {formatCurrency(summary.current_equity || 10000, currency, (summary.current_equity || 10000) * (CURRENCIES[currency]?.rate || 1) >= 100000)}
           </p>
           <p className={`stat-change ${summary.return_pct >= 0 ? 'positive' : 'negative'}`}>
             {summary.return_pct >= 0 ? '+' : ''}{summary.return_pct?.toFixed(2) || '0.00'}% return
@@ -222,8 +277,12 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         {/* Total P&L */}
         <div className={`stat-card ${summary.total_pnl >= 0 ? 'success' : 'danger'}`}>
           <p className="stat-label">Total P&L</p>
-          <p className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`} title={formatCurrency(Math.abs(summary.total_pnl || 0), currency)}>
-            {summary.total_pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.total_pnl || 0), currency, Math.abs(summary.total_pnl || 0) >= 10000)}
+          <p
+            className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}
+            style={{ fontSize: Math.abs(summary.total_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
+            title={`${summary.total_pnl >= 0 ? '+' : '-'}${formatCurrency(Math.abs(summary.total_pnl || 0), currency)}`}
+          >
+            {summary.total_pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.total_pnl || 0), currency, Math.abs(summary.total_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000)}
           </p>
           <p className="stat-change text-muted">
             {summary.winning_trades || 0}W / {summary.losing_trades || 0}L
@@ -251,8 +310,12 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         {/* Max Drawdown */}
         <div className={`stat-card ${Math.abs(summary.max_drawdown || 0) > 500 ? 'danger' : ''}`}>
           <p className="stat-label">Max Drawdown</p>
-          <p className="stat-value text-danger">
-            {formatCurrency(Math.abs(summary.max_drawdown || 0), currency)}
+          <p
+            className="stat-value text-danger"
+            style={{ fontSize: Math.abs(summary.max_drawdown || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
+            title={formatCurrency(Math.abs(summary.max_drawdown || 0), currency)}
+          >
+            {formatCurrency(Math.abs(summary.max_drawdown || 0), currency, Math.abs(summary.max_drawdown || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000)}
           </p>
           <p className="stat-change text-muted">Peak to trough</p>
         </div>
@@ -313,7 +376,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 </select>
               </div>
 
-              {/* Zoom buttons */}
+              {/* Height +/- buttons */}
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setChartHeight(Math.max(200, chartHeight - 50))}
@@ -334,6 +397,65 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                   </svg>
                 </button>
               </div>
+
+              {/* Y-Axis Zoom Controls (Dollar Range) */}
+              <div className="flex items-center gap-2 border-l border-[var(--border-color)] pl-3">
+                <span className="text-xs text-muted">$ Range:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setYAxisZoom(Math.max(10, yAxisZoom - 15))}
+                    className="p-1.5 rounded-lg bg-info/20 hover:bg-info/30 text-info transition-colors"
+                    title="Zoom in (tighter range)"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setYAxisZoom(Math.min(100, yAxisZoom + 15))}
+                    className="p-1.5 rounded-lg bg-info/20 hover:bg-info/30 text-info transition-colors"
+                    title="Zoom out (wider range)"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => { setYAxisZoom(100); setYAxisOffset(50); }}
+                    className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-muted hover:text-[var(--text-primary)] transition-colors"
+                    title="Reset to auto-fit"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  </button>
+                </div>
+                <span className="text-xs text-muted font-mono w-10 text-right">{yAxisZoom}%</span>
+              </div>
+
+              {/* Y-Axis Pan Controls (only show when zoomed in) */}
+              {yAxisZoom < 100 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setYAxisOffset(Math.min(100, yAxisOffset + 10))}
+                    className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-muted hover:text-[var(--text-primary)] transition-colors"
+                    title="Pan up"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setYAxisOffset(Math.max(0, yAxisOffset - 10))}
+                    className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-muted hover:text-[var(--text-primary)] transition-colors"
+                    title="Pan down"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -367,6 +489,8 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 tick={{ fill: chartColors.text, fontSize: 11 }}
                 tickFormatter={(value) => formatCurrency(value, currency, value >= 100000)}
                 width={80}
+                domain={yAxisDomain}
+                allowDataOverflow={true}
               />
               <Tooltip
                 contentStyle={{
@@ -492,14 +616,20 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Daily P&L</p>
-                  <p className={`text-base font-semibold truncate ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency)}
+                  <p
+                    className={`text-base font-semibold truncate ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}
+                    title={formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency)}
+                  >
+                    {formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency, Math.abs(riskStatus.risk_status?.daily_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 1000)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Loss Remaining</p>
-                  <p className="text-base font-semibold truncate">
-                    {formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
+                  <p
+                    className="text-base font-semibold truncate"
+                    title={formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
+                  >
+                    {formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency, Math.abs(riskStatus.risk_status?.daily_loss_remaining || 0) * (CURRENCIES[currency]?.rate || 1) >= 1000)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
