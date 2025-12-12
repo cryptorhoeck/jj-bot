@@ -428,6 +428,14 @@ async def emergency_stop(close_positions: bool = True, auth_token: Optional[str]
 async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90):
     """Start RL agent training with configurable data settings"""
     global _bot_instance
+    import sys
+
+    # Force output to show
+    print(f"\n{'='*60}", flush=True)
+    print(f"[TRAIN] TRAIN ENDPOINT CALLED - episodes={episodes}", flush=True)
+    print(f"{'='*60}", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
 
     if _bot_instance and _bot_instance.running:
         return {
@@ -441,11 +449,15 @@ async def start_training(episodes: int = 100, timeframe: str = "1h", history_day
     config["train_timeframe"] = timeframe
     config["train_history_days"] = history_days
     save_config(config)
-    print(f"[TRAIN] Config saved with mode={config['mode']}, episodes={episodes}")
+    print(f"[TRAIN] Config saved with mode={config['mode']}", flush=True)
+
+    # Verify config was saved correctly
+    verify_config = load_config()
+    print(f"[TRAIN] Verify: config file now has mode={verify_config.get('mode')}", flush=True)
 
     # Start in training mode
     result = await start_bot(mode="training")
-    print(f"[TRAIN] start_bot returned: {result}")
+    print(f"[TRAIN] start_bot returned: {result}", flush=True)
     return result
 
 
