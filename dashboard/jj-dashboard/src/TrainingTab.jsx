@@ -88,9 +88,9 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
     best_profit_factor: 0
   });
 
-  // Training time tracking
+  // Training time tracking - use milliseconds for precision
   const [trainingStartTime, setTrainingStartTime] = useState(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   // Sync with shared status
   useEffect(() => {
@@ -162,14 +162,14 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
     return () => clearInterval(interval);
   }, [isTraining, API_BASE, onBotStatusChange]);
 
-  // Track elapsed time during training
+  // Track elapsed time during training (millisecond precision)
   useEffect(() => {
     if (isTraining && !trainingStartTime) {
       setTrainingStartTime(Date.now());
     }
     if (!isTraining) {
       setTrainingStartTime(null);
-      setElapsedTime(0);
+      setElapsedMs(0);
     }
   }, [isTraining, trainingStartTime]);
 
@@ -177,30 +177,41 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
     if (!isTraining || !trainingStartTime) return;
 
     const timer = setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - trainingStartTime) / 1000));
-    }, 1000);
+      setElapsedMs(Date.now() - trainingStartTime);
+    }, 100); // Update every 100ms for smoother display
 
     return () => clearInterval(timer);
   }, [isTraining, trainingStartTime]);
 
   // Format elapsed time as HH:MM:SS
-  const formatTime = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+  const formatTime = (ms) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
     if (hrs > 0) {
       return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Format time per episode (handles sub-second values)
+  const formatTimePerEpisode = (ms, episodes) => {
+    if (!episodes || episodes === 0) return '0ms';
+    const msPerEpisode = ms / episodes;
+    if (msPerEpisode < 1000) {
+      return `${Math.round(msPerEpisode)}ms`;
+    }
+    return `${(msPerEpisode / 1000).toFixed(1)}s`;
+  };
+
   // Estimate remaining time
   const estimateRemainingTime = () => {
-    if (!isTraining || !elapsedTime || !currentEpisode) return null;
+    if (!isTraining || !elapsedMs || !currentEpisode) return null;
     const episodesRemaining = totalEpisodes - currentEpisode;
-    const timePerEpisode = elapsedTime / currentEpisode;
-    const remainingSeconds = Math.floor(episodesRemaining * timePerEpisode);
-    return formatTime(remainingSeconds);
+    const msPerEpisode = elapsedMs / currentEpisode;
+    const remainingMs = Math.floor(episodesRemaining * msPerEpisode);
+    return formatTime(remainingMs);
   };
 
   // Save settings to config
@@ -301,28 +312,54 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
 
         {/* Training Stats Card */}
         <div className="card p-6 flex-1">
-          <p className="text-sm text-muted uppercase mb-2">Training History</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-muted uppercase">Training History</p>
+            {isTraining && (
+              <span className="badge badge-info text-xs">Live Session</span>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-2xl font-bold">{trainingHistory.training_sessions}</p>
+              <p className="text-2xl font-bold">
+                {isTraining
+                  ? <>{trainingHistory.training_sessions || 0} <span className="text-info text-sm">+1</span></>
+                  : trainingHistory.training_sessions}
+              </p>
               <p className="text-xs text-muted">Sessions</p>
             </div>
             <div>
-              <p className="text-2xl font-bold">{trainingHistory.total_training_episodes?.toLocaleString()}</p>
+              <p className="text-2xl font-bold">
+                {isTraining && trainingProgress?.current_episode
+                  ? ((trainingHistory.total_training_episodes || 0) + currentEpisode).toLocaleString()
+                  : trainingHistory.total_training_episodes?.toLocaleString() || 0}
+              </p>
               <p className="text-xs text-muted">Total Episodes</p>
             </div>
             <div>
-              <p className="text-2xl font-bold">{trainingHistory.avg_win_rate?.toFixed(1)}%</p>
-              <p className="text-xs text-muted">Avg Win Rate</p>
+              <p className="text-2xl font-bold">
+                {isTraining && trainingProgress?.avg_win_rate
+                  ? trainingProgress.avg_win_rate.toFixed(1)
+                  : trainingHistory.avg_win_rate?.toFixed(1) || 0}%
+              </p>
+              <p className="text-xs text-muted">{isTraining ? 'Current' : 'Avg'} Win Rate</p>
             </div>
             <div>
-              <p className="text-2xl font-bold">{trainingHistory.avg_profit_factor?.toFixed(2)}</p>
-              <p className="text-xs text-muted">Avg Profit Factor</p>
+              <p className="text-2xl font-bold">
+                {isTraining && trainingProgress?.profit_factor
+                  ? trainingProgress.profit_factor.toFixed(2)
+                  : trainingHistory.avg_profit_factor?.toFixed(2) || '—'}
+              </p>
+              <p className="text-xs text-muted">{isTraining ? 'Current' : 'Avg'} Profit Factor</p>
             </div>
           </div>
-          {trainingHistory.last_training_date && (
+          {!isTraining && trainingHistory.last_training_date && (
             <p className="text-xs text-muted mt-3 text-center border-t border-[var(--border-color)] pt-2">
               Last trained: {new Date(trainingHistory.last_training_date).toLocaleDateString()}
+            </p>
+          )}
+          {isTraining && (
+            <p className="text-xs text-info mt-3 text-center border-t border-[var(--border-color)] pt-2">
+              Training in progress...
             </p>
           )}
         </div>
@@ -412,11 +449,11 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
       {/* Live Training Stats */}
       {isTraining && trainingProgress && (
         <div className="card p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <h3 className="text-lg font-semibold">📊 Live Training Metrics</h3>
             <div className="flex items-center gap-4 text-sm">
               <span className="text-muted">
-                ⏱️ Elapsed: <span className="font-mono text-info">{formatTime(elapsedTime)}</span>
+                ⏱️ Elapsed: <span className="font-mono text-info">{formatTime(elapsedMs)}</span>
               </span>
               {estimateRemainingTime() && (
                 <span className="text-muted">
@@ -439,11 +476,13 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               <p className="text-xs text-muted">Last Episode P&L</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">{trainingProgress.total_trades || 0}</p>
+              <p className="text-2xl font-bold">{(trainingProgress.total_trades || 0).toLocaleString()}</p>
               <p className="text-xs text-muted">Total Trades</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">${trainingProgress.simulated_equity?.toLocaleString() || '10,000'}</p>
+              <p className={`text-2xl font-bold ${(trainingProgress.simulated_equity || 10000) >= 10000 ? 'text-success' : 'text-danger'}`}>
+                ${(trainingProgress.simulated_equity || 10000).toLocaleString(undefined, {maximumFractionDigits: 0})}
+              </p>
               <p className="text-xs text-muted">Simulated Equity</p>
             </div>
           </div>
@@ -455,16 +494,22 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               <p className="text-xs text-muted">Avg Win Rate</p>
             </div>
             <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
-              <p className="text-lg font-bold">{trainingProgress.avg_reward?.toFixed(2) || 0}</p>
+              <p className={`text-lg font-bold ${(trainingProgress.avg_reward || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                {trainingProgress.avg_reward?.toFixed(2) || 0}
+              </p>
               <p className="text-xs text-muted">Avg Reward</p>
             </div>
             <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
-              <p className="text-lg font-bold">{trainingProgress.profit_factor?.toFixed(2) || '0.00'}</p>
+              <p className="text-lg font-bold">
+                {trainingProgress.profit_factor && trainingProgress.profit_factor > 0
+                  ? trainingProgress.profit_factor.toFixed(2)
+                  : '—'}
+              </p>
               <p className="text-xs text-muted">Profit Factor</p>
             </div>
             <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
-              <p className="text-lg font-bold">{currentEpisode > 0 ? (elapsedTime / currentEpisode).toFixed(1) : 0}s</p>
-              <p className="text-xs text-muted">Sec/Episode</p>
+              <p className="text-lg font-bold text-info">{formatTimePerEpisode(elapsedMs, currentEpisode)}</p>
+              <p className="text-xs text-muted">Per Episode</p>
             </div>
           </div>
 
