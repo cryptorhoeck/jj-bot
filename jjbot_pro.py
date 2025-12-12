@@ -194,7 +194,7 @@ class BotConfig:
 
     # Dead man's switch - auto-close positions if bot becomes unresponsive
     dead_mans_switch_enabled: bool = False  # Disabled by default for safety
-    dead_mans_switch_timeout: int = 300  # 5 minutes without heartbeat
+    dead_mans_switch_timeout: int = 90  # 90 seconds without heartbeat (was 300s)
     dead_mans_switch_close_positions: bool = True  # Close all positions when triggered
 
     # Audit trail
@@ -1877,6 +1877,48 @@ class JJBotPro:
 
         # Execute based on mode
         if self.config.mode == "live":
+            # PRE-TRADE BALANCE VERIFICATION
+            # Fetch current balance to ensure sufficient funds before placing order
+            try:
+                balance = await self.exchange.get_balance()
+                # Get base currency (USD for most pairs)
+                base_currency = symbol.split("/")[1] if "/" in symbol else "USD"
+                available_balance = balance.get("free", {}).get(base_currency, 0)
+
+                # Account for trading fees (estimate 0.2% buffer)
+                required_balance = position_value * 1.002
+
+                if available_balance < required_balance:
+                    logger.warning(
+                        f"INSUFFICIENT BALANCE: Need ${required_balance:.2f} but only "
+                        f"${available_balance:.2f} {base_currency} available"
+                    )
+                    if self.audit:
+                        self.audit.log_signal_rejected(
+                            symbol=symbol,
+                            signal_type=f"{direction}_{edge_type}",
+                            reason="insufficient_balance",
+                            details={
+                                "required": required_balance,
+                                "available": available_balance,
+                                "currency": base_currency
+                            }
+                        )
+                    return
+
+                logger.debug(f"Balance check passed: ${available_balance:.2f} available, ${required_balance:.2f} required")
+            except Exception as e:
+                logger.error(f"Failed to verify balance before trade: {e}")
+                # In live mode, reject trade if we can't verify balance
+                if self.audit:
+                    self.audit.log_signal_rejected(
+                        symbol=symbol,
+                        signal_type=f"{direction}_{edge_type}",
+                        reason="balance_check_failed",
+                        details={"error": str(e)}
+                    )
+                return
+
             # Real order execution
             side = OrderSide.BUY if direction == "long" else OrderSide.SELL
             requested_amount = position_value / price

@@ -329,6 +329,94 @@ async def stop_bot():
         return {"status": "error", "message": str(e)}
 
 
+@router.post("/emergency-stop")
+async def emergency_stop(close_positions: bool = True, auth_token: Optional[str] = None):
+    """
+    EMERGENCY STOP - Immediately halt trading and optionally close all positions.
+
+    This endpoint provides a remote kill switch for emergency situations.
+    Use when you need to immediately stop all trading activity.
+
+    Args:
+        close_positions: If True (default), close all open positions immediately
+        auth_token: Optional authentication token (set EMERGENCY_STOP_TOKEN env var)
+    """
+    global _bot_instance, _bot_task
+
+    # Optional authentication - check EMERGENCY_STOP_TOKEN env var
+    required_token = os.environ.get("EMERGENCY_STOP_TOKEN")
+    if required_token and auth_token != required_token:
+        raise HTTPException(status_code=401, detail="Invalid or missing auth_token")
+
+    result = {
+        "status": "emergency_stop_triggered",
+        "timestamp": datetime.now().isoformat(),
+        "positions_closed": 0,
+        "close_errors": [],
+        "message": ""
+    }
+
+    try:
+        if not _bot_instance:
+            result["message"] = "Bot instance not found - nothing to stop"
+            return result
+
+        # Log emergency stop to audit trail
+        if hasattr(_bot_instance, 'audit') and _bot_instance.audit:
+            _bot_instance.audit.log_event(
+                event_type="EMERGENCY_STOP",
+                details={"close_positions": close_positions, "triggered_via": "api"}
+            )
+
+        # Close all positions if requested
+        if close_positions and hasattr(_bot_instance, 'positions'):
+            positions_to_close = list(_bot_instance.positions.keys())
+            logger.warning(f"EMERGENCY STOP: Closing {len(positions_to_close)} positions")
+
+            for symbol in positions_to_close:
+                try:
+                    if hasattr(_bot_instance, '_close_position'):
+                        await _bot_instance._close_position(symbol, reason="emergency_stop")
+                        result["positions_closed"] += 1
+                        logger.info(f"Emergency closed position: {symbol}")
+                except Exception as e:
+                    error_msg = f"Failed to close {symbol}: {str(e)}"
+                    result["close_errors"].append(error_msg)
+                    logger.error(error_msg)
+
+        # Stop the bot immediately
+        if _bot_instance.running:
+            _bot_instance.running = False  # Immediate halt flag
+
+            # Try graceful stop with short timeout
+            try:
+                await asyncio.wait_for(_bot_instance.stop(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Graceful stop timed out, forcing shutdown")
+
+        # Cancel background task
+        if _bot_task:
+            _bot_task.cancel()
+            try:
+                await asyncio.wait_for(_bot_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            _bot_task = None
+
+        result["message"] = f"Emergency stop complete. Closed {result['positions_closed']} positions."
+        if result["close_errors"]:
+            result["message"] += f" {len(result['close_errors'])} errors occurred."
+
+        logger.warning(f"EMERGENCY STOP COMPLETE: {result}")
+        return result
+
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = f"Emergency stop failed: {str(e)}"
+        logger.error(f"Emergency stop error: {e}", exc_info=True)
+        return result
+
+
 @router.post("/train")
 async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90):
     """Start RL agent training with configurable data settings"""
