@@ -901,19 +901,50 @@ class JJBotPro:
                 await self._close_position(symbol, price, "phantom_cleanup")
 
             # Check for orphan positions (on exchange but not tracked)
+            # CRITICAL: Auto-recover orphan positions to local state for tracking
             orphan_positions = exchange_symbols - local_symbols
 
             for symbol in orphan_positions:
                 logger.warning(f"ORPHAN POSITION DETECTED: {symbol} exists on exchange but not tracked locally")
-                # Find the position details
+                # Find the position details and recover to local state
                 for pos in exchange_positions:
                     if pos.get("symbol") == symbol:
                         contracts = pos.get("contracts", 0)
-                        entry_price = pos.get("entryPrice", 0)
+                        entry_price = pos.get("entryPrice", 0) or pos.get("averagePrice", 0)
                         side = "long" if contracts > 0 else "short"
-                        logger.warning(f"  Orphan details: {side} {abs(contracts)} @ ${entry_price:.2f}")
-                        # Option: Auto-close orphan or track it
-                        # For safety, we'll just warn - user should manually reconcile
+                        position_value = abs(contracts) * entry_price
+
+                        logger.warning(f"  RECOVERING orphan position: {side} {abs(contracts):.6f} @ ${entry_price:.2f}")
+
+                        # Create Position object to track it locally
+                        recovered_position = Position(
+                            symbol=symbol,
+                            side=side,
+                            entry_price=entry_price,
+                            size=position_value,
+                            stop_loss=entry_price * (0.98 if side == "long" else 1.02),  # Default 2% stop
+                            take_profit=entry_price * (1.04 if side == "long" else 0.96),  # Default 4% TP
+                            entry_time=datetime.now(),  # Unknown, use current time
+                            signal_source="recovered_from_exchange",
+                            actual_contracts=abs(contracts),
+                            entry_order_id=pos.get("id"),
+                        )
+                        self.positions[symbol] = recovered_position
+
+                        # Log to audit trail
+                        if self.audit:
+                            self.audit.log_event(
+                                event_type="POSITION_RECOVERED",
+                                details={
+                                    "symbol": symbol,
+                                    "side": side,
+                                    "contracts": abs(contracts),
+                                    "entry_price": entry_price,
+                                    "reason": "orphan_position_recovery"
+                                }
+                            )
+
+                        logger.info(f"  Position {symbol} recovered and now tracked locally")
                         break
 
             # Also sync account balance
@@ -2700,10 +2731,38 @@ class JJBotPro:
             await asyncio.sleep(2)
 
         # Close all positions (paper/live trading mode only - not during training)
+        # CRITICAL: Add timeout protection to prevent hanging on position close
         if not self._started_in_training_mode:
-            for symbol in list(self.positions.keys()):
-                price = self.prices.get(symbol, self.positions[symbol].entry_price)
-                await self._close_position(symbol, price, "shutdown")
+            positions_to_close = list(self.positions.keys())
+            if positions_to_close:
+                logger.info(f"Closing {len(positions_to_close)} open positions...")
+                close_errors = []
+
+                for symbol in positions_to_close:
+                    price = self.prices.get(symbol, self.positions[symbol].entry_price)
+                    try:
+                        # Timeout per position close: 30 seconds max
+                        await asyncio.wait_for(
+                            self._close_position(symbol, price, "shutdown"),
+                            timeout=30.0
+                        )
+                        logger.info(f"  Closed {symbol}")
+                    except asyncio.TimeoutError:
+                        error_msg = f"Timeout closing {symbol} - position may still be open on exchange"
+                        logger.error(error_msg)
+                        close_errors.append(error_msg)
+                        # Continue with other positions, don't block shutdown
+                    except Exception as e:
+                        error_msg = f"Error closing {symbol}: {e}"
+                        logger.error(error_msg)
+                        close_errors.append(error_msg)
+                        # Continue with other positions
+
+                if close_errors:
+                    logger.warning(f"Shutdown completed with {len(close_errors)} position close errors")
+                    logger.warning("Manual reconciliation may be required for failed closes")
+                else:
+                    logger.info("All positions closed successfully")
 
         # CRITICAL: Save state before shutdown
         logger.info("Saving state before shutdown...")
