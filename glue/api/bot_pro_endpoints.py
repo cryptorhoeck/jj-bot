@@ -239,6 +239,7 @@ async def update_bot_config(updates: BotConfigUpdate):
 async def start_bot(mode: Optional[str] = None):
     """Start JJ-Bot Pro (runs in same process as API)"""
     global _bot_instance, _bot_task
+    print(f"[START_BOT] Called with mode={mode}")
 
     if _bot_instance and _bot_instance.running:
         return {"status": "already_running", "message": "Bot is already running"}
@@ -249,11 +250,13 @@ async def start_bot(mode: Optional[str] = None):
             "status": "error",
             "message": "Bot not configured. Run setup wizard or use /api/pro/quick-start"
         }
+    print(f"[START_BOT] Loaded config with mode={config.get('mode')}")
 
     # Override mode if specified
     if mode:
         config["mode"] = mode
         save_config(config)
+        print(f"[START_BOT] Mode overridden to: {mode}")
 
     try:
         # Import and create bot
@@ -263,8 +266,10 @@ async def start_bot(mode: Optional[str] = None):
         # Filter config to only known BotConfig fields (handles old config files with extra fields)
         valid_fields = {f.name for f in fields(BotConfig)}
         filtered_config = {k: v for k, v in config.items() if k in valid_fields}
+        print(f"[START_BOT] Filtered config mode={filtered_config.get('mode')}")
 
         bot_config = BotConfig(**filtered_config)
+        print(f"[START_BOT] BotConfig created with mode={bot_config.mode}")
         _bot_instance = JJBotPro(bot_config)
 
         # Start bot as background task
@@ -436,9 +441,12 @@ async def start_training(episodes: int = 100, timeframe: str = "1h", history_day
     config["train_timeframe"] = timeframe
     config["train_history_days"] = history_days
     save_config(config)
+    print(f"[TRAIN] Config saved with mode={config['mode']}, episodes={episodes}")
 
     # Start in training mode
-    return await start_bot(mode="training")
+    result = await start_bot(mode="training")
+    print(f"[TRAIN] start_bot returned: {result}")
+    return result
 
 
 # ===== POSITIONS & TRADES =====
