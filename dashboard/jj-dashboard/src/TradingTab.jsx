@@ -79,6 +79,8 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
     take_profit_pct: 0.04,       // 4% take profit (2:1 risk/reward)
     max_daily_loss_pct: 0.05,    // 5% max daily loss
     max_drawdown_pct: 0.10,      // 10% max drawdown
+    circuit_breaker_losses: 3,   // 3 consecutive losses triggers breaker
+    circuit_breaker_cooldown_minutes: 30, // 30 min cooldown
     min_signal_confidence: 0.60, // 60% minimum confidence
     use_rl_agent: true,
     use_edge_strategies: true,
@@ -887,6 +889,38 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   onChange={(val) => updateConfig('max_drawdown_pct', val)}
                   className="input"
                 />
+              </div>
+            </div>
+
+            {/* Circuit Breaker Settings */}
+            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+              <h4 className="text-md font-medium mb-3">⚡ Circuit Breaker</h4>
+              <p className="text-sm text-muted mb-3">
+                Automatically pauses trading after consecutive losses to protect your account
+              </p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="input-label">Consecutive Losses to Trigger</label>
+                  <DelayedNumberInput
+                    step="1"
+                    min="1"
+                    max="10"
+                    value={proConfig.circuit_breaker_losses || 3}
+                    onChange={(val) => updateConfig('circuit_breaker_losses', Math.max(1, Math.round(val)))}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Cooldown Period (minutes)</label>
+                  <DelayedNumberInput
+                    step="5"
+                    min="5"
+                    max="480"
+                    value={proConfig.circuit_breaker_cooldown_minutes || 30}
+                    onChange={(val) => updateConfig('circuit_breaker_cooldown_minutes', Math.max(5, Math.round(val)))}
+                    className="input"
+                  />
+                </div>
               </div>
             </div>
           </div>

@@ -153,6 +153,8 @@ class BotConfig:
     max_daily_loss_pct: float = 0.05  # 5% daily loss limit
     max_drawdown_pct: float = 0.10  # 10% max drawdown
     risk_per_trade: float = 0.02  # 2% of account per trade risk
+    circuit_breaker_losses: int = 3  # Consecutive losses to trigger circuit breaker
+    circuit_breaker_cooldown_minutes: int = 30  # Minutes to pause trading after breaker
 
     # Trailing stop settings
     use_trailing_stop: bool = True  # Enable trailing stops
@@ -476,8 +478,8 @@ class JJBotPro:
             max_drawdown_pct=self.config.max_drawdown_pct,
             max_daily_loss=self.config.max_daily_loss_pct * self.config.initial_capital,
             max_open_positions=self.config.max_positions,
-            circuit_breaker_loss_count=3,
-            circuit_breaker_cooldown_minutes=30,
+            circuit_breaker_loss_count=self.config.circuit_breaker_losses,
+            circuit_breaker_cooldown_minutes=self.config.circuit_breaker_cooldown_minutes,
         ))
         logger.info("Risk manager initialized")
 
