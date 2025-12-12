@@ -35,11 +35,11 @@ function DelayedNumberInput({ value, onChange, className, step, min, max }) {
 
 // Available timeframes for training
 const TIMEFRAME_OPTIONS = [
-  { value: '5m', label: '5 min' },
-  { value: '15m', label: '15 min' },
-  { value: '1h', label: '1 hour' },
-  { value: '4h', label: '4 hours' },
-  { value: '1d', label: '1 day' },
+  { value: '5m', label: '5 min', minutes: 5 },
+  { value: '15m', label: '15 min', minutes: 15 },
+  { value: '1h', label: '1 hour', minutes: 60 },
+  { value: '4h', label: '4 hours', minutes: 240 },
+  { value: '1d', label: '1 day', minutes: 1440 },
 ];
 
 // Available history periods
@@ -49,6 +49,13 @@ const HISTORY_OPTIONS = [
   { value: 180, label: '180 days' },
   { value: 365, label: '1 year' },
 ];
+
+// Calculate estimated candles based on timeframe and history
+const calculateCandles = (timeframe, historyDays) => {
+  const tf = TIMEFRAME_OPTIONS.find(t => t.value === timeframe);
+  const minutes = tf?.minutes || 60;
+  return Math.floor((historyDays * 24 * 60) / minutes);
+};
 
 export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
   const [isTraining, setIsTraining] = useState(false);
@@ -75,8 +82,15 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
     total_training_trades: 0,
     last_training_date: null,
     avg_win_rate: 0,
-    avg_profit_factor: 0
+    avg_profit_factor: 0,
+    avg_reward: 0,
+    best_win_rate: 0,
+    best_profit_factor: 0
   });
+
+  // Training time tracking
+  const [trainingStartTime, setTrainingStartTime] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   // Sync with shared status
   useEffect(() => {
@@ -147,6 +161,47 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
     const interval = setInterval(pollProgress, 1000);
     return () => clearInterval(interval);
   }, [isTraining, API_BASE, onBotStatusChange]);
+
+  // Track elapsed time during training
+  useEffect(() => {
+    if (isTraining && !trainingStartTime) {
+      setTrainingStartTime(Date.now());
+    }
+    if (!isTraining) {
+      setTrainingStartTime(null);
+      setElapsedTime(0);
+    }
+  }, [isTraining, trainingStartTime]);
+
+  useEffect(() => {
+    if (!isTraining || !trainingStartTime) return;
+
+    const timer = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - trainingStartTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isTraining, trainingStartTime]);
+
+  // Format elapsed time as HH:MM:SS
+  const formatTime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Estimate remaining time
+  const estimateRemainingTime = () => {
+    if (!isTraining || !elapsedTime || !currentEpisode) return null;
+    const episodesRemaining = totalEpisodes - currentEpisode;
+    const timePerEpisode = elapsedTime / currentEpisode;
+    const remainingSeconds = Math.floor(episodesRemaining * timePerEpisode);
+    return formatTime(remainingSeconds);
+  };
 
   // Save settings to config
   const saveSettings = async (updates) => {
@@ -265,8 +320,38 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               <p className="text-xs text-muted">Avg Profit Factor</p>
             </div>
           </div>
+          {trainingHistory.last_training_date && (
+            <p className="text-xs text-muted mt-3 text-center border-t border-[var(--border-color)] pt-2">
+              Last trained: {new Date(trainingHistory.last_training_date).toLocaleDateString()}
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Additional Training Stats - shown when we have history */}
+      {(trainingHistory.training_sessions > 0 || trainingHistory.total_training_trades > 0) && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold mb-4">📈 Training Performance</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className="text-2xl font-bold">{trainingHistory.total_training_trades?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted">Total Training Trades</p>
+            </div>
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className="text-2xl font-bold">{trainingHistory.avg_reward?.toFixed(2) || 0}</p>
+              <p className="text-xs text-muted">Avg Reward</p>
+            </div>
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className="text-2xl font-bold text-success">{trainingHistory.best_win_rate?.toFixed(1) || 0}%</p>
+              <p className="text-xs text-muted">Best Win Rate</p>
+            </div>
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className="text-2xl font-bold text-success">{trainingHistory.best_profit_factor?.toFixed(2) || 0}</p>
+              <p className="text-xs text-muted">Best Profit Factor</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Training Control */}
       <div className={`card p-6 ${isTraining ? 'border-2 border-info' : ''}`}>
@@ -327,14 +412,30 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
       {/* Live Training Stats */}
       {isTraining && trainingProgress && (
         <div className="card p-6">
-          <h3 className="text-lg font-semibold mb-4">📊 Live Training Metrics</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">📊 Live Training Metrics</h3>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-muted">
+                ⏱️ Elapsed: <span className="font-mono text-info">{formatTime(elapsedTime)}</span>
+              </span>
+              {estimateRemainingTime() && (
+                <span className="text-muted">
+                  ⏳ Remaining: <span className="font-mono text-warning">{estimateRemainingTime()}</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Primary Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">{trainingProgress.last_win_rate?.toFixed(1)}%</p>
+              <p className="text-2xl font-bold">{trainingProgress.last_win_rate?.toFixed(1) || 0}%</p>
               <p className="text-xs text-muted">Last Win Rate</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">${trainingProgress.last_pnl?.toFixed(2)}</p>
+              <p className={`text-2xl font-bold ${(trainingProgress.last_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                ${trainingProgress.last_pnl?.toFixed(2) || '0.00'}
+              </p>
               <p className="text-xs text-muted">Last Episode P&L</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
@@ -342,8 +443,28 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               <p className="text-xs text-muted">Total Trades</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">${trainingProgress.simulated_equity?.toLocaleString()}</p>
+              <p className="text-2xl font-bold">${trainingProgress.simulated_equity?.toLocaleString() || '10,000'}</p>
               <p className="text-xs text-muted">Simulated Equity</p>
+            </div>
+          </div>
+
+          {/* Secondary Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+              <p className="text-lg font-bold">{trainingProgress.avg_win_rate?.toFixed(1) || 0}%</p>
+              <p className="text-xs text-muted">Avg Win Rate</p>
+            </div>
+            <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+              <p className="text-lg font-bold">{trainingProgress.avg_reward?.toFixed(2) || 0}</p>
+              <p className="text-xs text-muted">Avg Reward</p>
+            </div>
+            <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+              <p className="text-lg font-bold">{trainingProgress.profit_factor?.toFixed(2) || '0.00'}</p>
+              <p className="text-xs text-muted">Profit Factor</p>
+            </div>
+            <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+              <p className="text-lg font-bold">{currentEpisode > 0 ? (elapsedTime / currentEpisode).toFixed(1) : 0}s</p>
+              <p className="text-xs text-muted">Sec/Episode</p>
             </div>
           </div>
 
@@ -412,6 +533,35 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               ))}
             </select>
             <p className="text-xs text-muted mt-1">How far back to learn from</p>
+          </div>
+        </div>
+
+        {/* Data Info */}
+        <div className="mt-6 p-4 rounded-lg bg-[var(--bg-tertiary)]">
+          <h4 className="text-sm font-semibold mb-2">📊 Training Data Estimate</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-muted">Candles per symbol</p>
+              <p className="font-bold text-info">
+                {calculateCandles(trainSettings.timeframe, trainSettings.history_days).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted">Total episodes</p>
+              <p className="font-bold">{trainSettings.episodes.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted">Estimated trades</p>
+              <p className="font-bold">{(trainSettings.episodes * 5).toLocaleString()}+</p>
+            </div>
+            <div>
+              <p className="text-muted">Est. training time</p>
+              <p className="font-bold">
+                {trainSettings.episodes <= 500 ? '~2-5 min' :
+                 trainSettings.episodes <= 1000 ? '~5-10 min' :
+                 trainSettings.episodes <= 2000 ? '~10-20 min' : '~20+ min'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
