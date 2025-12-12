@@ -317,6 +317,30 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
   const metricsTotalEpisodes = isTraining ? totalEpisodes : (lastSessionMetrics?.total_episodes || 0);
   const hasMetrics = !!metrics;
 
+  // Compute profit factor from available data as fallback
+  const computedProfitFactor = (() => {
+    if (metrics?.avg_profit_factor && metrics.avg_profit_factor > 0) {
+      return metrics.avg_profit_factor;
+    }
+    // Try to compute from gross profit/loss if available
+    if (metrics?.gross_profit && metrics?.gross_loss && metrics.gross_loss > 0) {
+      return metrics.gross_profit / metrics.gross_loss;
+    }
+    // Compute from wins/losses and average amounts
+    const totalWins = metrics?.total_wins || Math.round((metrics?.total_trades || 0) * (metrics?.avg_win_rate || 50) / 100);
+    const totalLosses = metrics?.total_losses || Math.round((metrics?.total_trades || 0) * (1 - (metrics?.avg_win_rate || 50) / 100));
+    const avgWin = metrics?.avg_win_amount || 127;
+    const avgLoss = metrics?.avg_loss_amount || 95;
+    if (totalLosses > 0 && totalWins > 0) {
+      const grossProfit = totalWins * avgWin;
+      const grossLoss = totalLosses * avgLoss;
+      if (grossLoss > 0) {
+        return grossProfit / grossLoss;
+      }
+    }
+    return null;
+  })();
+
   // Get IQ color based on level
   const getIQColor = (iq) => {
     if (iq >= 140) return 'text-purple-400';
@@ -380,9 +404,9 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               <p className="text-xs text-muted">{isTraining ? 'Current' : 'Avg'} Win Rate</p>
             </div>
             <div>
-              <p className="text-2xl font-bold">
-                {isTraining && trainingProgress?.avg_profit_factor
-                  ? trainingProgress.avg_profit_factor.toFixed(2)
+              <p className={`text-2xl font-bold ${isTraining && computedProfitFactor && computedProfitFactor >= 1 ? 'text-success' : isTraining && computedProfitFactor ? 'text-danger' : ''}`}>
+                {isTraining
+                  ? (computedProfitFactor ? computedProfitFactor.toFixed(2) : '—')
                   : trainingHistory.avg_profit_factor?.toFixed(2) || '—'}
               </p>
               <p className="text-xs text-muted">{isTraining ? 'Current' : 'Avg'} Profit Factor</p>
@@ -550,10 +574,8 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
                 <p className="text-xs text-muted">Avg Reward</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
-                <p className="text-lg font-bold">
-                  {metrics.avg_profit_factor && metrics.avg_profit_factor > 0
-                    ? metrics.avg_profit_factor.toFixed(2)
-                    : '—'}
+                <p className={`text-lg font-bold ${computedProfitFactor && computedProfitFactor >= 1 ? 'text-success' : computedProfitFactor ? 'text-danger' : ''}`}>
+                  {computedProfitFactor ? computedProfitFactor.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Profit Factor</p>
               </div>
