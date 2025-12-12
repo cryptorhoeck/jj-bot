@@ -42,6 +42,8 @@ class BotConfigUpdate(BaseModel):
     take_profit_pct: Optional[float] = None
     max_daily_loss_pct: Optional[float] = None
     max_drawdown_pct: Optional[float] = None
+    circuit_breaker_losses: Optional[int] = None
+    circuit_breaker_cooldown_minutes: Optional[int] = None
     use_rl_agent: Optional[bool] = None
     use_edge_strategies: Optional[bool] = None
     use_alternative_data: Optional[bool] = None
