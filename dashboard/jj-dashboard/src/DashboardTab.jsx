@@ -1,5 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
+
+// Currency configuration
+const CURRENCIES = {
+  CAD: { symbol: 'C$', name: 'Canadian Dollar', rate: 1.36 },
+  USD: { symbol: '$', name: 'US Dollar', rate: 1.0 },
+  EUR: { symbol: '€', name: 'Euro', rate: 0.92 },
+  GBP: { symbol: '£', name: 'British Pound', rate: 0.79 },
+  AUD: { symbol: 'A$', name: 'Australian Dollar', rate: 1.53 },
+  JPY: { symbol: '¥', name: 'Japanese Yen', rate: 149.5 },
+  CHF: { symbol: 'Fr', name: 'Swiss Franc', rate: 0.88 },
+};
+
+// Format currency with auto-scaling for large numbers
+const formatCurrency = (value, currency = 'CAD', compact = false) => {
+  const curr = CURRENCIES[currency] || CURRENCIES.CAD;
+  const converted = value * curr.rate;
+
+  if (compact && Math.abs(converted) >= 1000000) {
+    return `${curr.symbol}${(converted / 1000000).toFixed(2)}M`;
+  } else if (compact && Math.abs(converted) >= 100000) {
+    return `${curr.symbol}${(converted / 1000).toFixed(1)}K`;
+  }
+
+  return `${curr.symbol}${converted.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+};
 
 export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
   const [equityCurve, setEquityCurve] = useState([]);
@@ -12,6 +40,20 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   const [tradingIQ, setTradingIQ] = useState({ iq: 0, level: 'Untrained' });
   const [trainingHistory, setTrainingHistory] = useState({});
   const [trainingProgress, setTrainingProgress] = useState(null);
+
+  // Currency state - default to CAD
+  const [currency, setCurrency] = useState(() => {
+    return localStorage.getItem('jjbot_currency') || 'CAD';
+  });
+
+  // Equity curve zoom/range state
+  const [chartRange, setChartRange] = useState('all'); // '1h', '4h', '1d', '1w', 'all'
+  const [chartHeight, setChartHeight] = useState(300);
+
+  // Save currency preference
+  useEffect(() => {
+    localStorage.setItem('jjbot_currency', currency);
+  }, [currency]);
 
   // Use botStatus from props as fallback for training detection
   const isTraining = trainingProgress?.is_training || (botStatus?.mode === 'training' && botStatus?.running);
@@ -117,15 +159,60 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
     text: darkMode ? '#94a3b8' : '#64748b'
   };
 
+  // Filter equity curve by time range
+  const getFilteredEquityCurve = () => {
+    if (!equityCurve.length || chartRange === 'all') return equityCurve;
+
+    const now = new Date();
+    const ranges = {
+      '1h': 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '1d': 24 * 60 * 60 * 1000,
+      '1w': 7 * 24 * 60 * 60 * 1000,
+      '1m': 30 * 24 * 60 * 60 * 1000,
+    };
+
+    const cutoff = new Date(now - ranges[chartRange]);
+    return equityCurve.filter(point => new Date(point.timestamp) >= cutoff);
+  };
+
+  const filteredEquityCurve = getFilteredEquityCurve();
+
+  // Chart height options
+  const heightOptions = [200, 300, 400, 500];
+
+  // Currency selector component
+  const CurrencySelector = () => (
+    <select
+      value={currency}
+      onChange={(e) => setCurrency(e.target.value)}
+      className="px-2 py-1 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)] cursor-pointer hover:bg-[var(--bg-secondary)] transition-colors"
+    >
+      {Object.entries(CURRENCIES).map(([code, { name, symbol }]) => (
+        <option key={code} value={code}>
+          {symbol} {code}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="space-y-4">
+      {/* Currency Selector - Top Right */}
+      <div className="flex justify-end mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted">Currency:</span>
+          <CurrencySelector />
+        </div>
+      </div>
+
       {/* Performance Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {/* Current Equity */}
+        {/* Current Equity - with auto-scaling text */}
         <div className="stat-card">
           <p className="stat-label">Current Equity</p>
-          <p className="stat-value text-info">
-            ${(summary.current_equity || 10000).toLocaleString()}
+          <p className="stat-value text-info" style={{ fontSize: (summary.current_equity || 10000) >= 100000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }} title={formatCurrency(summary.current_equity || 10000, currency)}>
+            {formatCurrency(summary.current_equity || 10000, currency, (summary.current_equity || 10000) >= 100000)}
           </p>
           <p className={`stat-change ${summary.return_pct >= 0 ? 'positive' : 'negative'}`}>
             {summary.return_pct >= 0 ? '+' : ''}{summary.return_pct?.toFixed(2) || '0.00'}% return
@@ -135,8 +222,8 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         {/* Total P&L */}
         <div className={`stat-card ${summary.total_pnl >= 0 ? 'success' : 'danger'}`}>
           <p className="stat-label">Total P&L</p>
-          <p className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-            {summary.total_pnl >= 0 ? '+' : ''}${summary.total_pnl?.toFixed(2) || '0.00'}
+          <p className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`} title={formatCurrency(Math.abs(summary.total_pnl || 0), currency)}>
+            {summary.total_pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.total_pnl || 0), currency, Math.abs(summary.total_pnl || 0) >= 10000)}
           </p>
           <p className="stat-change text-muted">
             {summary.winning_trades || 0}W / {summary.losing_trades || 0}L
@@ -165,7 +252,7 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
         <div className={`stat-card ${Math.abs(summary.max_drawdown || 0) > 500 ? 'danger' : ''}`}>
           <p className="stat-label">Max Drawdown</p>
           <p className="stat-value text-danger">
-            ${Math.abs(summary.max_drawdown || 0).toFixed(2)}
+            {formatCurrency(Math.abs(summary.max_drawdown || 0), currency)}
           </p>
           <p className="stat-change text-muted">Peak to trough</p>
         </div>
@@ -181,17 +268,77 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
       {/* Equity Curve */}
       {equityCurve.length > 0 && (
         <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-              Equity Curve
-            </h3>
-            <span className="badge badge-info">Live</span>
+          <div className="flex flex-col gap-3 mb-4">
+            {/* Header row */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                Equity Curve
+              </h3>
+              <span className="badge badge-info">Live • {filteredEquityCurve.length} points</span>
+            </div>
+
+            {/* Controls row */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Time range buttons */}
+              <div className="flex items-center gap-1 bg-[var(--bg-tertiary)] rounded-lg p-1">
+                {['1h', '4h', '1d', '1w', '1m', 'all'].map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setChartRange(range)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      chartRange === range
+                        ? 'bg-info text-white'
+                        : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
+                    }`}
+                  >
+                    {range.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              {/* Height control */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">Height:</span>
+                <select
+                  value={chartHeight}
+                  onChange={(e) => setChartHeight(Number(e.target.value))}
+                  className="px-2 py-1 text-xs rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)]"
+                >
+                  {heightOptions.map((h) => (
+                    <option key={h} value={h}>{h}px</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Zoom buttons */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setChartHeight(Math.max(200, chartHeight - 50))}
+                  className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-muted hover:text-[var(--text-primary)] transition-colors"
+                  title="Decrease height"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setChartHeight(Math.min(600, chartHeight + 50))}
+                  className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] text-muted hover:text-[var(--text-primary)] transition-colors"
+                  title="Increase height"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={equityCurve}>
+
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <AreaChart data={filteredEquityCurve}>
               <defs>
                 <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={chartColors.stroke} stopOpacity={0.3}/>
@@ -202,13 +349,24 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
               <XAxis
                 dataKey="timestamp"
                 stroke={chartColors.text}
-                tick={{ fill: chartColors.text, fontSize: 12 }}
-                tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                tick={{ fill: chartColors.text, fontSize: 11 }}
+                tickFormatter={(value) => {
+                  const date = new Date(value);
+                  // Show date + time for shorter ranges, date only for longer
+                  if (chartRange === '1h' || chartRange === '4h') {
+                    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  } else if (chartRange === '1d') {
+                    return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                  }
+                  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                }}
+                interval="preserveStartEnd"
               />
               <YAxis
                 stroke={chartColors.text}
-                tick={{ fill: chartColors.text, fontSize: 12 }}
-                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                tick={{ fill: chartColors.text, fontSize: 11 }}
+                tickFormatter={(value) => formatCurrency(value, currency, value >= 100000)}
+                width={80}
               />
               <Tooltip
                 contentStyle={{
@@ -217,8 +375,19 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                   borderRadius: '8px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
                 }}
-                formatter={(value) => [`$${value.toFixed(2)}`, 'Equity']}
-                labelFormatter={(value) => new Date(value).toLocaleString()}
+                formatter={(value) => [formatCurrency(value, currency), 'Equity']}
+                labelFormatter={(value) => {
+                  const date = new Date(value);
+                  return date.toLocaleString([], {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  });
+                }}
               />
               <Area
                 type="monotone"
@@ -227,6 +396,16 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 strokeWidth={2}
                 fill="url(#equityGradient)"
               />
+              {/* Brush for additional zoom control */}
+              {filteredEquityCurve.length > 50 && (
+                <Brush
+                  dataKey="timestamp"
+                  height={30}
+                  stroke={chartColors.stroke}
+                  fill={darkMode ? '#1e293b' : '#f8fafc'}
+                  tickFormatter={(value) => new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -265,10 +444,10 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                       <td className="text-muted text-sm">
                         {pos.entry_time ? new Date(pos.entry_time).toLocaleString() : '-'}
                       </td>
-                      <td className="text-right text-muted">${pos.entry_price?.toFixed(2)}</td>
-                      <td className="text-right text-muted">${pos.current_price?.toFixed(2)}</td>
+                      <td className="text-right text-muted">{formatCurrency(pos.entry_price || 0, currency)}</td>
+                      <td className="text-right text-muted">{formatCurrency(pos.current_price || 0, currency)}</td>
                       <td className={`text-right font-semibold ${pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {pos.unrealized_pnl >= 0 ? '+' : ''}${pos.unrealized_pnl?.toFixed(2)}
+                        {pos.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(pos.unrealized_pnl || 0, currency)}
                       </td>
                     </tr>
                   ))}
@@ -314,13 +493,13 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Daily P&L</p>
                   <p className={`text-base font-semibold truncate ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${(riskStatus.risk_status?.daily_pnl || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    {formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Loss Remaining</p>
                   <p className="text-base font-semibold truncate">
-                    ${(riskStatus.risk_status?.daily_loss_remaining || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    {formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
@@ -478,9 +657,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                         {trade.signal}
                       </span>
                     </td>
-                    <td className="text-right text-muted">${trade.last_price?.toFixed(2)}</td>
+                    <td className="text-right text-muted">{formatCurrency(trade.last_price || 0, currency)}</td>
                     <td className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                      {trade.pnl >= 0 ? '+' : ''}${trade.pnl?.toFixed(2)}
+                      {trade.pnl >= 0 ? '+' : ''}{formatCurrency(trade.pnl || 0, currency)}
                     </td>
                   </tr>
                 ))}
