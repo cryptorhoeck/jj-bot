@@ -12,21 +12,27 @@ const CURRENCIES = {
   CHF: { symbol: 'Fr', name: 'Swiss Franc', rate: 0.88 },
 };
 
-// Format currency with auto-scaling for large numbers
-const formatCurrency = (value, currency = 'CAD', compact = false) => {
+// Format currency - always show full value
+const formatCurrency = (value, currency = 'CAD') => {
   const curr = CURRENCIES[currency] || CURRENCIES.CAD;
   const converted = value * curr.rate;
-
-  if (compact && Math.abs(converted) >= 1000000) {
-    return `${curr.symbol}${(converted / 1000000).toFixed(2)}M`;
-  } else if (compact && Math.abs(converted) >= 100000) {
-    return `${curr.symbol}${(converted / 1000).toFixed(1)}K`;
-  }
 
   return `${curr.symbol}${converted.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`;
+};
+
+// Calculate font size based on text length to auto-fit in container
+const getAutoFontSize = (text, baseSize = 1.5, minSize = 0.75) => {
+  const len = String(text).length;
+  // Scale down as text gets longer
+  if (len <= 10) return `${baseSize}rem`;
+  if (len <= 12) return `${baseSize * 0.9}rem`;
+  if (len <= 14) return `${baseSize * 0.8}rem`;
+  if (len <= 16) return `${baseSize * 0.7}rem`;
+  if (len <= 18) return `${baseSize * 0.6}rem`;
+  return `${minSize}rem`;
 };
 
 export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
@@ -264,10 +270,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
           <p className="stat-label">Current Equity</p>
           <p
             className="stat-value text-info"
-            style={{ fontSize: (summary.current_equity || 10000) * (CURRENCIES[currency]?.rate || 1) >= 100000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
-            title={formatCurrency(summary.current_equity || 10000, currency)}
+            style={{ fontSize: getAutoFontSize(formatCurrency(summary.current_equity || 10000, currency)) }}
           >
-            {formatCurrency(summary.current_equity || 10000, currency, (summary.current_equity || 10000) * (CURRENCIES[currency]?.rate || 1) >= 100000)}
+            {formatCurrency(summary.current_equity || 10000, currency)}
           </p>
           <p className={`stat-change ${summary.return_pct >= 0 ? 'positive' : 'negative'}`}>
             {summary.return_pct >= 0 ? '+' : ''}{summary.return_pct?.toFixed(2) || '0.00'}% return
@@ -279,10 +284,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
           <p className="stat-label">Total P&L</p>
           <p
             className={`stat-value ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}
-            style={{ fontSize: Math.abs(summary.total_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
-            title={`${summary.total_pnl >= 0 ? '+' : '-'}${formatCurrency(Math.abs(summary.total_pnl || 0), currency)}`}
+            style={{ fontSize: getAutoFontSize(`${summary.total_pnl >= 0 ? '+' : '-'}${formatCurrency(Math.abs(summary.total_pnl || 0), currency)}`) }}
           >
-            {summary.total_pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.total_pnl || 0), currency, Math.abs(summary.total_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000)}
+            {summary.total_pnl >= 0 ? '+' : '-'}{formatCurrency(Math.abs(summary.total_pnl || 0), currency)}
           </p>
           <p className="stat-change text-muted">
             {summary.winning_trades || 0}W / {summary.losing_trades || 0}L
@@ -312,10 +316,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
           <p className="stat-label">Max Drawdown</p>
           <p
             className="stat-value text-danger"
-            style={{ fontSize: Math.abs(summary.max_drawdown || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000 ? 'clamp(0.9rem, 0.7rem + 1.2vw, 1.2rem)' : undefined }}
-            title={formatCurrency(Math.abs(summary.max_drawdown || 0), currency)}
+            style={{ fontSize: getAutoFontSize(formatCurrency(Math.abs(summary.max_drawdown || 0), currency)) }}
           >
-            {formatCurrency(Math.abs(summary.max_drawdown || 0), currency, Math.abs(summary.max_drawdown || 0) * (CURRENCIES[currency]?.rate || 1) >= 10000)}
+            {formatCurrency(Math.abs(summary.max_drawdown || 0), currency)}
           </p>
           <p className="stat-change text-muted">Peak to trough</p>
         </div>
@@ -617,19 +620,19 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Daily P&L</p>
                   <p
-                    className={`text-base font-semibold truncate ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}
-                    title={formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency)}
+                    className={`font-semibold ${riskStatus.risk_status?.daily_pnl >= 0 ? 'text-success' : 'text-danger'}`}
+                    style={{ fontSize: getAutoFontSize(formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency), 1.0, 0.65) }}
                   >
-                    {formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency, Math.abs(riskStatus.risk_status?.daily_pnl || 0) * (CURRENCIES[currency]?.rate || 1) >= 1000)}
+                    {formatCurrency(riskStatus.risk_status?.daily_pnl || 0, currency)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
                   <p className="text-xs text-muted uppercase tracking-wide mb-0.5">Loss Remaining</p>
                   <p
-                    className="text-base font-semibold truncate"
-                    title={formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
+                    className="font-semibold"
+                    style={{ fontSize: getAutoFontSize(formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency), 1.0, 0.65) }}
                   >
-                    {formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency, Math.abs(riskStatus.risk_status?.daily_loss_remaining || 0) * (CURRENCIES[currency]?.rate || 1) >= 1000)}
+                    {formatCurrency(riskStatus.risk_status?.daily_loss_remaining || 0, currency)}
                   </p>
                 </div>
                 <div className="p-2 rounded-lg bg-[var(--bg-tertiary)]">
