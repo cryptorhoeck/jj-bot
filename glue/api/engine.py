@@ -11,6 +11,7 @@ import datetime
 PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
 DB_PATH: Path = PROJECT_ROOT / "data" / "trades.db"
 STATE_PATH: Path = PROJECT_ROOT / "data" / "bot_state.json"
+CONFIG_PATH: Path = PROJECT_ROOT / "config" / "bot_config.json"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -19,6 +20,17 @@ def get_saved_state() -> Optional[Dict[str, Any]]:
     try:
         if STATE_PATH.exists():
             with open(STATE_PATH, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def get_config() -> Optional[Dict[str, Any]]:
+    """Load bot config from bot_config.json"""
+    try:
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, 'r') as f:
                 return json.load(f)
     except Exception:
         pass
@@ -209,12 +221,19 @@ def get_summary() -> Dict[str, Any]:
 
         # Calculate current equity from saved state or fallback to calculation
         saved_state = get_saved_state()
+        config = get_config()
+
+        # Get initial_capital: state -> config -> default 100000
+        default_capital = 100000.0
+        if config:
+            default_capital = config.get("initial_capital", 100000.0)
+
         if saved_state and "equity" in saved_state:
             current_equity = saved_state["equity"]
-            starting_capital = saved_state.get("initial_capital", 10000.0)
+            starting_capital = saved_state.get("initial_capital", default_capital)
         else:
-            # Fallback: assume starting capital of 10,000
-            starting_capital = 10000.0
+            # Fallback: use config's initial_capital
+            starting_capital = default_capital
             current_equity = starting_capital + total_pnl
 
         # Get latest trade timestamp
