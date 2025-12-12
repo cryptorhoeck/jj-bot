@@ -39,3 +39,4 @@ backups/
 # Git bundles and patches (temporary transfer files)
 *.bundle
 *.patchlogs/
+logs/
