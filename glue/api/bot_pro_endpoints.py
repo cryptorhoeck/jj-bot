@@ -266,10 +266,16 @@ async def start_bot(mode: Optional[str] = None):
         # Filter config to only known BotConfig fields (handles old config files with extra fields)
         valid_fields = {f.name for f in fields(BotConfig)}
         filtered_config = {k: v for k, v in config.items() if k in valid_fields}
-        print(f"[START_BOT] Filtered config mode={filtered_config.get('mode')}")
+        print(f"[START_BOT] Filtered config mode={filtered_config.get('mode')}", flush=True)
 
         bot_config = BotConfig(**filtered_config)
-        print(f"[START_BOT] BotConfig created with mode={bot_config.mode}")
+        print(f"[START_BOT] BotConfig created with mode={bot_config.mode}", flush=True)
+
+        # FORCE the mode - something in BotConfig.__post_init__ is overriding it
+        if mode:
+            bot_config.mode = mode
+            print(f"[START_BOT] Mode FORCED to: {bot_config.mode}", flush=True)
+
         _bot_instance = JJBotPro(bot_config)
 
         # Start bot as background task
