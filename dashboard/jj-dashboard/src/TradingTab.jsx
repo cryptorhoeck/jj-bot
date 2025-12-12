@@ -346,49 +346,6 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
     setLoading(false);
   };
 
-  // Train RL model
-  const trainModel = async () => {
-    if (botRunning) {
-      toast.error('Stop the bot before starting training');
-      return;
-    }
-
-    // Check if symbols are selected
-    if (!proConfig.symbols || proConfig.symbols.length === 0) {
-      toast.error('Please select trading symbols in Settings before training');
-      return;
-    }
-
-    // Use configured episodes from settings
-    const configuredEpisodes = proConfig.train_episodes || 1000;
-    const episodes = parseInt(prompt(
-      `Training episodes (configured: ${configuredEpisodes})`,
-      String(configuredEpisodes)
-    ));
-    if (!episodes || episodes < 1) {
-      toast.error('Invalid number of episodes');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const timeframe = proConfig.train_timeframe || '1h';
-      const historyDays = proConfig.train_history_days || 90;
-      const response = await fetch(`${API_BASE}/api/pro/train?episodes=${episodes}&timeframe=${timeframe}&history_days=${historyDays}`, { method: 'POST' });
-      const data = await response.json();
-      if (data.status === 'started') {
-        setBotRunning(true);
-        toast.success(`RL training started for ${episodes} episodes. This may take a while...`);
-        onBotStatusChange?.(); // Notify App.jsx to refresh status
-      } else if (data.status === 'error') {
-        toast.error(data.message || 'Failed to start training');
-      }
-    } catch (error) {
-      toast.error('Error starting training');
-    }
-    setLoading(false);
-  };
-
   // Filter symbols by search
   const filteredSymbols = AVAILABLE_SYMBOLS.filter(s =>
     s.toLowerCase().includes(symbolSearch.toLowerCase())
@@ -470,16 +427,6 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                       {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop' : '▶️ Start Trading'}
                     </button>
 
-                    {!botRunning && (
-                      <button
-                        onClick={trainModel}
-                        disabled={loading}
-                        className="btn btn-lg btn-info"
-                        title="Train the AI model to improve trading decisions"
-                      >
-                        🧠 Train AI
-                      </button>
-                    )}
                   </>
                 )}
               </div>
@@ -515,7 +462,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
           </div>
 
           {/* Info Card - Modes Explained */}
-          {!botRunning && !trainingProgress?.is_training && (
+          {!botRunning && (
             <div className="card p-6 bg-[var(--bg-secondary)]">
               <div className="flex items-start gap-3">
                 <div className="text-2xl">💡</div>
@@ -523,119 +470,12 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
                   <h3 className="font-semibold mb-2">How It Works</h3>
                   <div className="space-y-2 text-sm text-muted">
                     <p>
-                      <strong className="text-[var(--text-color)]">▶️ Start Trading:</strong> Bot trades with real market data. No real money (paper trading). Click "Stop" to pause.
+                      <strong className="text-[var(--text-color)]">▶️ Start Trading:</strong> Bot trades with real market data in paper mode (no real money). Click "Stop" to pause.
                     </p>
                     <p>
-                      <strong className="text-[var(--text-color)]">🧠 Train AI:</strong> Trains the AI model quickly. Trading pauses during training. Click "Stop Training" anytime to cancel.
+                      <strong className="text-[var(--text-color)]">🧠 Training:</strong> Go to the <strong>Training</strong> tab to train the AI model and improve trading decisions.
                     </p>
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Training Progress */}
-          {trainingProgress && trainingProgress.is_training && (
-            <div className="card p-6 card-info">
-              {/* Data Source Banner */}
-              <div className={`flex items-center justify-between mb-4 p-3 rounded-lg ${trainingProgress.using_real_data ? 'bg-green-500/10 border border-green-500/30' : 'bg-yellow-500/10 border border-yellow-500/30'}`}>
-                <div className="flex items-center gap-2">
-                  <span className={`text-lg ${trainingProgress.using_real_data ? 'text-green-500' : 'text-yellow-500'}`}>
-                    {trainingProgress.using_real_data ? '📊' : '⚠️'}
-                  </span>
-                  <div>
-                    <p className={`font-semibold text-sm ${trainingProgress.using_real_data ? 'text-green-500' : 'text-yellow-500'}`}>
-                      {trainingProgress.using_real_data ? 'Training on REAL Market Data' : 'Training on Simulated Data'}
-                    </p>
-                    {trainingProgress.using_real_data && trainingProgress.current_symbol && (
-                      <p className="text-xs text-muted">
-                        Current: <span className="font-mono font-semibold">{trainingProgress.current_symbol}</span>
-                        {trainingProgress.data_symbols?.length > 0 && (
-                          <span> • {trainingProgress.data_symbols.length} symbols loaded</span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {trainingProgress.using_real_data && trainingProgress.data_symbols?.length > 0 && (
-                  <div className="text-right">
-                    <p className="text-xs text-muted">Symbols</p>
-                    <p className="text-xs font-mono">{trainingProgress.data_symbols.slice(0, 3).map(s => s.split('/')[0]).join(', ')}{trainingProgress.data_symbols.length > 3 ? '...' : ''}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Trading IQ Header */}
-              <div className="flex items-center justify-between mb-4 pb-4 border-b border-[var(--border-color)]">
-                <div className="flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                    <span className="text-3xl font-bold text-white">{trainingProgress.trading_iq || 0}</span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg">Trading IQ</h3>
-                    <p className="text-sm">
-                      <span className="font-semibold text-info">{trainingProgress.expertise_level || 'Untrained'}</span>
-                      {' '}<span className="text-muted">Level</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted">Episode</p>
-                  <p className="text-lg font-bold">{trainingProgress.current_episode}/{trainingProgress.total_episodes}</p>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="mb-4">
-                <div className="flex justify-between text-xs text-muted mb-1">
-                  <span>Training Progress</span>
-                  <span>{trainingProgress.progress_pct?.toFixed(1)}%</span>
-                </div>
-                <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
-                    style={{ width: `${trainingProgress.progress_pct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Performance Metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Avg Win Rate</p>
-                  <p className="text-sm font-bold">{trainingProgress.avg_win_rate?.toFixed(1)}%</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Profit Factor</p>
-                  <p className="text-sm font-bold">{trainingProgress.avg_profit_factor?.toFixed(2)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Avg Reward</p>
-                  <p className="text-sm font-bold">{trainingProgress.avg_reward?.toFixed(1)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Last Episode</p>
-                  <p className={`text-sm font-bold ${trainingProgress.last_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${trainingProgress.last_pnl?.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Cumulative Training P&L */}
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--border-color)]">
-                <div className="text-center p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                  <p className="text-xs text-muted uppercase">Cumulative P&L</p>
-                  <p className={`text-lg font-bold ${(trainingProgress.cumulative_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {(trainingProgress.cumulative_pnl || 0) >= 0 ? '+' : ''}${(trainingProgress.cumulative_pnl || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                  </p>
-                  <p className="text-xs text-muted mt-1">If compounding all episodes</p>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                  <p className="text-xs text-muted uppercase">Simulated Equity</p>
-                  <p className={`text-lg font-bold ${(trainingProgress.simulated_equity || 1000) >= 1000 ? 'text-success' : 'text-danger'}`}>
-                    ${(trainingProgress.simulated_equity || 1000).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                  </p>
-                  <p className="text-xs text-muted mt-1">Starting from $1,000</p>
                 </div>
               </div>
             </div>
