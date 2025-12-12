@@ -961,6 +961,32 @@ class TradingEnvironment:
         drawdown = (peak - equity_array) / peak
         max_drawdown = np.max(drawdown)
 
+        # Calculate additional metrics
+        win_pnls = [t.pnl for t in wins] if wins else [0]
+        loss_pnls = [t.pnl for t in losses] if losses else [0]
+
+        avg_win = sum(win_pnls) / len(win_pnls) if wins else 0
+        avg_loss = abs(sum(loss_pnls) / len(loss_pnls)) if losses else 0
+        largest_win = max(win_pnls) if wins else 0
+        largest_loss = abs(min(loss_pnls)) if losses else 0
+
+        # Count long vs short trades
+        long_trades = sum(1 for t in self.trade_history if t.side == "long")
+        short_trades = sum(1 for t in self.trade_history if t.side == "short")
+
+        # Calculate Sortino ratio (only penalizes downside deviation)
+        if len(self.returns_history) > 1:
+            returns = np.array(list(self.returns_history))
+            negative_returns = returns[returns < 0]
+            downside_std = np.std(negative_returns) if len(negative_returns) > 0 else 1e-8
+            sortino = np.mean(returns) / (downside_std + 1e-8) * np.sqrt(252)
+        else:
+            sortino = 0.0
+
+        # Calculate Calmar ratio (return / max drawdown)
+        annual_return = float((self.equity - self.initial_balance) / self.initial_balance)
+        calmar = annual_return / (max_drawdown + 1e-8) if max_drawdown > 0 else 0.0
+
         # Convert numpy types to Python native for JSON serialization
         return {
             "total_trades": len(self.trade_history),
@@ -972,10 +998,18 @@ class TradingEnvironment:
             "gross_profit": float(gross_profit),
             "gross_loss": float(gross_loss),
             "sharpe_ratio": float(sharpe),
-            "max_drawdown": float(max_drawdown),
+            "sortino_ratio": float(sortino),
+            "max_drawdown": float(max_drawdown * 100),  # As percentage
+            "calmar_ratio": float(calmar),
             "profit_factor": float(gross_profit / gross_loss) if gross_loss > 0 else 0.0,
             "final_equity": float(self.equity),
             "return_pct": float((self.equity - self.initial_balance) / self.initial_balance * 100),
+            "avg_win_amount": float(avg_win),
+            "avg_loss_amount": float(avg_loss),
+            "largest_win": float(largest_win),
+            "largest_loss": float(largest_loss),
+            "long_trades": int(long_trades),
+            "short_trades": int(short_trades),
         }
 
     def render(self, mode: str = "human"):

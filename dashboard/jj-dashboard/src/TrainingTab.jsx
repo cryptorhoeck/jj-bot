@@ -603,37 +603,37 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
             <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
-                  ${metrics.best_episode_pnl?.toFixed(0) || (metrics.simulated_equity ? Math.max(0, metrics.simulated_equity - 10000).toFixed(0) : '0')}
+                  ${metrics.best_episode_pnl != null ? metrics.best_episode_pnl.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Best Episode</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-danger">
-                  ${metrics.worst_episode_pnl?.toFixed(0) || Math.min(0, metrics.last_pnl || 0).toFixed(0)}
+                  ${metrics.worst_episode_pnl != null ? metrics.worst_episode_pnl.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Worst Episode</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.best_win_rate?.toFixed(0) || Math.max(metrics.avg_win_rate || 0, metrics.last_win_rate || 0).toFixed(0)}%
+                  {metrics.best_win_rate != null ? `${metrics.best_win_rate.toFixed(0)}%` : '—'}
                 </p>
                 <p className="text-xs text-muted">Best Win Rate</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
-                  {metrics.win_streak || Math.floor(Math.random() * 5 + 1)}
+                  {metrics.win_streak != null ? metrics.win_streak : '—'}
                 </p>
                 <p className="text-xs text-muted">Win Streak</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-danger">
-                  {metrics.loss_streak || Math.floor(Math.random() * 3 + 1)}
+                  {metrics.loss_streak != null ? metrics.loss_streak : '—'}
                 </p>
                 <p className="text-xs text-muted">Loss Streak</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metricsCurrentEpisode > 0 ? (metrics.total_trades / metricsCurrentEpisode).toFixed(1) : 0}
+                  {metricsCurrentEpisode > 0 ? ((metrics.total_trades || 0) / metricsCurrentEpisode).toFixed(1) : '—'}
                 </p>
                 <p className="text-xs text-muted">Trades/Episode</p>
               </div>
@@ -647,49 +647,49 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               {/* Wins/Losses */}
               <div className="text-center p-3 bg-success/10 rounded-lg border border-success/30">
                 <p className="text-lg font-bold text-success">
-                  {metrics.total_wins || Math.round((metrics.total_trades || 0) * (metrics.avg_win_rate || 50) / 100)}
+                  {metrics.total_wins != null ? metrics.total_wins.toLocaleString() : '—'}
                 </p>
                 <p className="text-xs text-muted">Total Wins</p>
               </div>
               <div className="text-center p-3 bg-danger/10 rounded-lg border border-danger/30">
                 <p className="text-lg font-bold text-danger">
-                  {metrics.total_losses || Math.round((metrics.total_trades || 0) * (1 - (metrics.avg_win_rate || 50) / 100))}
+                  {metrics.total_losses != null ? metrics.total_losses.toLocaleString() : '—'}
                 </p>
                 <p className="text-xs text-muted">Total Losses</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
-                  ${metrics.avg_win_amount?.toFixed(0) || ((metrics.simulated_equity || 10000) > 10000 ? '127' : '89')}
+                  ${metrics.avg_win_amount != null ? metrics.avg_win_amount.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Avg Win $</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-danger">
-                  ${metrics.avg_loss_amount?.toFixed(0) || '95'}
+                  ${metrics.avg_loss_amount != null ? metrics.avg_loss_amount.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Avg Loss $</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
-                  ${metrics.largest_win?.toFixed(0) || ((metrics.simulated_equity || 10000) > 10000 ? '2,450' : '890')}
+                  ${metrics.largest_win != null ? metrics.largest_win.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Largest Win</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-danger">
-                  ${metrics.largest_loss?.toFixed(0) || '567'}
+                  ${metrics.largest_loss != null ? metrics.largest_loss.toFixed(0) : '—'}
                 </p>
                 <p className="text-xs text-muted">Largest Loss</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.long_trades || Math.round((metrics.total_trades || 0) * 0.52)}
+                  {metrics.long_trades != null ? metrics.long_trades.toLocaleString() : '—'}
                 </p>
                 <p className="text-xs text-muted">Long Trades</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.short_trades || Math.round((metrics.total_trades || 0) * 0.48)}
+                  {metrics.short_trades != null ? metrics.short_trades.toLocaleString() : '—'}
                 </p>
                 <p className="text-xs text-muted">Short Trades</p>
               </div>
@@ -701,36 +701,36 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
             <h3 className="text-lg font-semibold mb-4">⚖️ Risk & Performance Metrics</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${(metrics.sharpe_ratio || 0.5) >= 1 ? 'text-success' : (metrics.sharpe_ratio || 0.5) >= 0 ? 'text-warning' : 'text-danger'}`}>
-                  {metrics.sharpe_ratio?.toFixed(2) || ((metrics.simulated_equity || 10000) > 10000 ? '1.24' : '0.45')}
+                <p className={`text-2xl font-bold ${metrics.sharpe_ratio != null ? (metrics.sharpe_ratio >= 1 ? 'text-success' : metrics.sharpe_ratio >= 0 ? 'text-warning' : 'text-danger') : 'text-muted'}`}>
+                  {metrics.sharpe_ratio != null ? metrics.sharpe_ratio.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Sharpe Ratio</p>
                 <p className="text-[10px] text-muted mt-1">Risk-adj return</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${(metrics.sortino_ratio || 0.7) >= 1.5 ? 'text-success' : 'text-warning'}`}>
-                  {metrics.sortino_ratio?.toFixed(2) || ((metrics.simulated_equity || 10000) > 10000 ? '1.67' : '0.72')}
+                <p className={`text-2xl font-bold ${metrics.sortino_ratio != null ? (metrics.sortino_ratio >= 1.5 ? 'text-success' : 'text-warning') : 'text-muted'}`}>
+                  {metrics.sortino_ratio != null ? metrics.sortino_ratio.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Sortino Ratio</p>
                 <p className="text-[10px] text-muted mt-1">Downside risk</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className="text-2xl font-bold text-danger">
-                  {metrics.max_drawdown?.toFixed(1) || '12.4'}%
+                <p className={`text-2xl font-bold ${metrics.max_drawdown != null ? 'text-danger' : 'text-muted'}`}>
+                  {metrics.max_drawdown != null ? `${metrics.max_drawdown.toFixed(1)}%` : '—'}
                 </p>
                 <p className="text-xs text-muted">Max Drawdown</p>
                 <p className="text-[10px] text-muted mt-1">Peak to trough</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${(metrics.calmar_ratio || 0.8) >= 1 ? 'text-success' : 'text-warning'}`}>
-                  {metrics.calmar_ratio?.toFixed(2) || ((metrics.simulated_equity || 10000) > 10000 ? '2.15' : '0.89')}
+                <p className={`text-2xl font-bold ${metrics.calmar_ratio != null ? (metrics.calmar_ratio >= 1 ? 'text-success' : 'text-warning') : 'text-muted'}`}>
+                  {metrics.calmar_ratio != null ? metrics.calmar_ratio.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Calmar Ratio</p>
                 <p className="text-[10px] text-muted mt-1">Return/Drawdown</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${((metrics.simulated_equity || 10000) - 10000) / 10000 * 100 >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {(((metrics.simulated_equity || 10000) - 10000) / 10000 * 100).toFixed(1)}%
+                <p className={`text-2xl font-bold ${metrics.simulated_equity != null ? ((metrics.simulated_equity - 10000) >= 0 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
+                  {metrics.simulated_equity != null ? `${((metrics.simulated_equity - 10000) / 10000 * 100).toFixed(1)}%` : '—'}
                 </p>
                 <p className="text-xs text-muted">Total Return</p>
                 <p className="text-[10px] text-muted mt-1">From $10,000</p>
