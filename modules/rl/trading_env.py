@@ -828,33 +828,99 @@ class TradingEnvironment:
         """
         Calculate reward for the current step
 
-        FIXED: Now encourages trading instead of penalizing it
+        REDESIGNED: Now rewards CORRECT DIRECTIONAL PREDICTIONS
+        The model should learn WHEN and WHERE to trade, not just risk management.
         """
         reward = 0.0
 
-        # P&L component (step_return is decimal like 0.001 for 0.1%)
-        # Reward scaling of 100 makes a 1% move = reward of 1.0
-        reward += step_return * self.reward_scaling
+        # =================================================================
+        # 1. DIRECTIONAL PREDICTION REWARD (Most Important!)
+        # =================================================================
+        # Look ahead to see if the prediction was correct
+        lookahead_steps = 5  # Check price 5 steps ahead
+        future_idx = min(self.current_step + self.lookback_window + lookahead_steps, len(self.prices) - 1)
+        future_price = self.prices[future_idx]
+        price_change_pct = (future_price - self.current_price) / self.current_price
 
-        # POSITION HOLDING BONUS: Reward for being in a profitable position
-        if self.position.side != "flat" and self.position.unrealized_pnl > 0:
-            # Small bonus for holding profitable positions
-            reward += 0.01
+        if self.position.side == "long":
+            # Reward for being long when price goes up
+            if price_change_pct > 0.001:  # Price went up > 0.1%
+                direction_reward = min(price_change_pct * 50, 0.5)  # Cap at 0.5
+                reward += direction_reward
+            elif price_change_pct < -0.001:  # Price went down > 0.1%
+                direction_penalty = max(price_change_pct * 30, -0.3)  # Cap penalty
+                reward += direction_penalty
 
-        # INACTIVITY PENALTY: Penalize staying flat when there could be opportunities
-        if self.position.side == "flat":
-            # Small penalty for not being in the market
-            reward -= 0.005
+        elif self.position.side == "short":
+            # Reward for being short when price goes down
+            if price_change_pct < -0.001:  # Price went down > 0.1%
+                direction_reward = min(abs(price_change_pct) * 50, 0.5)
+                reward += direction_reward
+            elif price_change_pct > 0.001:  # Price went up > 0.1%
+                direction_penalty = max(-price_change_pct * 30, -0.3)
+                reward += direction_penalty
 
-        # Risk penalty (only for extreme cases)
+        # =================================================================
+        # 2. ENTRY TIMING REWARD
+        # =================================================================
+        # Bonus for entering RIGHT BEFORE a big move in the correct direction
+        if trade_executed and self.position.side != "flat":
+            # Look at immediate future (next 3 steps)
+            immediate_future_idx = min(self.current_step + self.lookback_window + 3, len(self.prices) - 1)
+            immediate_price = self.prices[immediate_future_idx]
+            immediate_change = (immediate_price - self.current_price) / self.current_price
+
+            if self.position.side == "long" and immediate_change > 0.002:
+                # Good entry - price immediately moved in our favor
+                reward += 0.2
+            elif self.position.side == "short" and immediate_change < -0.002:
+                # Good entry - price immediately moved in our favor
+                reward += 0.2
+            elif abs(immediate_change) > 0.002:
+                # Bad entry - price moved against us
+                reward -= 0.1
+
+        # =================================================================
+        # 3. REALIZED P&L REWARD (Keep some of this)
+        # =================================================================
+        # Step return still matters but less than direction
+        reward += step_return * self.reward_scaling * 0.5  # Reduced from 1.0
+
+        # =================================================================
+        # 4. WIN STREAK BONUS
+        # =================================================================
+        # Reward consistent winning (not just lucky big wins)
+        if len(self.trade_history) >= 3:
+            recent_trades = list(self.trade_history)[-3:]
+            recent_wins = sum(1 for t in recent_trades if t.pnl > 0)
+            if recent_wins == 3:
+                reward += 0.15  # Bonus for 3 wins in a row
+            elif recent_wins == 0:
+                reward -= 0.1  # Penalty for 3 losses in a row
+
+        # =================================================================
+        # 5. SMART HOLDING vs OVERTRADING
+        # =================================================================
+        # Don't penalize being flat - penalize WRONG trades
+        # Reward holding profitable positions longer
+        if self.position.side != "flat":
+            holding_time = self.current_step - self.position.entry_time
+            if self.position.unrealized_pnl > 0:
+                # Profitable position - small bonus for holding
+                if holding_time > 5:
+                    reward += 0.02
+            else:
+                # Losing position - encourage cutting losses
+                if holding_time > 10 and self.position.unrealized_pnl < -self.position.size * 0.02:
+                    reward -= 0.05  # Holding a loser too long
+
+        # =================================================================
+        # 6. RISK PENALTY (Keep this for safety)
+        # =================================================================
         if len(self.returns_history) > 10:
             drawdown = (self.peak_equity - self.equity) / self.peak_equity if self.peak_equity else 0
-            # Only penalize large drawdowns
-            if drawdown > 0.1:  # More than 10% drawdown
-                reward -= drawdown * self.risk_penalty
-
-        # NO trade penalty - we WANT the model to trade!
-        # (removed: reward -= self.trade_penalty)
+            if drawdown > 0.15:  # More than 15% drawdown
+                reward -= drawdown * self.risk_penalty * 2  # Stronger penalty
 
         return reward
 

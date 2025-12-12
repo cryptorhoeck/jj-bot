@@ -2666,6 +2666,12 @@ class JJBotPro:
             current_symbol = getattr(self.rl_env, 'current_symbol', 'N/A')
             self.training_progress["current_symbol"] = current_symbol
 
+            # PPO Training Metrics (real values from the agent)
+            self.training_progress["policy_loss"] = float(metrics.get('policy_loss', 0))
+            self.training_progress["value_loss"] = float(metrics.get('value_loss', 0))
+            self.training_progress["entropy"] = float(metrics.get('entropy', 0))
+            self.training_progress["learning_rate"] = float(metrics.get('learning_rate', 3e-4))
+
             if episode % 10 == 0:
                 symbol_info = f" [{current_symbol}]" if using_real_data else ""
                 cumulative = self.training_metrics["cumulative_pnl"]

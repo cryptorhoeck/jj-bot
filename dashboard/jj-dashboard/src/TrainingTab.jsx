@@ -743,66 +743,74 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
             <h3 className="text-lg font-semibold mb-4">🧠 Learning Progress</h3>
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               <div className="text-center p-3 bg-purple-500/10 rounded-lg border border-purple-500/30">
-                <p className="text-lg font-bold text-purple-400">
-                  {metrics.policy_loss?.toFixed(3) || (0.05 - metricsCurrentEpisode * 0.00002).toFixed(3)}
+                <p className={`text-lg font-bold ${metrics.policy_loss != null ? 'text-purple-400' : 'text-muted'}`}>
+                  {metrics.policy_loss != null ? metrics.policy_loss.toFixed(3) : '—'}
                 </p>
                 <p className="text-xs text-muted">Policy Loss</p>
               </div>
               <div className="text-center p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
-                <p className="text-lg font-bold text-blue-400">
-                  {metrics.value_loss?.toFixed(3) || (0.08 - metricsCurrentEpisode * 0.00003).toFixed(3)}
+                <p className={`text-lg font-bold ${metrics.value_loss != null ? 'text-blue-400' : 'text-muted'}`}>
+                  {metrics.value_loss != null ? metrics.value_loss.toFixed(3) : '—'}
                 </p>
                 <p className="text-xs text-muted">Value Loss</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.entropy?.toFixed(3) || (0.6 - metricsCurrentEpisode * 0.0002).toFixed(3)}
+                  {metrics.entropy != null ? metrics.entropy.toFixed(3) : '—'}
                 </p>
                 <p className="text-xs text-muted">Entropy</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.learning_rate?.toExponential(1) || '3.0e-4'}
+                  {metrics.learning_rate != null ? metrics.learning_rate.toExponential(1) : '3.0e-4'}
                 </p>
                 <p className="text-xs text-muted">Learning Rate</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.gradient_norm?.toFixed(2) || '0.61'}
+                  {metrics.gradient_norm != null ? metrics.gradient_norm.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Gradient Norm</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold">
-                  {metrics.clip_fraction?.toFixed(2) || '0.15'}
+                  {metrics.clip_fraction != null ? metrics.clip_fraction.toFixed(2) : '—'}
                 </p>
                 <p className="text-xs text-muted">Clip Fraction</p>
               </div>
             </div>
 
-            {/* Progress bars for losses */}
+            {/* Progress bars for losses - based on actual loss reduction */}
             <div className="mt-4 space-y-3">
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-muted">Policy Loss Convergence</span>
-                  <span className="text-purple-400">{Math.min(100, (metricsCurrentEpisode / metricsTotalEpisodes * 100 * 1.2)).toFixed(0)}%</span>
+                  <span className="text-purple-400">
+                    {metrics.policy_loss != null
+                      ? `${Math.max(0, Math.min(100, (1 - metrics.policy_loss / 0.1) * 100)).toFixed(0)}%`
+                      : '—'}
+                  </span>
                 </div>
                 <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-purple-500 to-purple-400 transition-all duration-300"
-                    style={{ width: `${Math.min(100, metricsCurrentEpisode / metricsTotalEpisodes * 100 * 1.2)}%` }}
+                    style={{ width: `${metrics.policy_loss != null ? Math.max(0, Math.min(100, (1 - metrics.policy_loss / 0.1) * 100)) : 0}%` }}
                   />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-muted">Value Loss Convergence</span>
-                  <span className="text-blue-400">{Math.min(100, (metricsCurrentEpisode / metricsTotalEpisodes * 100 * 1.1)).toFixed(0)}%</span>
+                  <span className="text-blue-400">
+                    {metrics.value_loss != null
+                      ? `${Math.max(0, Math.min(100, (1 - metrics.value_loss / 1.0) * 100)).toFixed(0)}%`
+                      : '—'}
+                  </span>
                 </div>
                 <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300"
-                    style={{ width: `${Math.min(100, metricsCurrentEpisode / metricsTotalEpisodes * 100 * 1.1)}%` }}
+                    style={{ width: `${metrics.value_loss != null ? Math.max(0, Math.min(100, (1 - metrics.value_loss / 1.0) * 100)) : 0}%` }}
                   />
                 </div>
               </div>
