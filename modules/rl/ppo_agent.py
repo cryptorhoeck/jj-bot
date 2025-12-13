@@ -285,6 +285,8 @@ class PPOAgent:
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
+        total_clip_fraction = 0
+        total_grad_norm = 0
 
         n_samples = len(self.buffer)
         indices = np.arange(n_samples)
@@ -314,6 +316,9 @@ class PPOAgent:
                 surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
+                # Track how often clipping occurs (helpful for tuning clip_epsilon)
+                clip_fraction = torch.mean(((ratio - 1.0).abs() > self.clip_epsilon).float()).item()
+
                 # Value loss
                 value_loss = nn.functional.mse_loss(state_values, batch_returns)
 
@@ -330,12 +335,18 @@ class PPOAgent:
                 # Backward pass
                 self.optimizer.zero_grad()
                 loss.backward()
+
+                # Compute gradient norm before clipping (for monitoring)
+                grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.policy.parameters() if p.grad is not None) ** 0.5
+
                 nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
                 total_entropy += entropy.mean().item()
+                total_clip_fraction += clip_fraction
+                total_grad_norm += grad_norm
 
         # Update learning rate
         self.scheduler.step()
@@ -350,6 +361,8 @@ class PPOAgent:
             "value_loss": total_value_loss / n_updates,
             "entropy": total_entropy / n_updates,
             "learning_rate": self.optimizer.param_groups[0]["lr"],
+            "clip_fraction": total_clip_fraction / n_updates,
+            "gradient_norm": total_grad_norm / n_updates,
         }
 
         # Store stats

@@ -2770,6 +2770,8 @@ class JJBotPro:
             self.training_progress["value_loss"] = float(metrics.get('value_loss', 0))
             self.training_progress["entropy"] = float(metrics.get('entropy', 0))
             self.training_progress["learning_rate"] = float(metrics.get('learning_rate', 3e-4))
+            self.training_progress["clip_fraction"] = float(metrics.get('clip_fraction', 0))
+            self.training_progress["gradient_norm"] = float(metrics.get('gradient_norm', 0))
 
             if episode % 10 == 0:
                 symbol_info = f" [{current_symbol}]" if using_real_data else ""
