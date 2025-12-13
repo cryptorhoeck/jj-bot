@@ -2628,6 +2628,9 @@ class JJBotPro:
             logger.error("RL components not initialized")
             return
 
+        # Reset symbols trained tracking for this session
+        self._symbols_trained_set = set()
+
         # Check if we have real data loaded
         from modules.rl.trading_env import _CACHE_LOADED, _CACHE_SYMBOLS
         using_real_data = _CACHE_LOADED and len(_CACHE_SYMBOLS) > 0
@@ -2764,6 +2767,14 @@ class JJBotPro:
             # Track which symbol was used in this episode
             current_symbol = getattr(self.rl_env, 'current_symbol', 'N/A')
             self.training_progress["current_symbol"] = current_symbol
+
+            # Track unique symbols trained
+            if not hasattr(self, '_symbols_trained_set'):
+                self._symbols_trained_set = set()
+            if current_symbol and current_symbol != 'N/A':
+                self._symbols_trained_set.add(current_symbol)
+            self.training_progress["symbols_trained"] = len(self._symbols_trained_set) if self._symbols_trained_set else 1
+            self.training_progress["model_updates"] = completed_episodes
 
             # PPO Training Metrics (real values from the agent)
             self.training_progress["policy_loss"] = float(metrics.get('policy_loss', 0))
