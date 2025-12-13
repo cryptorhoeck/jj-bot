@@ -129,6 +129,8 @@ async def get_bot_status():
             "avg_win_rate": bot.stats.get("avg_win_rate", 0),
             "avg_profit_factor": bot.stats.get("avg_profit_factor", 0),
             "avg_reward": bot.stats.get("avg_reward", 0),
+            "best_win_rate": bot.stats.get("best_win_rate", 0),
+            "best_profit_factor": bot.stats.get("best_profit_factor", 0),
         }
     else:
         # Load persistent IQ and training history from state file when bot is not running
@@ -148,6 +150,8 @@ async def get_bot_status():
                         "avg_win_rate": saved_stats.get("avg_win_rate", 0),
                         "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),
                         "avg_reward": saved_stats.get("avg_reward", 0),
+                        "best_win_rate": saved_stats.get("best_win_rate", 0),
+                        "best_profit_factor": saved_stats.get("best_profit_factor", 0),
                     }
             except Exception as e:
                 logger.warning(f"Could not load trading stats: {e}")

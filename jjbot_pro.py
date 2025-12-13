@@ -445,6 +445,7 @@ class JJBotPro:
             "best_episode_pnl": float('-inf'),
             "worst_episode_pnl": float('inf'),
             "best_win_rate": 0.0,
+            "best_profit_factor": 0.0,
             "current_streak": 0,  # Positive for wins, negative for losses
             "best_win_streak": 0,
             "worst_loss_streak": 0,
@@ -2684,25 +2685,19 @@ class JJBotPro:
             if episode_pnl < self.training_metrics["worst_episode_pnl"]:
                 self.training_metrics["worst_episode_pnl"] = episode_pnl
 
-            # Track best win rate
+            # Track best win rate and profit factor
             if win_rate * 100 > self.training_metrics["best_win_rate"]:
                 self.training_metrics["best_win_rate"] = win_rate * 100
+            if profit_factor > self.training_metrics["best_profit_factor"]:
+                self.training_metrics["best_profit_factor"] = profit_factor
 
-            # Track win/loss streaks
-            if episode_pnl > 0:
-                if self.training_metrics["current_streak"] >= 0:
-                    self.training_metrics["current_streak"] += 1
-                else:
-                    self.training_metrics["current_streak"] = 1
-                if self.training_metrics["current_streak"] > self.training_metrics["best_win_streak"]:
-                    self.training_metrics["best_win_streak"] = self.training_metrics["current_streak"]
-            else:
-                if self.training_metrics["current_streak"] <= 0:
-                    self.training_metrics["current_streak"] -= 1
-                else:
-                    self.training_metrics["current_streak"] = -1
-                if abs(self.training_metrics["current_streak"]) > self.training_metrics["worst_loss_streak"]:
-                    self.training_metrics["worst_loss_streak"] = abs(self.training_metrics["current_streak"])
+            # Track best win/loss streaks from actual trades (not episode P&L)
+            ep_best_win_streak = int(metrics.get('best_win_streak', 0))
+            ep_worst_loss_streak = int(metrics.get('worst_loss_streak', 0))
+            if ep_best_win_streak > self.training_metrics["best_win_streak"]:
+                self.training_metrics["best_win_streak"] = ep_best_win_streak
+            if ep_worst_loss_streak > self.training_metrics["worst_loss_streak"]:
+                self.training_metrics["worst_loss_streak"] = ep_worst_loss_streak
 
             # Accumulate risk metrics
             self.training_metrics["total_sharpe"] += float(metrics.get('sharpe_ratio', 0))
@@ -2747,6 +2742,7 @@ class JJBotPro:
             self.training_progress["best_episode_pnl"] = float(self.training_metrics["best_episode_pnl"]) if self.training_metrics["best_episode_pnl"] != float('-inf') else 0
             self.training_progress["worst_episode_pnl"] = float(self.training_metrics["worst_episode_pnl"]) if self.training_metrics["worst_episode_pnl"] != float('inf') else 0
             self.training_progress["best_win_rate"] = float(self.training_metrics["best_win_rate"])
+            self.training_progress["best_profit_factor"] = float(self.training_metrics["best_profit_factor"])
             self.training_progress["win_streak"] = int(self.training_metrics["best_win_streak"])
             self.training_progress["loss_streak"] = int(self.training_metrics["worst_loss_streak"])
 
@@ -2804,6 +2800,12 @@ class JJBotPro:
         self.stats["avg_win_rate"] = self.training_progress.get("avg_win_rate", 0)
         self.stats["avg_profit_factor"] = self.training_progress.get("avg_profit_factor", 0)
         self.stats["avg_reward"] = self.training_progress.get("avg_reward", 0)
+
+        # Track best metrics across all training sessions
+        current_best_win_rate = self.training_progress.get("best_win_rate", 0)
+        current_best_profit_factor = self.training_metrics.get("best_profit_factor", 0)
+        self.stats["best_win_rate"] = max(self.stats.get("best_win_rate", 0), current_best_win_rate)
+        self.stats["best_profit_factor"] = max(self.stats.get("best_profit_factor", 0), current_best_profit_factor)
 
         self._save_state()  # Persist IQ and training history to file
 

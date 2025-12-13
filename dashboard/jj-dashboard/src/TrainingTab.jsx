@@ -327,10 +327,13 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
       return metrics.gross_profit / metrics.gross_loss;
     }
     // Compute from wins/losses and average amounts
+    // Only compute if we have actual average amounts (not fake fallbacks)
+    const avgWin = metrics?.avg_win_amount;
+    const avgLoss = metrics?.avg_loss_amount;
+    if (!avgWin || !avgLoss) return null;
+
     const totalWins = metrics?.total_wins || Math.round((metrics?.total_trades || 0) * (metrics?.avg_win_rate || 50) / 100);
     const totalLosses = metrics?.total_losses || Math.round((metrics?.total_trades || 0) * (1 - (metrics?.avg_win_rate || 50) / 100));
-    const avgWin = metrics?.avg_win_amount || 127;
-    const avgLoss = metrics?.avg_loss_amount || 95;
     if (totalLosses > 0 && totalWins > 0) {
       const grossProfit = totalWins * avgWin;
       const grossLoss = totalLosses * avgLoss;
@@ -554,8 +557,8 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
                 <p className="text-xs text-muted">Total Trades</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${(metrics.simulated_equity || 10000) >= 10000 ? 'text-success' : 'text-danger'}`}>
-                  ${(metrics.simulated_equity || 10000).toLocaleString(undefined, {maximumFractionDigits: 0})}
+                <p className={`text-2xl font-bold ${metrics.simulated_equity != null ? (metrics.simulated_equity >= 10000 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
+                  {metrics.simulated_equity != null ? `$${metrics.simulated_equity.toLocaleString(undefined, {maximumFractionDigits: 0})}` : '—'}
                 </p>
                 <p className="text-xs text-muted">{isTraining ? 'Simulated' : 'Final'} Equity</p>
               </div>

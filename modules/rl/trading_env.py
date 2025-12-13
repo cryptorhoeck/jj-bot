@@ -987,6 +987,24 @@ class TradingEnvironment:
         annual_return = float((self.equity - self.initial_balance) / self.initial_balance)
         calmar = annual_return / (max_drawdown + 1e-8) if max_drawdown > 0 else 0.0
 
+        # Calculate win/loss streaks from trade history
+        current_win_streak = 0
+        current_loss_streak = 0
+        best_win_streak = 0
+        worst_loss_streak = 0
+
+        for trade in self.trade_history:
+            if trade.pnl > 0:
+                current_win_streak += 1
+                current_loss_streak = 0
+                if current_win_streak > best_win_streak:
+                    best_win_streak = current_win_streak
+            else:
+                current_loss_streak += 1
+                current_win_streak = 0
+                if current_loss_streak > worst_loss_streak:
+                    worst_loss_streak = current_loss_streak
+
         # Convert numpy types to Python native for JSON serialization
         return {
             "total_trades": len(self.trade_history),
@@ -1010,6 +1028,8 @@ class TradingEnvironment:
             "largest_loss": float(largest_loss),
             "long_trades": int(long_trades),
             "short_trades": int(short_trades),
+            "best_win_streak": int(best_win_streak),
+            "worst_loss_streak": int(worst_loss_streak),
         }
 
     def render(self, mode: str = "human"):
