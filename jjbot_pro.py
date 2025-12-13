@@ -2743,6 +2743,8 @@ class JJBotPro:
             self.training_progress["total_losses"] = int(self.training_metrics["total_losses"])
             total_wins = self.training_metrics["total_wins"]
             total_losses = self.training_metrics["total_losses"]
+            self.training_progress["gross_profit"] = float(self.training_metrics["total_win_amount"])
+            self.training_progress["gross_loss"] = float(self.training_metrics["total_loss_amount"])
             self.training_progress["avg_win_amount"] = float(self.training_metrics["total_win_amount"] / total_wins) if total_wins > 0 else 0
             self.training_progress["avg_loss_amount"] = float(self.training_metrics["total_loss_amount"] / total_losses) if total_losses > 0 else 0
             self.training_progress["largest_win"] = float(self.training_metrics["largest_win"])
