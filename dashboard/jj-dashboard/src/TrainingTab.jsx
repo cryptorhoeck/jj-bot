@@ -169,6 +169,10 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
             });
           }
         }
+        // Always update training history from response (keeps it fresh)
+        if (data.training_history) {
+          setTrainingHistory(data.training_history);
+        }
         if (!data.training?.is_training && isTraining) {
           // Training just finished - save final metrics
           if (trainingProgress) {
@@ -176,6 +180,18 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               ...trainingProgress,
               session_date: new Date().toISOString(),
               final_elapsed_ms: elapsedMs
+            });
+          }
+          // Fetch one more time to get final updated stats
+          const finalResponse = await fetch(`${API_BASE}/api/pro/status`);
+          const finalData = await finalResponse.json();
+          if (finalData.training_history) {
+            setTrainingHistory(finalData.training_history);
+          }
+          if (finalData.trading_iq) {
+            setTradingIQ({
+              iq: finalData.trading_iq,
+              level: finalData.expertise_level || 'Untrained'
             });
           }
           setIsTraining(false);
