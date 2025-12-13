@@ -271,8 +271,12 @@ class PPOAgent:
         # Compute advantages
         advantages, returns = self.compute_gae(rewards, values, dones)
 
-        # Normalize advantages
+        # Normalize advantages (standard practice)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        # Normalize returns to prevent value loss explosion
+        # This is critical when rewards accumulate to large values
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
         # Convert to tensors
         states_tensor = torch.FloatTensor(states).to(self.device)
