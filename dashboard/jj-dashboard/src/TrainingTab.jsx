@@ -806,14 +806,14 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
                   <span className="text-muted">Value Loss Convergence</span>
                   <span className="text-blue-400">
                     {metrics.value_loss != null
-                      ? `${Math.max(0, Math.min(100, (1 - metrics.value_loss / 1.0) * 100)).toFixed(0)}%`
+                      ? `${Math.max(0, Math.min(100, (1 - metrics.value_loss / 50.0) * 100)).toFixed(0)}%`
                       : '—'}
                   </span>
                 </div>
                 <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300"
-                    style={{ width: `${metrics.value_loss != null ? Math.max(0, Math.min(100, (1 - metrics.value_loss / 1.0) * 100)) : 0}%` }}
+                    style={{ width: `${metrics.value_loss != null ? Math.max(0, Math.min(100, (1 - metrics.value_loss / 50.0) * 100)) : 0}%` }}
                   />
                 </div>
               </div>
