@@ -383,6 +383,8 @@ class JJBotPro:
                 "avg_win_rate": 0.0,
                 "avg_profit_factor": 0.0,
                 "avg_reward": 0.0,
+                "best_win_rate": 0.0,
+                "best_profit_factor": 0.0,
                 # Slippage tracking
                 "total_entry_slippage": 0.0,
                 "total_exit_slippage": 0.0,
@@ -558,10 +560,13 @@ class JJBotPro:
         saved_training_history = {
             "training_sessions": 0,
             "total_training_episodes": 0,
+            "total_training_trades": 0,
             "last_training_date": None,
             "avg_win_rate": 0.0,
             "avg_profit_factor": 0.0,
             "avg_reward": 0.0,
+            "best_win_rate": 0.0,
+            "best_profit_factor": 0.0,
         }
 
         if state_file.exists():
@@ -581,10 +586,13 @@ class JJBotPro:
                     saved_training_history = {
                         "training_sessions": saved_stats.get("training_sessions", 0),
                         "total_training_episodes": saved_stats.get("total_training_episodes", 0),
+                        "total_training_trades": saved_stats.get("total_training_trades", 0),
                         "last_training_date": saved_stats.get("last_training_date"),
                         "avg_win_rate": saved_stats.get("avg_win_rate", 0.0),
                         "avg_profit_factor": saved_stats.get("avg_profit_factor", 0.0),
                         "avg_reward": saved_stats.get("avg_reward", 0.0),
+                        "best_win_rate": saved_stats.get("best_win_rate", 0.0),
+                        "best_profit_factor": saved_stats.get("best_profit_factor", 0.0),
                     }
                     logger.info(f"Loaded from state file: equity=${saved_equity}, IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
             except Exception as e:
@@ -844,6 +852,7 @@ class JJBotPro:
 
             state = {
                 "equity": self.equity,
+                "initial_capital": self.config.initial_capital,
                 "peak_equity": self.peak_equity,
                 "daily_pnl": self.daily_pnl,
                 "daily_start_equity": self.daily_start_equity,
