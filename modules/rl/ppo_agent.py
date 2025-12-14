@@ -195,18 +195,41 @@ class PPOAgent:
         }
         self.episode_count = 0
 
-    def select_action(self, state: np.ndarray, training: bool = True) -> Tuple[int, float, float]:
-        """Select action given current state"""
+    def select_action(self, state: np.ndarray, training: bool = True, temperature: float = 0.5) -> Tuple[int, float, float]:
+        """
+        Select action given current state
+
+        Args:
+            state: Current observation
+            training: If True, use stochastic sampling. If False, use temperature-scaled sampling.
+            temperature: For inference only. Lower = more deterministic (0.5 default for live trading)
+                        Set to 0.0 for pure greedy (argmax), 1.0 for same as training
+        """
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
             if training:
+                # Training: Use stochastic sampling from the policy
                 action, log_prob, value = self.policy.get_action(state_tensor)
             else:
-                # Greedy action for evaluation
+                # Inference: Use temperature-scaled sampling for consistency with training
+                # but with reduced randomness for more reliable decisions
                 action_probs, value = self.policy(state_tensor)
-                action = torch.argmax(action_probs, dim=-1).item()
-                log_prob = torch.log(action_probs[0, action]).item()
+
+                if temperature <= 0.01:
+                    # Pure greedy (argmax)
+                    action = torch.argmax(action_probs, dim=-1).item()
+                else:
+                    # Temperature-scaled softmax sampling
+                    # Lower temperature = more deterministic
+                    scaled_logits = torch.log(action_probs + 1e-8) / temperature
+                    scaled_probs = torch.softmax(scaled_logits, dim=-1)
+
+                    # Sample from the temperature-scaled distribution
+                    dist = torch.distributions.Categorical(scaled_probs)
+                    action = dist.sample().item()
+
+                log_prob = torch.log(action_probs[0, action] + 1e-8).item()
                 value = value.item()
 
         return action, log_prob, value

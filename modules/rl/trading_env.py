@@ -828,60 +828,38 @@ class TradingEnvironment:
         """
         Calculate reward for the current step
 
-        REDESIGNED: Rewards CORRECT DIRECTIONAL PREDICTIONS
+        FIXED: NO LOOK-AHEAD BIAS - Only uses realized P&L and current observable data.
+        This ensures training and live trading use the same information.
         All rewards scaled to roughly -1 to +1 range for stable value learning.
         """
         reward = 0.0
 
         # =================================================================
-        # 1. DIRECTIONAL PREDICTION REWARD (Most Important!)
+        # 1. REALIZED P&L REWARD (Primary signal - no look-ahead!)
         # =================================================================
-        # Look ahead to see if the prediction was correct
-        lookahead_steps = 5  # Check price 5 steps ahead
-        future_idx = min(self.current_step + self.lookback_window + lookahead_steps, len(self.prices) - 1)
-        future_price = self.prices[future_idx]
-        price_change_pct = (future_price - self.current_price) / self.current_price
-
-        if self.position.side == "long":
-            # Reward for being long when price goes up
-            if price_change_pct > 0.001:  # Price went up > 0.1%
-                reward += 0.3  # Fixed reward for correct direction
-            elif price_change_pct < -0.001:  # Price went down > 0.1%
-                reward -= 0.2  # Fixed penalty for wrong direction
-
-        elif self.position.side == "short":
-            # Reward for being short when price goes down
-            if price_change_pct < -0.001:  # Price went down > 0.1%
-                reward += 0.3  # Fixed reward for correct direction
-            elif price_change_pct > 0.001:  # Price went up > 0.1%
-                reward -= 0.2  # Fixed penalty for wrong direction
-
-        # =================================================================
-        # 2. ENTRY TIMING REWARD
-        # =================================================================
-        # Bonus for entering RIGHT BEFORE a big move in the correct direction
-        if trade_executed and self.position.side != "flat":
-            # Look at immediate future (next 3 steps)
-            immediate_future_idx = min(self.current_step + self.lookback_window + 3, len(self.prices) - 1)
-            immediate_price = self.prices[immediate_future_idx]
-            immediate_change = (immediate_price - self.current_price) / self.current_price
-
-            if self.position.side == "long" and immediate_change > 0.002:
-                reward += 0.15  # Good entry timing
-            elif self.position.side == "short" and immediate_change < -0.002:
-                reward += 0.15  # Good entry timing
-            elif abs(immediate_change) > 0.002:
-                reward -= 0.1  # Bad entry timing
-
-        # =================================================================
-        # 3. REALIZED P&L REWARD (Scaled and clamped)
-        # =================================================================
-        # Clamp step return to prevent wild swings
+        # Only reward based on actual realized returns from the step
+        # This is the ONLY thing we can measure in live trading
         clamped_return = max(-0.05, min(0.05, step_return))  # Cap at ±5%
         reward += clamped_return * 10  # Scale: 1% move = 0.1 reward
 
         # =================================================================
-        # 4. WIN STREAK BONUS (smaller values)
+        # 2. UNREALIZED P&L FEEDBACK (Observable in real-time)
+        # =================================================================
+        # Reward/penalize based on current unrealized P&L (no future data)
+        if self.position.side != "flat":
+            unrealized_pct = self.position.unrealized_pnl / self.position.size if self.position.size else 0
+            # Clamp unrealized to prevent extreme values
+            unrealized_pct = max(-0.03, min(0.03, unrealized_pct))
+            reward += unrealized_pct * 3  # Smaller weight than realized
+
+        # =================================================================
+        # 3. TRADE EXECUTION COST (Discourages overtrading)
+        # =================================================================
+        if trade_executed:
+            reward -= 0.02  # Small cost per trade to prevent churning
+
+        # =================================================================
+        # 4. WIN STREAK BONUS (Based on past trades only)
         # =================================================================
         if len(self.trade_history) >= 3:
             recent_trades = list(self.trade_history)[-3:]
@@ -892,22 +870,32 @@ class TradingEnvironment:
                 reward -= 0.08  # Penalty for 3 losses in a row
 
         # =================================================================
-        # 5. SMART HOLDING (smaller values)
+        # 5. SMART HOLDING (Observable metrics only)
         # =================================================================
         if self.position.side != "flat":
             holding_time = self.current_step - self.position.entry_time
+            # Reward holding profitable positions
             if self.position.unrealized_pnl > 0 and holding_time > 5:
                 reward += 0.02  # Small bonus for holding winners
+            # Penalize holding losing positions too long
             elif self.position.unrealized_pnl < -self.position.size * 0.02 and holding_time > 10:
                 reward -= 0.03  # Small penalty for holding losers
 
         # =================================================================
-        # 6. RISK PENALTY
+        # 6. RISK PENALTY (Observable drawdown)
         # =================================================================
         if len(self.returns_history) > 10:
             drawdown = (self.peak_equity - self.equity) / self.peak_equity if self.peak_equity else 0
             if drawdown > 0.15:
                 reward -= 0.1  # Fixed penalty for large drawdown
+
+        # =================================================================
+        # 7. HOLD INCENTIVE (Prevent constant trading)
+        # =================================================================
+        if self.position.side == "flat" and not trade_executed:
+            # Small reward for waiting when not in position
+            # This teaches the model that it doesn't HAVE to trade every step
+            reward += 0.005
 
         # Clamp total reward to prevent extreme values
         return max(-1.0, min(1.0, reward))

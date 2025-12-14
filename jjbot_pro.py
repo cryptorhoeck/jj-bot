@@ -1715,7 +1715,13 @@ class JJBotPro:
                         # Ensure confidence is in reasonable range [0.5, 0.95]
                         confidence = max(0.5, min(0.95, confidence))
 
-                        if action == 1:  # BUY
+                        if action == 0:  # HOLD
+                            # Model says wait - don't generate any signal
+                            # This is a valid decision, not an error
+                            logger.debug(f"RL agent HOLD for {symbol} (conf: {confidence:.1%})")
+                            pass
+
+                        elif action == 1:  # BUY
                             signals.append(TradeSignal(
                                 symbol=symbol,
                                 direction="long",
@@ -1725,6 +1731,7 @@ class JJBotPro:
                                 entry_price=price,
                                 reason=f"RL agent buy signal (conf: {confidence:.1%})"
                             ))
+
                         elif action == 2:  # SELL
                             signals.append(TradeSignal(
                                 symbol=symbol,
@@ -1735,6 +1742,14 @@ class JJBotPro:
                                 entry_price=price,
                                 reason=f"RL agent sell signal (conf: {confidence:.1%})"
                             ))
+
+                        elif action == 3:  # CLOSE
+                            # Model says close existing position
+                            if symbol in self.positions:
+                                logger.info(f"RL agent CLOSE signal for {symbol} (conf: {confidence:.1%})")
+                                await self._close_position(symbol, price, "rl_agent_close")
+                            else:
+                                logger.debug(f"RL agent CLOSE for {symbol} but no position open")
             except Exception as e:
                 logger.warning(f"RL signal error for {symbol}: {e}")
 
