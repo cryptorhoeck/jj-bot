@@ -213,6 +213,18 @@ class BotConfig:
 
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
+        # IMPORTANT: Convert relative paths to absolute paths based on project root
+        # This fixes the issue where the API runs from glue/api/ but paths should be relative to project root
+        project_root = os.path.dirname(os.path.abspath(__file__))
+
+        # Fix rl_model_path if it's relative
+        if self.rl_model_path and not os.path.isabs(self.rl_model_path):
+            self.rl_model_path = os.path.join(project_root, self.rl_model_path)
+
+        # Fix audit_trail_dir if it's relative
+        if self.audit_trail_dir and not os.path.isabs(self.audit_trail_dir):
+            self.audit_trail_dir = os.path.join(project_root, self.audit_trail_dir)
+
         # Environment variable names follow pattern: {EXCHANGE}_API_KEY, {EXCHANGE}_API_SECRET
         exchange_upper = self.exchange.upper().replace("-", "_")
 
