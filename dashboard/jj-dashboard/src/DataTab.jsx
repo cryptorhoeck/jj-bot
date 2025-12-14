@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { ConfirmModal } from './components';
 
@@ -6,6 +6,134 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [trainingConfirmOpen, setTrainingConfirmOpen] = useState(false);
   const [viewMode, setViewMode] = useState('trades');
+
+  // Backup management state
+  const [backups, setBackups] = useState([]);
+  const [backupSummary, setBackupSummary] = useState({ trading: 0, state: 0, model: 0, total_size: 0 });
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState(null);
+  const [creatingBackup, setCreatingBackup] = useState(false);
+
+  // Load backups on mount and when view changes to backups
+  useEffect(() => {
+    if (viewMode === 'backups') {
+      loadBackups();
+    }
+  }, [viewMode]);
+
+  const loadBackups = async () => {
+    setLoadingBackups(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/data/backups`);
+      const data = await response.json();
+      if (data.status === 'success') {
+        setBackups(data.backups || []);
+        setBackupSummary(data.summary || { trading: 0, state: 0, model: 0, total_size: 0 });
+      }
+    } catch (error) {
+      console.error('Error loading backups:', error);
+      toast.error('Failed to load backups');
+    }
+    setLoadingBackups(false);
+  };
+
+  const createBackup = async () => {
+    setCreatingBackup(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/data/backup`, { method: 'POST' });
+      const data = await response.json();
+      if (data.status === 'success') {
+        toast.success(data.message);
+        loadBackups();
+      } else {
+        toast.error(data.message || 'Backup failed');
+      }
+    } catch (error) {
+      toast.error('Error creating backup');
+    }
+    setCreatingBackup(false);
+  };
+
+  const handleRestoreConfirm = async () => {
+    if (!selectedBackup) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/data/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: selectedBackup.filename })
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        toast.success(data.message);
+        loadBackups();
+      } else {
+        toast.error(data.message || 'Restore failed');
+      }
+    } catch (error) {
+      toast.error('Error restoring backup');
+    }
+    setSelectedBackup(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedBackup) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/data/backup/${selectedBackup.filename}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        toast.success(data.message);
+        loadBackups();
+      } else {
+        toast.error(data.message || 'Delete failed');
+      }
+    } catch (error) {
+      toast.error('Error deleting backup');
+    }
+    setSelectedBackup(null);
+  };
+
+  const getBackupTypeIcon = (type) => {
+    switch (type) {
+      case 'trading':
+        return '📊';
+      case 'state':
+        return '🧠';
+      case 'model':
+        return '🤖';
+      default:
+        return '📁';
+    }
+  };
+
+  const getBackupTypeLabel = (type) => {
+    switch (type) {
+      case 'trading':
+        return 'Trade History';
+      case 'state':
+        return 'Bot State & IQ';
+      case 'model':
+        return 'AI Model';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const getBackupTypeBadgeClass = (type) => {
+    switch (type) {
+      case 'trading':
+        return 'badge-info';
+      case 'state':
+        return 'badge-warning';
+      case 'model':
+        return 'badge-success';
+      default:
+        return 'badge-secondary';
+    }
+  };
 
   const analytics = useMemo(() => {
     if (!trades || trades.length === 0) return null;
@@ -125,6 +253,15 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span>Analytics</span>
+          </button>
+          <button
+            onClick={() => setViewMode('backups')}
+            className={`nav-tab ${viewMode === 'backups' ? 'active' : ''}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span>Backups</span>
           </button>
         </div>
       </div>
@@ -393,6 +530,214 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
         </div>
       )}
 
+      {/* Backups View */}
+      {viewMode === 'backups' && (
+        <>
+          {/* Backup Actions */}
+          <div className="card p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Backup Management
+                </h3>
+                <p className="text-sm text-muted mt-1">Create backups of your trading data, bot state, and trained AI model</p>
+              </div>
+              <button
+                onClick={createBackup}
+                disabled={creatingBackup}
+                className="btn btn-primary"
+              >
+                {creatingBackup ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Creating Backup...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create Full Backup
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Backup Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 rounded-xl bg-[var(--bg-tertiary)] text-center">
+                <p className="text-2xl font-bold text-info">{backupSummary.trading}</p>
+                <p className="text-xs text-muted">📊 Trade Backups</p>
+              </div>
+              <div className="p-4 rounded-xl bg-[var(--bg-tertiary)] text-center">
+                <p className="text-2xl font-bold text-warning">{backupSummary.state}</p>
+                <p className="text-xs text-muted">🧠 State Backups</p>
+              </div>
+              <div className="p-4 rounded-xl bg-[var(--bg-tertiary)] text-center">
+                <p className="text-2xl font-bold text-success">{backupSummary.model}</p>
+                <p className="text-xs text-muted">🤖 Model Backups</p>
+              </div>
+              <div className="p-4 rounded-xl bg-[var(--bg-tertiary)] text-center">
+                <p className="text-2xl font-bold">
+                  {backupSummary.total_size < 1024 * 1024
+                    ? `${(backupSummary.total_size / 1024).toFixed(1)} KB`
+                    : `${(backupSummary.total_size / (1024 * 1024)).toFixed(1)} MB`}
+                </p>
+                <p className="text-xs text-muted">💾 Total Size</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Backup List */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                Available Backups
+                <span className="badge badge-info ml-2">{backups.length} files</span>
+              </h3>
+              <button
+                onClick={loadBackups}
+                disabled={loadingBackups}
+                className="btn btn-secondary btn-sm"
+              >
+                {loadingBackups ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                Refresh
+              </button>
+            </div>
+
+            {loadingBackups ? (
+              <div className="text-center py-12">
+                <svg className="w-8 h-8 mx-auto animate-spin text-info" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <p className="text-muted mt-2">Loading backups...</p>
+              </div>
+            ) : backups.length > 0 ? (
+              <div className="space-y-3">
+                {backups.map((backup, idx) => (
+                  <div
+                    key={idx}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-[var(--bg-tertiary)] gap-4"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="text-3xl">{getBackupTypeIcon(backup.type)}</div>
+                      <div>
+                        <p className="font-semibold flex items-center gap-2">
+                          {backup.filename}
+                          <span className={`badge ${getBackupTypeBadgeClass(backup.type)}`}>
+                            {getBackupTypeLabel(backup.type)}
+                          </span>
+                          {backup.category === 'archive' && (
+                            <span className="badge badge-secondary">Archive</span>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-4 text-sm text-muted mt-1">
+                          <span>{backup.size_formatted}</span>
+                          <span>•</span>
+                          <span>{backup.created || new Date(backup.modified).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedBackup(backup);
+                          setRestoreConfirmOpen(true);
+                        }}
+                        className="btn btn-success btn-sm"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedBackup(backup);
+                          setDeleteConfirmOpen(true);
+                        }}
+                        className="btn btn-danger btn-sm"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
+                  <svg className="w-8 h-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                </div>
+                <p className="text-muted">No backups found. Create your first backup to protect your data.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Backup Info */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Backup Types Explained
+            </h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-info/10 border border-info/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">📊</span>
+                  <span className="font-semibold text-info">Trade History</span>
+                </div>
+                <p className="text-sm text-muted">
+                  Contains all your trading history, P&L records, and position data. Restore to recover trade records.
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-warning/10 border border-warning/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🧠</span>
+                  <span className="font-semibold text-warning">Bot State & IQ</span>
+                </div>
+                <p className="text-sm text-muted">
+                  Contains Trading IQ, expertise level, training history, and equity state. Restore to recover AI progress.
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-success/10 border border-success/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🤖</span>
+                  <span className="font-semibold text-success">AI Model</span>
+                </div>
+                <p className="text-sm text-muted">
+                  The trained neural network weights. Restore to recover a previously trained model. ~5-10 MB each.
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <ConfirmModal
         isOpen={confirmModalOpen}
         onClose={() => setConfirmModalOpen(false)}
@@ -412,6 +757,36 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
         title="Reset Training Data"
         message="This will reset the AI to its untrained state, clearing all learned IQ and the trained model. This cannot be undone. A backup will be created."
         confirmText="Reset Training"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        darkMode={darkMode}
+      />
+
+      <ConfirmModal
+        isOpen={restoreConfirmOpen}
+        onClose={() => {
+          setRestoreConfirmOpen(false);
+          setSelectedBackup(null);
+        }}
+        onConfirm={handleRestoreConfirm}
+        title="Restore Backup"
+        message={selectedBackup ? `Are you sure you want to restore from "${selectedBackup.filename}"? This will replace your current ${getBackupTypeLabel(selectedBackup.type).toLowerCase()} with the backup version. A safety backup of your current data will be created first.` : ''}
+        confirmText="Restore Backup"
+        cancelText="Cancel"
+        confirmVariant="warning"
+        darkMode={darkMode}
+      />
+
+      <ConfirmModal
+        isOpen={deleteConfirmOpen}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setSelectedBackup(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Backup"
+        message={selectedBackup ? `Are you sure you want to permanently delete "${selectedBackup.filename}"? This cannot be undone.` : ''}
+        confirmText="Delete Backup"
         cancelText="Cancel"
         confirmVariant="danger"
         darkMode={darkMode}

@@ -640,53 +640,229 @@ async def archive_data():
 
 @app.get("/api/data/backups")
 async def list_backups():
-    """List all available backups"""
+    """List all available backups with detailed metadata"""
+    from pathlib import Path
     try:
-        backup_dir = "backups"
-        archive_dir = "backups/archives"
+        PROJECT_ROOT = Path(__file__).parent.parent.parent
+        backup_dir = PROJECT_ROOT / "backups"
+        archive_dir = PROJECT_ROOT / "backups" / "archives"
 
         backups = []
 
-        # List regular backups
-        if os.path.exists(backup_dir):
-            for file in os.listdir(backup_dir):
-                if file.endswith('.db'):
-                    file_path = os.path.join(backup_dir, file)
-                    size = os.path.getsize(file_path)
-                    modified = os.path.getmtime(file_path)
-                    backups.append({
-                        "filename": file,
-                        "type": "backup",
-                        "size": size,
-                        "modified": datetime.fromtimestamp(modified).isoformat(),
-                        "path": file_path
-                    })
+        def get_backup_info(file_path: Path, backup_type: str, category: str):
+            """Extract backup info from file"""
+            size = file_path.stat().st_size
+            modified = file_path.stat().st_mtime
+            filename = file_path.name
+
+            # Parse timestamp from filename (format: name_backup_YYYYMMDD_HHMMSS.ext)
+            created_str = None
+            parts = filename.replace('.db', '').replace('.json', '').replace('.pt', '').split('_')
+            if len(parts) >= 2:
+                # Try to find date/time parts
+                for i, part in enumerate(parts):
+                    if len(part) == 8 and part.isdigit():  # YYYYMMDD
+                        date_part = part
+                        time_part = parts[i+1] if i+1 < len(parts) and len(parts[i+1]) == 6 else "000000"
+                        try:
+                            created_str = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                        except:
+                            pass
+                        break
+
+            return {
+                "filename": filename,
+                "path": str(file_path),
+                "type": backup_type,  # 'trading', 'state', 'model'
+                "category": category,  # 'backup', 'archive'
+                "size": size,
+                "size_formatted": f"{size / 1024:.1f} KB" if size < 1024*1024 else f"{size / (1024*1024):.1f} MB",
+                "modified": datetime.fromtimestamp(modified).isoformat(),
+                "created": created_str,
+            }
+
+        # List all backups in backup directory
+        if backup_dir.exists():
+            for file_path in backup_dir.iterdir():
+                if file_path.is_file():
+                    if file_path.suffix == '.db':
+                        backups.append(get_backup_info(file_path, 'trading', 'backup'))
+                    elif file_path.suffix == '.json':
+                        backups.append(get_backup_info(file_path, 'state', 'backup'))
+                    elif file_path.suffix == '.pt':
+                        backups.append(get_backup_info(file_path, 'model', 'backup'))
 
         # List archives
-        if os.path.exists(archive_dir):
-            for file in os.listdir(archive_dir):
-                if file.endswith('.db'):
-                    file_path = os.path.join(archive_dir, file)
-                    size = os.path.getsize(file_path)
-                    modified = os.path.getmtime(file_path)
-                    backups.append({
-                        "filename": file,
-                        "type": "archive",
-                        "size": size,
-                        "modified": datetime.fromtimestamp(modified).isoformat(),
-                        "path": file_path
-                    })
+        if archive_dir.exists():
+            for file_path in archive_dir.iterdir():
+                if file_path.is_file() and file_path.suffix == '.db':
+                    backups.append(get_backup_info(file_path, 'trading', 'archive'))
 
         # Sort by modified date (newest first)
         backups.sort(key=lambda x: x['modified'], reverse=True)
 
+        # Group by type for summary
+        summary = {
+            'trading': len([b for b in backups if b['type'] == 'trading']),
+            'state': len([b for b in backups if b['type'] == 'state']),
+            'model': len([b for b in backups if b['type'] == 'model']),
+            'total_size': sum(b['size'] for b in backups),
+        }
+
         return {
             "status": "success",
             "backups": backups,
-            "total": len(backups)
+            "total": len(backups),
+            "summary": summary
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/data/backup")
+async def create_full_backup():
+    """Create a full backup of all data (trades, state, and model)"""
+    import shutil
+    from pathlib import Path
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_dir = PROJECT_ROOT / "backups"
+    backup_dir.mkdir(exist_ok=True)
+
+    backed_up = []
+    errors = []
+
+    # Backup trades.db
+    trades_db = PROJECT_ROOT / "data" / "trades.db"
+    if trades_db.exists():
+        try:
+            backup_path = backup_dir / f"trades_backup_{timestamp}.db"
+            shutil.copy2(trades_db, backup_path)
+            backed_up.append({"file": "trades.db", "backup": backup_path.name, "type": "trading"})
+        except Exception as e:
+            errors.append(f"trades.db: {str(e)}")
+
+    # Backup bot_state.json
+    state_file = PROJECT_ROOT / "data" / "bot_state.json"
+    if state_file.exists():
+        try:
+            backup_path = backup_dir / f"bot_state_backup_{timestamp}.json"
+            shutil.copy2(state_file, backup_path)
+            backed_up.append({"file": "bot_state.json", "backup": backup_path.name, "type": "state"})
+        except Exception as e:
+            errors.append(f"bot_state.json: {str(e)}")
+
+    # Backup ppo_agent.pt (trained model)
+    model_file = PROJECT_ROOT / "models" / "ppo_agent.pt"
+    if model_file.exists():
+        try:
+            backup_path = backup_dir / f"ppo_agent_backup_{timestamp}.pt"
+            shutil.copy2(model_file, backup_path)
+            backed_up.append({"file": "ppo_agent.pt", "backup": backup_path.name, "type": "model"})
+        except Exception as e:
+            errors.append(f"ppo_agent.pt: {str(e)}")
+
+    if backed_up:
+        return {
+            "status": "success",
+            "message": f"Backed up {len(backed_up)} files",
+            "backed_up": backed_up,
+            "errors": errors if errors else None,
+            "timestamp": timestamp
+        }
+    else:
+        return {
+            "status": "warning",
+            "message": "No files found to backup",
+            "errors": errors if errors else None
+        }
+
+
+@app.post("/api/data/restore")
+async def restore_backup(request: dict):
+    """Restore from a specific backup file"""
+    import shutil
+    from pathlib import Path
+
+    filename = request.get("filename")
+    if not filename:
+        return {"status": "error", "message": "No filename provided"}
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    backup_dir = PROJECT_ROOT / "backups"
+    archive_dir = PROJECT_ROOT / "backups" / "archives"
+
+    # Find the backup file
+    backup_path = None
+    for search_dir in [backup_dir, archive_dir]:
+        potential_path = search_dir / filename
+        if potential_path.exists():
+            backup_path = potential_path
+            break
+
+    if not backup_path:
+        return {"status": "error", "message": f"Backup file not found: {filename}"}
+
+    try:
+        # Determine restore target based on filename
+        if 'trades' in filename and filename.endswith('.db'):
+            target = PROJECT_ROOT / "data" / "trades.db"
+            backup_type = "trading"
+        elif 'bot_state' in filename and filename.endswith('.json'):
+            target = PROJECT_ROOT / "data" / "bot_state.json"
+            backup_type = "state"
+        elif 'ppo_agent' in filename and filename.endswith('.pt'):
+            target = PROJECT_ROOT / "models" / "ppo_agent.pt"
+            backup_type = "model"
+        else:
+            return {"status": "error", "message": f"Unknown backup type: {filename}"}
+
+        # Create current backup before restoring (safety)
+        if target.exists():
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safety_backup = backup_dir / f"{target.stem}_pre_restore_{timestamp}{target.suffix}"
+            shutil.copy2(target, safety_backup)
+
+        # Ensure target directory exists
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        # Restore the backup
+        shutil.copy2(backup_path, target)
+
+        return {
+            "status": "success",
+            "message": f"Restored {backup_type} data from {filename}",
+            "restored_to": str(target),
+            "backup_type": backup_type
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.delete("/api/data/backup/{filename}")
+async def delete_backup(filename: str):
+    """Delete a specific backup file"""
+    from pathlib import Path
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    backup_dir = PROJECT_ROOT / "backups"
+    archive_dir = PROJECT_ROOT / "backups" / "archives"
+
+    # Find and delete the backup file
+    for search_dir in [backup_dir, archive_dir]:
+        file_path = search_dir / filename
+        if file_path.exists():
+            try:
+                file_path.unlink()
+                return {
+                    "status": "success",
+                    "message": f"Deleted backup: {filename}"
+                }
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+    return {"status": "error", "message": f"Backup not found: {filename}"}
 
 # ===== DASHBOARD =====
 @app.get("/dashboard")
