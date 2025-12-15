@@ -21,6 +21,14 @@ import json
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Import centralized data manager
+try:
+    from modules.database import data_manager
+    DATA_MANAGER_AVAILABLE = True
+except ImportError:
+    DATA_MANAGER_AVAILABLE = False
+    data_manager = None
+
 router = APIRouter(prefix="/api/analytics/enhanced", tags=["enhanced_analytics"])
 
 
@@ -846,23 +854,40 @@ async def get_comprehensive_analytics(
         # === AI/TRAINING DATA ===
         ai_data = {}
         try:
-            state_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'bot_state.json')
-            if os.path.exists(state_path):
-                with open(state_path) as f:
-                    state = json.load(f)
-                    stats = state.get("stats", {})
-                    ai_data = {
-                        "trading_iq": stats.get("trading_iq", 0),
-                        "expertise_level": stats.get("expertise_level", "Untrained"),
-                        "training_sessions": stats.get("training_sessions", 0),
-                        "total_training_episodes": stats.get("total_training_episodes", 0),
-                        "total_training_trades": stats.get("total_training_trades", 0),
-                        "last_training_date": stats.get("last_training_date"),
-                        "avg_win_rate": stats.get("avg_win_rate", 0),
-                        "avg_profit_factor": stats.get("avg_profit_factor", 0),
-                        "best_win_rate": stats.get("best_win_rate", 0),
-                        "best_profit_factor": stats.get("best_profit_factor", 0)
-                    }
+            # Use data_manager as single source of truth
+            if DATA_MANAGER_AVAILABLE:
+                bot_state = data_manager.get_bot_state()
+                ai_data = {
+                    "trading_iq": bot_state.get("trading_iq", 0),
+                    "expertise_level": bot_state.get("expertise_level", "Untrained"),
+                    "training_sessions": bot_state.get("training_sessions", 0),
+                    "total_training_episodes": bot_state.get("total_training_episodes", 0),
+                    "total_training_trades": bot_state.get("total_training_trades", 0),
+                    "last_training_date": bot_state.get("last_training_date"),
+                    "avg_win_rate": bot_state.get("avg_win_rate", 0),
+                    "avg_profit_factor": bot_state.get("avg_profit_factor", 0),
+                    "best_win_rate": bot_state.get("best_win_rate", 0),
+                    "best_profit_factor": bot_state.get("best_profit_factor", 0)
+                }
+            else:
+                # Fallback to JSON file
+                state_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'bot_state.json')
+                if os.path.exists(state_path):
+                    with open(state_path) as f:
+                        state = json.load(f)
+                        stats = state.get("stats", {})
+                        ai_data = {
+                            "trading_iq": stats.get("trading_iq", 0),
+                            "expertise_level": stats.get("expertise_level", "Untrained"),
+                            "training_sessions": stats.get("training_sessions", 0),
+                            "total_training_episodes": stats.get("total_training_episodes", 0),
+                            "total_training_trades": stats.get("total_training_trades", 0),
+                            "last_training_date": stats.get("last_training_date"),
+                            "avg_win_rate": stats.get("avg_win_rate", 0),
+                            "avg_profit_factor": stats.get("avg_profit_factor", 0),
+                            "best_win_rate": stats.get("best_win_rate", 0),
+                            "best_profit_factor": stats.get("best_profit_factor", 0)
+                        }
         except Exception:
             pass
 
@@ -890,4 +915,411 @@ async def get_comprehensive_analytics(
     except Exception as e:
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# NEW ENDPOINTS - Using centralized data_manager (Phase 2)
+# ============================================================================
+
+@router.get("/equity-curve-v2", summary="Get Real-Time Equity Curve from Snapshots")
+async def get_equity_curve_v2(
+    hours: int = Query(24, ge=1, le=720, description="Time period in hours (1-720)"),
+    mode: Optional[str] = Query(None, description="Filter by mode: paper, live, backtest")
+) -> Dict[str, Any]:
+    """
+    Get equity curve data from real-time equity snapshots.
+
+    Unlike the original equity-curve endpoint which reconstructs from trades,
+    this uses actual equity snapshots recorded periodically during bot operation.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        from datetime import timedelta
+
+        since = (datetime.now() - timedelta(hours=hours)).isoformat()
+        snapshots = data_manager.get_equity_curve(since=since, mode=mode, limit=2000)
+
+        if not snapshots:
+            return {
+                "success": True,
+                "data": {
+                    "timestamps": [],
+                    "equity": [],
+                    "daily_pnl": [],
+                    "drawdown": [],
+                    "drawdown_pct": [],
+                    "snapshot_count": 0
+                }
+            }
+
+        # Extract data for visualization
+        timestamps = [s['timestamp'] for s in snapshots]
+        equity = [s['equity'] for s in snapshots]
+        daily_pnl = [s.get('daily_pnl', 0) or 0 for s in snapshots]
+        drawdown = [s.get('drawdown', 0) or 0 for s in snapshots]
+        drawdown_pct = [s.get('drawdown_pct', 0) or 0 for s in snapshots]
+        peak_equity = [s.get('peak_equity', 0) or 0 for s in snapshots]
+        open_positions = [s.get('open_positions', 0) or 0 for s in snapshots]
+
+        # Calculate summary stats
+        initial_equity = equity[0] if equity else 10000
+        final_equity = equity[-1] if equity else initial_equity
+        max_drawdown = max(drawdown) if drawdown else 0
+        max_drawdown_pct = max(drawdown_pct) if drawdown_pct else 0
+
+        return {
+            "success": True,
+            "data": {
+                "timestamps": timestamps,
+                "equity": equity,
+                "daily_pnl": daily_pnl,
+                "drawdown": drawdown,
+                "drawdown_pct": drawdown_pct,
+                "peak_equity": peak_equity,
+                "open_positions": open_positions,
+                "snapshot_count": len(snapshots),
+                "summary": {
+                    "initial_equity": round(initial_equity, 2),
+                    "final_equity": round(final_equity, 2),
+                    "total_return": round((final_equity - initial_equity) / initial_equity * 100, 2) if initial_equity > 0 else 0,
+                    "max_drawdown": round(max_drawdown, 2),
+                    "max_drawdown_pct": round(max_drawdown_pct, 2),
+                    "period_hours": hours,
+                    "mode_filter": mode
+                }
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training-episodes", summary="Get Training Episode History")
+async def get_training_episodes(
+    session_id: Optional[str] = Query(None, description="Filter by specific session ID"),
+    limit: int = Query(500, ge=1, le=5000, description="Maximum episodes to return")
+) -> Dict[str, Any]:
+    """
+    Get training episode metrics for visualization.
+
+    Returns detailed per-episode metrics including rewards, P&L, win rate, etc.
+    Perfect for plotting training progression charts.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        episodes = data_manager.get_training_episodes(session_id=session_id, limit=limit)
+
+        if not episodes:
+            return {
+                "success": True,
+                "data": {
+                    "episodes": [],
+                    "episode_count": 0,
+                    "session_id": session_id
+                }
+            }
+
+        # Format for visualization
+        formatted_episodes = []
+        for ep in episodes:
+            formatted_episodes.append({
+                "episode": ep['episode'],
+                "session_id": ep['session_id'],
+                "timestamp": ep['timestamp'],
+                "total_reward": round(ep.get('total_reward', 0) or 0, 4),
+                "avg_reward": round(ep.get('avg_reward', 0) or 0, 4),
+                "total_pnl": round(ep.get('total_pnl', 0) or 0, 2),
+                "trades": ep.get('trades', 0) or 0,
+                "wins": ep.get('wins', 0) or 0,
+                "losses": ep.get('losses', 0) or 0,
+                "win_rate": round(ep.get('win_rate', 0) or 0, 2),
+                "profit_factor": round(ep.get('profit_factor', 0) or 0, 2),
+                "max_drawdown": round(ep.get('max_drawdown', 0) or 0, 2),
+                "sharpe_ratio": round(ep.get('sharpe_ratio', 0) or 0, 2) if ep.get('sharpe_ratio') else None,
+                "policy_loss": round(ep.get('policy_loss', 0) or 0, 6) if ep.get('policy_loss') else None,
+                "value_loss": round(ep.get('value_loss', 0) or 0, 6) if ep.get('value_loss') else None,
+                "entropy": round(ep.get('entropy', 0) or 0, 4) if ep.get('entropy') else None,
+                "steps": ep.get('steps', 0) or 0
+            })
+
+        # Calculate progression summary
+        if formatted_episodes:
+            first_ep = formatted_episodes[0]
+            last_ep = formatted_episodes[-1]
+
+            progression = {
+                "reward_improvement": round(last_ep['total_reward'] - first_ep['total_reward'], 4),
+                "win_rate_improvement": round(last_ep['win_rate'] - first_ep['win_rate'], 2),
+                "profit_factor_improvement": round(last_ep['profit_factor'] - first_ep['profit_factor'], 2),
+                "final_win_rate": last_ep['win_rate'],
+                "final_profit_factor": last_ep['profit_factor'],
+                "total_training_trades": sum(ep['trades'] for ep in formatted_episodes)
+            }
+        else:
+            progression = {}
+
+        return {
+            "success": True,
+            "data": {
+                "episodes": formatted_episodes,
+                "episode_count": len(formatted_episodes),
+                "session_id": session_id,
+                "progression": progression
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training-sessions", summary="Get Training Session Summaries")
+async def get_training_sessions_endpoint() -> Dict[str, Any]:
+    """
+    Get summary of all training sessions.
+
+    Returns aggregated metrics per session for comparing training runs.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        sessions = data_manager.get_training_sessions()
+
+        formatted_sessions = []
+        for sess in sessions:
+            formatted_sessions.append({
+                "session_id": sess['session_id'],
+                "started_at": sess['started_at'],
+                "ended_at": sess['ended_at'],
+                "episodes": sess['episodes'],
+                "max_episode": sess['max_episode'],
+                "avg_win_rate": round(sess.get('avg_win_rate', 0) or 0, 2),
+                "avg_profit_factor": round(sess.get('avg_profit_factor', 0) or 0, 2),
+                "total_pnl": round(sess.get('total_pnl', 0) or 0, 2),
+                "avg_reward": round(sess.get('avg_reward', 0) or 0, 4)
+            })
+
+        return {
+            "success": True,
+            "data": {
+                "sessions": formatted_sessions,
+                "session_count": len(formatted_sessions)
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training-latest", summary="Get Latest Training Session Metrics")
+async def get_latest_training() -> Dict[str, Any]:
+    """
+    Get the most recent training session's final metrics.
+
+    Quick endpoint to show current training state without loading full history.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        latest = data_manager.get_latest_training_metrics()
+        bot_state = data_manager.get_bot_state()
+
+        return {
+            "success": True,
+            "data": {
+                "latest_episode": latest if latest else None,
+                "bot_state": {
+                    "trading_iq": bot_state.get('trading_iq', 0),
+                    "expertise_level": bot_state.get('expertise_level', 'Untrained'),
+                    "training_sessions": bot_state.get('training_sessions', 0),
+                    "total_training_episodes": bot_state.get('total_training_episodes', 0),
+                    "total_training_trades": bot_state.get('total_training_trades', 0),
+                    "last_training_date": bot_state.get('last_training_date'),
+                    "avg_win_rate": bot_state.get('avg_win_rate', 0),
+                    "avg_profit_factor": bot_state.get('avg_profit_factor', 0)
+                }
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bot-state", summary="Get Current Bot State")
+async def get_bot_state_endpoint() -> Dict[str, Any]:
+    """
+    Get current bot state from centralized database.
+
+    Single source of truth for all bot statistics and configuration.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        state = data_manager.get_bot_state()
+
+        return {
+            "success": True,
+            "data": state
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# MODEL VERSIONING ENDPOINTS (Phase 3)
+# ============================================================================
+
+@router.get("/model-versions", summary="Get All Model Versions")
+async def get_model_versions_endpoint(
+    limit: int = Query(20, ge=1, le=100, description="Maximum versions to return")
+) -> Dict[str, Any]:
+    """
+    Get all registered model versions.
+
+    Shows training history and allows comparing different model versions.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        versions = data_manager.get_model_versions(limit=limit)
+
+        formatted_versions = []
+        for v in versions:
+            formatted_versions.append({
+                "version": v['version'],
+                "created_at": v['created_at'],
+                "file_path": v.get('file_path'),
+                "training_episodes": v.get('training_episodes'),
+                "training_session_id": v.get('training_session_id'),
+                "final_iq": v.get('final_iq'),
+                "final_win_rate": round(v.get('final_win_rate', 0) or 0, 2),
+                "final_profit_factor": round(v.get('final_profit_factor', 0) or 0, 2),
+                "final_sharpe": round(v.get('final_sharpe', 0) or 0, 2) if v.get('final_sharpe') else None,
+                "notes": v.get('notes'),
+                "is_active": bool(v.get('is_active'))
+            })
+
+        return {
+            "success": True,
+            "data": {
+                "versions": formatted_versions,
+                "version_count": len(formatted_versions)
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/model-versions/active", summary="Get Active Model Version")
+async def get_active_model_endpoint() -> Dict[str, Any]:
+    """
+    Get the currently active model version.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        active = data_manager.get_active_model_version()
+
+        if not active:
+            return {
+                "success": True,
+                "data": None,
+                "message": "No active model version found"
+            }
+
+        return {
+            "success": True,
+            "data": {
+                "version": active['version'],
+                "created_at": active['created_at'],
+                "file_path": active.get('file_path'),
+                "training_episodes": active.get('training_episodes'),
+                "final_iq": active.get('final_iq'),
+                "final_win_rate": round(active.get('final_win_rate', 0) or 0, 2),
+                "final_profit_factor": round(active.get('final_profit_factor', 0) or 0, 2),
+                "final_sharpe": round(active.get('final_sharpe', 0) or 0, 2) if active.get('final_sharpe') else None,
+                "notes": active.get('notes')
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/trades-by-model", summary="Get Trades by Model Version")
+async def get_trades_by_model(
+    version: Optional[str] = Query(None, description="Filter by specific model version"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum trades to return")
+) -> Dict[str, Any]:
+    """
+    Get trades grouped by model version.
+
+    Useful for comparing model performance across different versions.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        # Get trades with model version info
+        with data_manager.get_db() as conn:
+            cur = conn.cursor()
+
+            if version:
+                cur.execute("""
+                    SELECT model_version, COUNT(*) as trades,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                           SUM(pnl) as total_pnl,
+                           AVG(pnl) as avg_pnl
+                    FROM trades
+                    WHERE model_version = ?
+                    GROUP BY model_version
+                """, (version,))
+            else:
+                cur.execute("""
+                    SELECT model_version, COUNT(*) as trades,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                           SUM(pnl) as total_pnl,
+                           AVG(pnl) as avg_pnl
+                    FROM trades
+                    WHERE model_version IS NOT NULL
+                    GROUP BY model_version
+                    ORDER BY total_pnl DESC
+                    LIMIT ?
+                """, (limit,))
+
+            results = cur.fetchall()
+
+        model_stats = []
+        for row in results:
+            model_version, trades, wins, total_pnl, avg_pnl = row
+            model_stats.append({
+                "model_version": model_version,
+                "trade_count": trades,
+                "wins": wins,
+                "losses": trades - wins,
+                "win_rate": round(wins / trades * 100, 2) if trades > 0 else 0,
+                "total_pnl": round(total_pnl or 0, 2),
+                "avg_pnl": round(avg_pnl or 0, 2)
+            })
+
+        return {
+            "success": True,
+            "data": {
+                "models": model_stats,
+                "model_count": len(model_stats)
+            }
+        }
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

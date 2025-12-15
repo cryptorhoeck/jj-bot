@@ -420,6 +420,17 @@ class JJBotPro:
         self.positions: Dict[str, Position] = self._load_positions()
         self.trade_history: List[TradeRecord] = self._load_trade_history()
 
+        # Model versioning - load current active model version
+        self._current_model_version = None
+        if DATA_MANAGER_AVAILABLE:
+            try:
+                active_model = data_manager.get_active_model_version()
+                if active_model:
+                    self._current_model_version = active_model.get('version')
+                    logger.info(f"Active model version: {self._current_model_version}")
+            except Exception as e:
+                logger.debug(f"Could not load model version: {e}")
+
         # Lock for thread-safe position modifications
         self._position_lock = asyncio.Lock()
         self._state_lock = asyncio.Lock()  # Lock for state file operations
@@ -1393,6 +1404,23 @@ class JJBotPro:
                 # Periodic state save (every 5 minutes)
                 if (datetime.now() - last_save_time).total_seconds() >= save_interval:
                     self._save_state()
+                    # Record equity snapshot for equity curve
+                    if DATA_MANAGER_AVAILABLE:
+                        try:
+                            drawdown = (self.peak_equity - self.equity) if self.peak_equity > 0 else 0
+                            drawdown_pct = drawdown / self.peak_equity if self.peak_equity > 0 else 0
+                            data_manager.record_equity_snapshot(
+                                equity=self.equity,
+                                daily_pnl=self.daily_pnl,
+                                total_pnl=self.stats.get("total_pnl", 0),
+                                drawdown=drawdown,
+                                drawdown_pct=drawdown_pct,
+                                peak_equity=self.peak_equity,
+                                open_positions=len(self.positions),
+                                mode=self.config.mode
+                            )
+                        except Exception as e:
+                            logger.debug(f"Failed to record equity snapshot: {e}")
                     last_save_time = datetime.now()
                     logger.debug("Periodic state save completed")
 
@@ -2268,7 +2296,8 @@ class JJBotPro:
                     pnl_pct=pnl_pct,
                     slippage=total_slippage_pct,
                     signal_source=pos.signal_source,
-                    exit_reason=reason
+                    exit_reason=reason,
+                    model_version=self._current_model_version
                 )
                 # Remove closed position from database
                 data_manager.remove_position(symbol)
@@ -2760,6 +2789,58 @@ class JJBotPro:
         self.stats["best_profit_factor"] = max(self.stats.get("best_profit_factor", 0), current_best_profit_factor)
 
         self._save_state()  # Persist IQ and training history to file
+
+        # Register model version with auto-backup
+        if DATA_MANAGER_AVAILABLE:
+            try:
+                import shutil
+                from datetime import datetime as dt
+
+                # Generate version string
+                version = dt.now().strftime("v%Y%m%d_%H%M%S")
+
+                # Create backup directory
+                models_dir = os.path.dirname(self.config.rl_model_path)
+                backup_dir = os.path.join(models_dir, "versions")
+                os.makedirs(backup_dir, exist_ok=True)
+
+                # Copy model to versioned backup
+                backup_path = os.path.join(backup_dir, f"ppo_agent_{version}.pt")
+                shutil.copy2(self.config.rl_model_path, backup_path)
+
+                # Calculate Sharpe ratio from training stats
+                final_sharpe = None
+                if hasattr(self, 'training_metrics'):
+                    returns = self.training_metrics.get('episode_returns', [])
+                    if len(returns) > 1:
+                        import numpy as np
+                        returns_arr = np.array(returns)
+                        mean_return = np.mean(returns_arr)
+                        std_return = np.std(returns_arr)
+                        if std_return > 0:
+                            final_sharpe = (mean_return / std_return) * np.sqrt(252)
+
+                # Register in database
+                data_manager.register_model_version(
+                    version=version,
+                    file_path=backup_path,
+                    training_episodes=completed_episodes,
+                    training_session_id=training_session_id if training_session_id else None,
+                    final_iq=self.stats.get("trading_iq", 0),
+                    final_win_rate=self.stats.get("avg_win_rate", 0),
+                    final_profit_factor=self.stats.get("avg_profit_factor", 0),
+                    final_sharpe=final_sharpe,
+                    notes=f"Training completed: {completed_episodes} episodes",
+                    is_active=True
+                )
+
+                # Store current model version in bot state
+                self._current_model_version = version
+                data_manager.update_bot_state(current_model_version=version)
+
+                logger.info(f"Model version {version} registered and backed up to {backup_path}")
+            except Exception as e:
+                logger.warning(f"Failed to register model version: {e}")
 
         # Switch back to paper mode (both in-memory and config file)
         self.config.mode = "paper"
