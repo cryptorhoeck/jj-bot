@@ -226,6 +226,7 @@ def get_summary() -> Dict[str, Any]:
             starting_capital = config.get("initial_capital", 10000.0)
 
         # Try to get equity from centralized database first (source of truth)
+        saved_state = None  # Initialize for later use
         try:
             from modules.database import data_manager
             bot_state = data_manager.get_bot_state()
@@ -241,6 +242,10 @@ def get_summary() -> Dict[str, Any]:
                 current_equity = saved_state["equity"]
             else:
                 current_equity = starting_capital + total_pnl
+
+        # Load saved state for IQ/training stats if not already loaded
+        if saved_state is None:
+            saved_state = get_saved_state()
 
         # Get latest trade timestamp
         cur.execute("SELECT MAX(timestamp) FROM trades")
