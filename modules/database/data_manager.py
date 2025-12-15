@@ -308,13 +308,34 @@ def update_bot_state(**kwargs) -> None:
 
 
 def reset_bot_state(initial_equity: float = 0.0) -> None:
-    """Reset bot state to defaults"""
+    """Reset bot state to defaults (including all cumulative training metrics)"""
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM bot_state")
         cur.execute("""
-            INSERT INTO bot_state (id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated)
-            VALUES (1, ?, ?, ?, 'Untrained', 'paper', datetime('now'))
+            INSERT INTO bot_state (
+                id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated,
+                trading_iq, training_sessions, total_training_episodes, total_training_trades,
+                avg_win_rate, avg_profit_factor, best_win_rate, best_profit_factor,
+                cumulative_training_pnl, training_total_wins, training_total_losses,
+                training_total_win_amount, training_total_loss_amount,
+                training_largest_win, training_largest_loss,
+                training_best_win_streak, training_worst_loss_streak,
+                training_total_reward, training_long_trades, training_short_trades,
+                training_best_episode_pnl, training_worst_episode_pnl,
+                training_total_sharpe, training_total_sortino, training_total_max_drawdown
+            ) VALUES (
+                1, ?, ?, ?, 'Untrained', 'paper', datetime('now'),
+                0, 0, 0, 0,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0, 0,
+                0.0, 0.0,
+                0.0, 0.0,
+                0, 0,
+                0.0, 0, 0,
+                0.0, 0.0,
+                0.0, 0.0, 0.0
+            )
         """, (initial_equity, initial_equity, initial_equity))
 
 
@@ -964,11 +985,32 @@ def reset_all_data(initial_equity: float = 0.0) -> Dict[str, int]:
             counts[table] = cur.fetchone()[0]
             cur.execute(f"DELETE FROM {table}")
 
-        # Reset bot_state
+        # Reset bot_state completely (including all cumulative training metrics)
         cur.execute("DELETE FROM bot_state")
         cur.execute("""
-            INSERT INTO bot_state (id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated)
-            VALUES (1, ?, ?, ?, 'Untrained', 'paper', datetime('now'))
+            INSERT INTO bot_state (
+                id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated,
+                trading_iq, training_sessions, total_training_episodes, total_training_trades,
+                avg_win_rate, avg_profit_factor, best_win_rate, best_profit_factor,
+                cumulative_training_pnl, training_total_wins, training_total_losses,
+                training_total_win_amount, training_total_loss_amount,
+                training_largest_win, training_largest_loss,
+                training_best_win_streak, training_worst_loss_streak,
+                training_total_reward, training_long_trades, training_short_trades,
+                training_best_episode_pnl, training_worst_episode_pnl,
+                training_total_sharpe, training_total_sortino, training_total_max_drawdown
+            ) VALUES (
+                1, ?, ?, ?, 'Untrained', 'paper', datetime('now'),
+                0, 0, 0, 0,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0, 0,
+                0.0, 0.0,
+                0.0, 0.0,
+                0, 0,
+                0.0, 0, 0,
+                0.0, 0.0,
+                0.0, 0.0, 0.0
+            )
         """, (initial_equity, initial_equity, initial_equity))
         counts['bot_state'] = 1
 
@@ -1025,7 +1067,7 @@ def reset_training_data() -> Dict[str, int]:
             counts[table] = cur.fetchone()[0]
             cur.execute(f"DELETE FROM {table}")
 
-        # Reset training-related fields in bot_state
+        # Reset training-related fields in bot_state (including cumulative metrics)
         cur.execute("""
             UPDATE bot_state SET
                 trading_iq = 0,
@@ -1039,6 +1081,24 @@ def reset_training_data() -> Dict[str, int]:
                 avg_profit_factor = 0.0,
                 best_win_rate = 0.0,
                 best_profit_factor = 0.0,
+                -- Reset cumulative training metrics
+                cumulative_training_pnl = 0.0,
+                training_total_wins = 0,
+                training_total_losses = 0,
+                training_total_win_amount = 0.0,
+                training_total_loss_amount = 0.0,
+                training_largest_win = 0.0,
+                training_largest_loss = 0.0,
+                training_best_win_streak = 0,
+                training_worst_loss_streak = 0,
+                training_total_reward = 0.0,
+                training_long_trades = 0,
+                training_short_trades = 0,
+                training_best_episode_pnl = 0.0,
+                training_worst_episode_pnl = 0.0,
+                training_total_sharpe = 0.0,
+                training_total_sortino = 0.0,
+                training_total_max_drawdown = 0.0,
                 last_updated = datetime('now')
             WHERE id = 1
         """)
