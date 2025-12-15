@@ -167,7 +167,7 @@ async def get_bot_status():
         status["config"] = {
             "exchange": config.get("exchange", "binance"),
             "symbols": config.get("symbols", []),
-            "initial_capital": config.get("initial_capital", 10000),
+            "initial_capital": config.get("initial_capital", 0),
             "max_position_pct": config.get("max_position_pct", 0.10),
             "use_rl_agent": config.get("use_rl_agent", True),
             "use_edge_strategies": config.get("use_edge_strategies", True),
@@ -696,7 +696,7 @@ async def quick_start_paper():
             "api_secret": "",
             "sandbox": True,
             "symbols": ["BTC/USDT", "ETH/USDT"],
-            "initial_capital": 10000.0,
+            "initial_capital": 0.0,
             "max_position_pct": 0.10,
             "max_positions": 3,
             "stop_loss_pct": 0.02,

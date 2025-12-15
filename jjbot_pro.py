@@ -151,7 +151,7 @@ class BotConfig:
     ])
 
     # Capital and position sizing
-    initial_capital: float = 10000.0
+    initial_capital: float = 0.0
     max_position_pct: float = 0.05  # 5% per position (smaller for more symbols)
     max_positions: int = 10  # Allow more concurrent positions
 

@@ -11,6 +11,15 @@ import './App.css';
 const API_BASE = 'http://127.0.0.1:8000';
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 
+// Available symbols for selection (verified Kraken USD pairs)
+const AVAILABLE_SYMBOLS = [
+  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'DOT', 'SHIB',
+  'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL', 'APT', 'ARB', 'OP',
+  'NEAR', 'INJ', 'AAVE', 'GRT', 'FTM', 'ALGO', 'XMR', 'XTZ', 'SAND', 'MANA',
+  'CRV', 'LDO', 'RNDR', 'SNX', 'IMX', '1INCH', 'ENJ', 'BAT', 'COMP', 'ZEC',
+  'DASH', 'WAVES', 'KAVA', 'ROSE', 'FLR', 'BLUR', 'MASK', 'ACH', 'AUDIO', 'BAND'
+];
+
 // Currency configuration - CAD is the base currency
 // All amounts in the system are stored in CAD
 const CURRENCIES = {
@@ -49,6 +58,19 @@ function App() {
   const [lastMarketFetch, setLastMarketFetch] = useState(null);
   const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Shared selected symbols for Trading and Training (persisted to localStorage)
+  const [selectedSymbols, setSelectedSymbols] = useState(() => {
+    const saved = localStorage.getItem('jjbot_selected_symbols');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
 
   // Unified Bot Status
   const [botStatus, setBotStatus] = useState({
@@ -117,6 +139,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('jjbot_currency', currency);
   }, [currency]);
+
+  // Save selected symbols to localStorage
+  useEffect(() => {
+    localStorage.setItem('jjbot_selected_symbols', JSON.stringify(selectedSymbols));
+  }, [selectedSymbols]);
 
   // ALL FETCH FUNCTIONS
   const fetchTrades = async () => {
@@ -631,6 +658,9 @@ function App() {
               learningData={learningData}
               sharedBotStatus={botStatus}
               onBotStatusChange={checkBotStatus}
+              selectedSymbols={selectedSymbols}
+              setSelectedSymbols={setSelectedSymbols}
+              availableSymbols={AVAILABLE_SYMBOLS}
             />
           )}
 
@@ -639,6 +669,9 @@ function App() {
               API_BASE={API_BASE}
               sharedBotStatus={botStatus}
               onBotStatusChange={checkBotStatus}
+              selectedSymbols={selectedSymbols}
+              setSelectedSymbols={setSelectedSymbols}
+              availableSymbols={AVAILABLE_SYMBOLS}
             />
           )}
 

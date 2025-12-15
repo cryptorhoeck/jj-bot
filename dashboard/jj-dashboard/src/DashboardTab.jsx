@@ -239,9 +239,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
           <p className="stat-label">Current Equity</p>
           <p
             className="stat-value text-info"
-            style={{ fontSize: getAutoFontSize(formatCurrency(summary.current_equity || 10000, currency)) }}
+            style={{ fontSize: getAutoFontSize(formatCurrency(summary.current_equity || 0, currency)) }}
           >
-            {formatCurrency(summary.current_equity || 10000, currency)}
+            {formatCurrency(summary.current_equity || 0, currency)}
           </p>
           <p className={`stat-change ${summary.return_pct >= 0 ? 'positive' : 'negative'}`}>
             {summary.return_pct >= 0 ? '+' : ''}{summary.return_pct?.toFixed(2) || '0.00'}% return

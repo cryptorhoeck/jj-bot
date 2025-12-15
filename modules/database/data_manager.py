@@ -139,10 +139,10 @@ def init_database():
         cur.execute("""
         CREATE TABLE IF NOT EXISTS bot_state (
             id INTEGER PRIMARY KEY CHECK (id = 1),
-            equity REAL DEFAULT 10000.0,
-            peak_equity REAL DEFAULT 10000.0,
+            equity REAL DEFAULT 0.0,
+            peak_equity REAL DEFAULT 0.0,
             daily_pnl REAL DEFAULT 0.0,
-            daily_start_equity REAL DEFAULT 10000.0,
+            daily_start_equity REAL DEFAULT 0.0,
             total_pnl REAL DEFAULT 0.0,
             total_trades INTEGER DEFAULT 0,
             winning_trades INTEGER DEFAULT 0,
@@ -218,7 +218,7 @@ def init_database():
         if cur.fetchone()[0] == 0:
             cur.execute("""
                 INSERT INTO bot_state (id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated)
-                VALUES (1, 10000.0, 10000.0, 10000.0, 'Untrained', 'paper', datetime('now'))
+                VALUES (1, 0.0, 0.0, 0.0, 'Untrained', 'paper', datetime('now'))
             """)
 
         print(f"[OK] Database initialized: {DB_PATH}")
@@ -261,7 +261,7 @@ def update_bot_state(**kwargs) -> None:
             cur.execute(f"INSERT INTO bot_state ({columns}) VALUES ({placeholders})", values)
 
 
-def reset_bot_state(initial_equity: float = 10000.0) -> None:
+def reset_bot_state(initial_equity: float = 0.0) -> None:
     """Reset bot state to defaults"""
     with get_db() as conn:
         cur = conn.cursor()
@@ -767,7 +767,7 @@ def clear_model_versions() -> int:
 # RESET OPERATIONS
 # ============================================================================
 
-def reset_all_data(initial_equity: float = 10000.0) -> Dict[str, int]:
+def reset_all_data(initial_equity: float = 0.0) -> Dict[str, int]:
     """
     Reset ALL data - complete fresh start.
     Returns count of deleted records per table.
@@ -794,7 +794,7 @@ def reset_all_data(initial_equity: float = 10000.0) -> Dict[str, int]:
     return counts
 
 
-def reset_trading_data(initial_equity: float = 10000.0) -> Dict[str, int]:
+def reset_trading_data(initial_equity: float = 0.0) -> Dict[str, int]:
     """
     Reset trading data only - keeps training history and IQ.
     Returns count of deleted records per table.
@@ -909,10 +909,10 @@ def migrate_from_json(json_path: str) -> Dict[str, int]:
                         last_updated = datetime('now')
                     WHERE id = 1
                 """, (
-                    data.get('equity', 10000),
-                    data.get('peak_equity', 10000),
+                    data.get('equity', 0),
+                    data.get('peak_equity', 0),
                     data.get('daily_pnl', 0),
-                    data.get('daily_start_equity', 10000),
+                    data.get('daily_start_equity', 0),
                     stats.get('total_trades', 0),
                     stats.get('winning_trades', 0),
                     stats.get('total_pnl', 0),

@@ -501,14 +501,14 @@ async def clear_data():
     """Clear trading data only - preserves training IQ but resets equity"""
     from pathlib import Path
 
-    # Load config to get initial_capital
+    # Load config to get initial_capital (defaults to 0 if not set)
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     config_path = PROJECT_ROOT / "config" / "bot_config.json"
-    initial_capital = 10000.0
+    initial_capital = 0.0
     try:
         with open(config_path) as f:
             config = json.load(f)
-            initial_capital = config.get("initial_capital", 10000.0)
+            initial_capital = config.get("initial_capital", 0.0)
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         pass
 
@@ -577,13 +577,13 @@ async def reset_all_data():
     backup_dir = PROJECT_ROOT / "backups"
     backup_dir.mkdir(exist_ok=True)
 
-    # Load config to get initial_capital
+    # Load config to get initial_capital (defaults to 0 if not set)
     config_path = PROJECT_ROOT / "config" / "bot_config.json"
-    initial_capital = 10000.0
+    initial_capital = 0.0
     try:
         with open(config_path) as f:
             config = json.load(f)
-            initial_capital = config.get("initial_capital", 10000.0)
+            initial_capital = config.get("initial_capital", 0.0)
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         pass
 

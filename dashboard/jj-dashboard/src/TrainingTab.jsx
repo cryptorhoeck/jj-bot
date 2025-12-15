@@ -57,9 +57,17 @@ const calculateCandles = (timeframe, historyDays) => {
   return Math.floor((historyDays * 24 * 60) / minutes);
 };
 
-export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
+export function TrainingTab({
+  API_BASE,
+  sharedBotStatus,
+  onBotStatusChange,
+  selectedSymbols = [],
+  setSelectedSymbols,
+  availableSymbols = []
+}) {
   const [isTraining, setIsTraining] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [symbolSearch, setSymbolSearch] = useState('');
 
   // Training settings
   const [trainSettings, setTrainSettings] = useState({
@@ -929,6 +937,79 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
               ))}
             </select>
             <p className="text-xs text-muted mt-1">How far back to learn from</p>
+          </div>
+        </div>
+
+        {/* Symbol Selection */}
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold">📊 Training Symbols</h4>
+            <span className="badge badge-info">{selectedSymbols.length} selected</span>
+          </div>
+          <p className="text-xs text-muted mb-3">
+            Select symbols for training and trading. Changes apply to both tabs.
+          </p>
+
+          {/* Symbol Search */}
+          <input
+            type="text"
+            placeholder="Search symbols..."
+            value={symbolSearch}
+            onChange={(e) => setSymbolSearch(e.target.value)}
+            className="input mb-3"
+          />
+
+          {/* Quick Select Buttons */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              onClick={() => setSelectedSymbols(availableSymbols.slice(0, 10))}
+              className="btn btn-ghost btn-sm"
+            >
+              Top 10
+            </button>
+            <button
+              onClick={() => setSelectedSymbols(availableSymbols.slice(0, 25))}
+              className="btn btn-ghost btn-sm"
+            >
+              Top 25
+            </button>
+            <button
+              onClick={() => setSelectedSymbols([...availableSymbols])}
+              className="btn btn-ghost btn-sm"
+            >
+              All ({availableSymbols.length})
+            </button>
+            <button
+              onClick={() => setSelectedSymbols([])}
+              className="btn btn-ghost btn-sm text-danger"
+            >
+              Clear
+            </button>
+          </div>
+
+          {/* Symbol Grid */}
+          <div className="grid grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2 max-h-48 overflow-y-auto p-2 bg-[var(--bg-secondary)] rounded-lg">
+            {availableSymbols
+              .filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()))
+              .map(symbol => (
+                <button
+                  key={symbol}
+                  onClick={() => {
+                    if (selectedSymbols.includes(symbol)) {
+                      setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
+                    } else {
+                      setSelectedSymbols([...selectedSymbols, symbol]);
+                    }
+                  }}
+                  className={`px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+                    selectedSymbols.includes(symbol)
+                      ? 'bg-info text-white'
+                      : 'bg-[var(--bg-tertiary)] text-muted hover:text-[var(--text-color)]'
+                  }`}
+                >
+                  {symbol}
+                </button>
+              ))}
           </div>
         </div>
 

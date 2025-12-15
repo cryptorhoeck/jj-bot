@@ -40,16 +40,16 @@ function DelayedNumberInput({ value, onChange, className, step, min, max, multip
   );
 }
 
-// Available symbols for selection (verified Kraken USD pairs)
-const AVAILABLE_SYMBOLS = [
-  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
-  'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'POL', 'FIL', 'APE', 'AAVE', 'CRV',
-  'SNX', 'GRT', 'SAND', 'MANA', 'AXS', 'ENJ', 'BAT', 'ZEC', 'DASH', 'FLOW',
-  'XTZ', 'TRX', 'ETC', 'SHIB', 'PEPE', 'OP', 'ARB', 'INJ', 'RUNE', 'KAVA',
-  'STORJ', 'SUSHI', 'YFI', '1INCH', 'FET', 'IMX', 'APT', 'BLUR', 'NEAR', 'KSM'
-];
-
-export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, onBotStatusChange }) {
+export function TradingTab({
+  darkMode,
+  API_BASE,
+  learningData,
+  sharedBotStatus,
+  onBotStatusChange,
+  selectedSymbols = [],
+  setSelectedSymbols,
+  availableSymbols = []
+}) {
   // Use shared state from App.jsx when available, otherwise manage locally
   const [botRunning, setBotRunning] = useState(sharedBotStatus?.running || false);
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
   // Recommended default config (professional trading settings)
   const DEFAULT_CONFIG = {
     mode: 'paper',
-    initial_capital: 10000,
+    initial_capital: 0,
     max_position_pct: 0.02,      // 2% per trade (conservative)
     max_positions: 5,            // Max 5 concurrent positions
     stop_loss_pct: 0.02,         // 2% stop loss
@@ -85,14 +85,13 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
   const [proConfig, setProConfig] = useState({...DEFAULT_CONFIG});
 
   const [botStats, setBotStats] = useState({
-    equity: 10000,
+    equity: 0,
     positions: 0,
     total_trades: 0,
     total_pnl: 0,
     win_rate: 0
   });
 
-  const [selectedSymbols, setSelectedSymbols] = useState([]);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
 
@@ -105,7 +104,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
 
       if (data.running) {
         setBotStats({
-          equity: data.equity || 10000,
+          equity: data.equity || 0,
           positions: data.positions || 0,
           total_trades: data.total_trades || 0,
           total_pnl: data.total_pnl || 0,
@@ -124,14 +123,15 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       const data = await response.json();
       if (data.config) {
         setProConfig(prev => ({ ...prev, ...data.config }));
-        if (data.config.symbols) {
+        // Only update symbols from config if we have none selected (first load)
+        if (data.config.symbols && selectedSymbols.length === 0) {
           setSelectedSymbols(data.config.symbols.map(s => s.replace('/USD', '')));
         }
       }
     } catch (error) {
       console.error('Failed to load pro config:', error);
     }
-  }, [API_BASE]);
+  }, [API_BASE, selectedSymbols.length, setSelectedSymbols]);
 
   // Load open positions
   const loadPositions = useCallback(async () => {
@@ -158,7 +158,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
   }, [checkBotStatus, loadProConfig, loadPositions, botRunning]);
 
   // Save config to API
-  const saveConfig = async (updates) => {
+  const saveConfig = async (updates, silent = false) => {
     try {
       const response = await fetch(`${API_BASE}/api/pro/config`, {
         method: 'PUT',
@@ -167,13 +167,31 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
       });
       const data = await response.json();
       if (data.status === 'updated') {
-        toast.success('Configuration saved');
+        if (!silent) toast.success('Configuration saved');
         setProConfig(prev => ({ ...prev, ...updates }));
       }
     } catch (error) {
-      toast.error('Failed to save config');
+      if (!silent) toast.error('Failed to save config');
     }
   };
+
+  // Sync selectedSymbols to server config when they change (from either tab)
+  useEffect(() => {
+    // Skip initial empty state and when loading from server
+    if (selectedSymbols.length === 0) return;
+
+    const symbolsWithPair = selectedSymbols.map(s => s.includes('/') ? s : `${s}/USD`);
+    const currentSymbols = proConfig.symbols || [];
+
+    // Only sync if symbols actually changed
+    if (JSON.stringify(symbolsWithPair.sort()) !== JSON.stringify(currentSymbols.sort())) {
+      // Debounce the save to avoid too many API calls
+      const timeoutId = setTimeout(() => {
+        saveConfig({ symbols: symbolsWithPair }, true); // silent save
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedSymbols]);
 
   // Update config field with immediate save for sliders, debounce for text inputs
   const updateConfig = (field, value, immediate = false) => {
@@ -277,7 +295,7 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
   };
 
   // Filter symbols by search
-  const filteredSymbols = AVAILABLE_SYMBOLS.filter(s =>
+  const filteredSymbols = availableSymbols.filter(s =>
     s.toLowerCase().includes(symbolSearch.toLowerCase())
   );
 
@@ -633,8 +651,8 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => {
-                setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 10));
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 10).map(s => `${s}/USD`) });
+                setSelectedSymbols(availableSymbols.slice(0, 10));
+                saveConfig({ symbols: availableSymbols.slice(0, 10).map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >
@@ -642,8 +660,8 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             </button>
             <button
               onClick={() => {
-                setSelectedSymbols(AVAILABLE_SYMBOLS.slice(0, 25));
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.slice(0, 25).map(s => `${s}/USD`) });
+                setSelectedSymbols(availableSymbols.slice(0, 25));
+                saveConfig({ symbols: availableSymbols.slice(0, 25).map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >
@@ -651,8 +669,8 @@ export function TradingTab({ darkMode, API_BASE, learningData, sharedBotStatus, 
             </button>
             <button
               onClick={() => {
-                setSelectedSymbols(AVAILABLE_SYMBOLS);
-                saveConfig({ symbols: AVAILABLE_SYMBOLS.map(s => `${s}/USD`) });
+                setSelectedSymbols(availableSymbols);
+                saveConfig({ symbols: availableSymbols.map(s => `${s}/USD`) });
               }}
               className="btn btn-sm"
             >

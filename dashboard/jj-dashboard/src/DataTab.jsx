@@ -50,8 +50,8 @@ function EquityChart({ data, height = 150 }) {
     return `${x},${y}`;
   }).join(' ');
 
-  const startEquity = data[0]?.equity || 10000;
-  const endEquity = data[data.length - 1]?.equity || 10000;
+  const startEquity = data[0]?.equity || 0;
+  const endEquity = data[data.length - 1]?.equity || 0;
   const isPositive = endEquity >= startEquity;
 
   return (
