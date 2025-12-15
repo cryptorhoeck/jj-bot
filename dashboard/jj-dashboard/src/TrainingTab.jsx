@@ -71,27 +71,8 @@ export function TrainingTab({ API_BASE, sharedBotStatus, onBotStatusChange }) {
   // Training progress from bot
   const [trainingProgress, setTrainingProgress] = useState(null);
 
-  // Last session metrics - persists after training stops
-  const [lastSessionMetrics, setLastSessionMetrics] = useState(() => {
-    // Try to load from localStorage on mount
-    try {
-      const saved = localStorage.getItem('jjbot_last_training_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  // Save last session metrics to localStorage when updated
-  useEffect(() => {
-    if (lastSessionMetrics) {
-      try {
-        localStorage.setItem('jjbot_last_training_session', JSON.stringify(lastSessionMetrics));
-      } catch (e) {
-        console.error('Failed to save last session metrics:', e);
-      }
-    }
-  }, [lastSessionMetrics]);
+  // Last session metrics - now fetched from server (no localStorage caching)
+  const [lastSessionMetrics, setLastSessionMetrics] = useState(null);
 
   // Trading IQ and history
   const [tradingIQ, setTradingIQ] = useState({

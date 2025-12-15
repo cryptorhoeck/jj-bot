@@ -89,6 +89,15 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine
 from service_endpoints import router as service_router, service_manager
+
+# Import centralized data manager
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from modules.database import data_manager
+    DATA_MANAGER_AVAILABLE = True
+except ImportError:
+    DATA_MANAGER_AVAILABLE = False
+    data_manager = None
 from backtest_endpoints import router as backtest_router
 from simulator_config_endpoints import router as simulator_config_router
 from strategy_config_endpoints import router as strategy_config_router
@@ -489,10 +498,79 @@ async def export_data():
 
 @app.post("/api/data/clear")
 async def clear_data():
-    """Clear trading data only (trades.db) - preserves training IQ but resets equity"""
+    """Clear trading data only - preserves training IQ but resets equity"""
+    from pathlib import Path
+
+    # Load config to get initial_capital
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    config_path = PROJECT_ROOT / "config" / "bot_config.json"
+    initial_capital = 10000.0
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+            initial_capital = config.get("initial_capital", 10000.0)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+
+    try:
+        if DATA_MANAGER_AVAILABLE:
+            counts = data_manager.reset_trading_data(initial_capital)
+            return {
+                "status": "cleared",
+                "message": f"Trading data cleared, equity reset to ${initial_capital:,.2f}. Training IQ preserved.",
+                "cleared": counts
+            }
+        else:
+            return {"status": "error", "message": "Data manager not available"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/data/clear-training")
+async def clear_training_data():
+    """Clear training data - resets the AI to untrained state"""
     import shutil
     from pathlib import Path
-    import json
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_dir = PROJECT_ROOT / "backups"
+    backup_dir.mkdir(exist_ok=True)
+
+    backed_up = []
+
+    try:
+        # Clear training data from database
+        if DATA_MANAGER_AVAILABLE:
+            counts = data_manager.reset_training_data()
+
+        # Backup and remove trained model if exists
+        model_file = PROJECT_ROOT / "models" / "ppo_agent.pt"
+        if model_file.exists():
+            backup_path = backup_dir / f"ppo_agent_backup_{timestamp}.pt"
+            shutil.copy2(model_file, backup_path)
+            backed_up.append(f"ppo_agent.pt -> {backup_path.name}")
+            model_file.unlink()
+
+        return {
+            "status": "cleared",
+            "message": f"Training data cleared. AI reset to untrained state.",
+            "backed_up": backed_up,
+            "cleared": counts if DATA_MANAGER_AVAILABLE else {}
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/data/reset-all")
+async def reset_all_data():
+    """
+    Reset ALL data - complete fresh start.
+    Clears trading data, training data, and removes model.
+    Also clears browser localStorage via response header.
+    """
+    import shutil
+    from pathlib import Path
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -507,95 +585,34 @@ async def clear_data():
             config = json.load(f)
             initial_capital = config.get("initial_capital", 10000.0)
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        pass  # Use default initial_capital
-
-    # Backup trades.db (JJ-Bot Pro database)
-    trades_db = PROJECT_ROOT / "data" / "trades.db"
-    backed_up = None
-    if trades_db.exists():
-        backup_path = backup_dir / f"trades_backup_{timestamp}.db"
-        shutil.copy2(trades_db, backup_path)
-        backed_up = backup_path.name
-
-    # Clear trades from database
-    try:
-        with engine.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM trades")
-            conn.commit()
-
-        # Reset equity in bot_state.json but preserve IQ
-        state_file = PROJECT_ROOT / "data" / "bot_state.json"
-        if state_file.exists():
-            try:
-                with open(state_file) as f:
-                    state_data = json.load(f)
-
-                # Reset equity to initial_capital
-                state_data["equity"] = initial_capital
-                state_data["peak_equity"] = initial_capital
-                state_data["daily_pnl"] = 0.0
-                state_data["daily_start_equity"] = initial_capital
-
-                # Reset trade stats but keep IQ
-                if "stats" in state_data:
-                    state_data["stats"]["total_trades"] = 0
-                    state_data["stats"]["winning_trades"] = 0
-                    state_data["stats"]["total_pnl"] = 0.0
-                    # Keep trading_iq, expertise_level, training_sessions, etc.
-
-                with open(state_file, 'w') as f:
-                    json.dump(state_data, f, indent=2)
-            except Exception as e:
-                logger.warning(f"Could not update state file: {e}")
-
-        return {
-            "status": "cleared",
-            "message": f"Trading data cleared, equity reset to ${initial_capital:,.2f}{f' (backed up to {backed_up})' if backed_up else ''}. Training IQ preserved."
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/data/clear-training")
-async def clear_training_data():
-    """Clear training data (bot_state.json with IQ) - resets the AI to untrained state"""
-    import shutil
-    from pathlib import Path
-
-    PROJECT_ROOT = Path(__file__).parent.parent.parent
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_dir = PROJECT_ROOT / "backups"
-    backup_dir.mkdir(exist_ok=True)
+        pass
 
     backed_up = []
 
-    # Backup bot_state.json (contains trading_iq and training progress)
-    state_file = PROJECT_ROOT / "data" / "bot_state.json"
-    if state_file.exists():
-        backup_path = backup_dir / f"bot_state_backup_{timestamp}.json"
-        shutil.copy2(state_file, backup_path)
-        backed_up.append(f"bot_state.json -> {backup_path.name}")
-        state_file.unlink()
+    try:
+        # Reset all data in database
+        if DATA_MANAGER_AVAILABLE:
+            counts = data_manager.reset_all_data(initial_capital)
+        else:
+            counts = {}
 
-    # Backup and remove trained model if exists
-    model_file = PROJECT_ROOT / "models" / "ppo_agent.pt"
-    if model_file.exists():
-        backup_path = backup_dir / f"ppo_agent_backup_{timestamp}.pt"
-        shutil.copy2(model_file, backup_path)
-        backed_up.append(f"ppo_agent.pt -> {backup_path.name}")
-        model_file.unlink()
+        # Backup and remove trained model if exists
+        model_file = PROJECT_ROOT / "models" / "ppo_agent.pt"
+        if model_file.exists():
+            backup_path = backup_dir / f"ppo_agent_backup_{timestamp}.pt"
+            shutil.copy2(model_file, backup_path)
+            backed_up.append(f"ppo_agent.pt -> {backup_path.name}")
+            model_file.unlink()
 
-    if backed_up:
         return {
             "status": "cleared",
-            "message": f"Training data cleared and backed up: {', '.join(backed_up)}. AI reset to untrained state."
+            "message": f"ALL data reset. Equity: ${initial_capital:,.2f}. AI: Untrained. Please refresh your browser to clear cached data.",
+            "backed_up": backed_up,
+            "cleared": counts,
+            "clear_localStorage": True  # Frontend should clear localStorage when it sees this
         }
-    else:
-        return {
-            "status": "cleared",
-            "message": "No training data found to clear."
-        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/api/data/import")

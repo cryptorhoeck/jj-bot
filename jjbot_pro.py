@@ -28,7 +28,7 @@ from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 from modules.event_bus import event_bus
 from modules.risk import RiskManager, RiskLimits
 
-# Database for trade logging
+# Database for trade logging (legacy - kept for backward compatibility)
 try:
     from glue.api.engine import log_trade as db_log_trade, init_db, get_trades as db_get_trades
     DB_AVAILABLE = True
@@ -37,6 +37,14 @@ except ImportError:
     db_log_trade = None
     init_db = None
     db_get_trades = None
+
+# Centralized data manager - SINGLE SOURCE OF TRUTH
+try:
+    from modules.database import data_manager
+    DATA_MANAGER_AVAILABLE = True
+except ImportError:
+    DATA_MANAGER_AVAILABLE = False
+    data_manager = None
 
 # Import version
 try:
@@ -551,231 +559,94 @@ class JJBotPro:
         )
 
     def _load_state(self) -> Optional[Dict]:
-        """Load saved bot state from bot_state.json (primary) and trades database (fallback)"""
-        import sqlite3
-        # Use absolute path relative to this file (same as engine.py does)
-        project_root = Path(__file__).parent
-        db_path = project_root / "data" / "trades.db"
-        state_file = project_root / "data" / "bot_state.json"
-
-        logger.info(f"Looking for state file at: {state_file}")
-        logger.info(f"State file exists: {state_file.exists()}")
-
-        # Primary: Load full state from bot_state.json
-        saved_equity = None
-        saved_peak_equity = None
-        saved_daily_pnl = 0.0
-        saved_daily_start_equity = None
-        saved_iq = 0
-        saved_level = "Untrained"
-        saved_stats = {}  # Initialize empty - will be populated from state file if exists
-        saved_training_history = {
-            "training_sessions": 0,
-            "total_training_episodes": 0,
-            "total_training_trades": 0,
-            "last_training_date": None,
-            "avg_win_rate": 0.0,
-            "avg_profit_factor": 0.0,
-            "avg_reward": 0.0,
-            "best_win_rate": 0.0,
-            "best_profit_factor": 0.0,
-        }
-
-        if state_file.exists():
-            try:
-                with open(state_file) as f:
-                    saved_data = json.load(f)
-                    # Load equity and related fields
-                    saved_equity = saved_data.get("equity")
-                    saved_peak_equity = saved_data.get("peak_equity")
-                    saved_daily_pnl = saved_data.get("daily_pnl", 0.0)
-                    saved_daily_start_equity = saved_data.get("daily_start_equity")
-
-                    saved_stats = saved_data.get("stats", {})
-                    saved_iq = saved_stats.get("trading_iq", 0)
-                    saved_level = saved_stats.get("expertise_level", "Untrained")
-                    # Load training history
-                    saved_training_history = {
-                        "training_sessions": saved_stats.get("training_sessions", 0),
-                        "total_training_episodes": saved_stats.get("total_training_episodes", 0),
-                        "total_training_trades": saved_stats.get("total_training_trades", 0),
-                        "last_training_date": saved_stats.get("last_training_date"),
-                        "avg_win_rate": saved_stats.get("avg_win_rate", 0.0),
-                        "avg_profit_factor": saved_stats.get("avg_profit_factor", 0.0),
-                        "avg_reward": saved_stats.get("avg_reward", 0.0),
-                        "best_win_rate": saved_stats.get("best_win_rate", 0.0),
-                        "best_profit_factor": saved_stats.get("best_profit_factor", 0.0),
-                    }
-                    logger.info(f"Loaded from state file: equity=${saved_equity}, IQ={saved_iq}, Level={saved_level}, Sessions={saved_training_history['training_sessions']}")
-            except Exception as e:
-                logger.warning(f"Failed to load from state file: {e}")
-        else:
-            logger.warning(f"No state file found at {state_file} - starting fresh")
-
-        logger.info(f"Looking for trades database at: {db_path}")
-
-        if not db_path.exists():
-            # If we have saved state (equity or IQ), use it
-            if saved_equity is not None or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
-                equity = saved_equity if saved_equity is not None else self.config.initial_capital
-                # Use stats from saved state file (not hardcoded zeros!)
-                return {
-                    "equity": equity,
-                    "peak_equity": saved_peak_equity if saved_peak_equity is not None else equity,
-                    "daily_pnl": saved_daily_pnl,
-                    "daily_start_equity": saved_daily_start_equity if saved_daily_start_equity is not None else equity,
-                    "stats": {
-                        "total_trades": saved_stats.get("total_trades", 0),
-                        "winning_trades": saved_stats.get("winning_trades", 0),
-                        "total_pnl": saved_stats.get("total_pnl", 0.0),
-                        "signals_analyzed": saved_stats.get("signals_analyzed", 0),
-                        "start_time": saved_stats.get("start_time"),
-                        "trading_iq": saved_iq,
-                        "expertise_level": saved_level,
-                        **saved_training_history,
-                    }
-                }
-            logger.info("No trades database found, starting fresh")
+        """Load saved bot state from centralized SQLite database"""
+        if not DATA_MANAGER_AVAILABLE:
+            logger.warning("Data manager not available, starting fresh")
             return None
 
         try:
-            conn = sqlite3.connect(db_path)
-            cur = conn.cursor()
+            # Get state from centralized database
+            state = data_manager.get_bot_state()
 
-            # Get stats from database (same queries as engine.get_summary)
-            cur.execute("SELECT COUNT(*) FROM trades")
-            total_trades = cur.fetchone()[0]
+            if not state:
+                logger.info("No saved state found, starting fresh")
+                return None
 
-            cur.execute("SELECT SUM(pnl) FROM trades WHERE pnl IS NOT NULL")
-            total_pnl = cur.fetchone()[0] or 0.0
-
-            cur.execute("SELECT COUNT(*) FROM trades WHERE pnl > 0")
-            winning_trades = cur.fetchone()[0]
-
-            conn.close()
-
-            if total_trades > 0 or saved_equity is not None or saved_iq > 0 or saved_training_history["training_sessions"] > 0:
-                # Use saved equity if available, otherwise calculate from initial capital + P&L
-                if saved_equity is not None:
-                    equity = saved_equity
-                else:
-                    equity = self.config.initial_capital + total_pnl
-
-                state = {
-                    "equity": equity,
-                    "peak_equity": saved_peak_equity if saved_peak_equity is not None else max(equity, self.config.initial_capital),
-                    "daily_pnl": saved_daily_pnl,
-                    "daily_start_equity": saved_daily_start_equity if saved_daily_start_equity is not None else equity,
-                    "stats": {
-                        "total_trades": total_trades,
-                        "winning_trades": winning_trades,
-                        "total_pnl": total_pnl,
-                        "signals_analyzed": 0,
-                        "start_time": None,
-                        "trading_iq": saved_iq,
-                        "expertise_level": saved_level,
-                        **saved_training_history,
-                    }
+            # Convert to expected format
+            result = {
+                "equity": state.get("equity", self.config.initial_capital),
+                "peak_equity": state.get("peak_equity", self.config.initial_capital),
+                "daily_pnl": state.get("daily_pnl", 0.0),
+                "daily_start_equity": state.get("daily_start_equity", self.config.initial_capital),
+                "stats": {
+                    "total_trades": state.get("total_trades", 0),
+                    "winning_trades": state.get("winning_trades", 0),
+                    "total_pnl": state.get("total_pnl", 0.0),
+                    "signals_analyzed": 0,
+                    "start_time": None,
+                    "trading_iq": state.get("trading_iq", 0),
+                    "expertise_level": state.get("expertise_level", "Untrained"),
+                    "training_sessions": state.get("training_sessions", 0),
+                    "total_training_episodes": state.get("total_training_episodes", 0),
+                    "total_training_trades": state.get("total_training_trades", 0),
+                    "last_training_date": state.get("last_training_date"),
+                    "avg_win_rate": state.get("avg_win_rate", 0.0),
+                    "avg_profit_factor": state.get("avg_profit_factor", 0.0),
+                    "avg_reward": 0.0,
+                    "best_win_rate": state.get("best_win_rate", 0.0),
+                    "best_profit_factor": state.get("best_profit_factor", 0.0),
                 }
-                logger.info(f"Loaded state from database: {total_trades} trades, equity=${equity:.2f}, IQ={saved_iq}")
-                return state
-            else:
-                logger.info("Trades database exists but is empty, starting fresh")
+            }
+
+            logger.info(
+                f"Loaded state from database: equity=${result['equity']:.2f}, "
+                f"IQ={result['stats']['trading_iq']}, "
+                f"Level={result['stats']['expertise_level']}"
+            )
+            return result
 
         except Exception as e:
             logger.warning(f"Failed to load state from database: {e}")
-
-        return None
+            return None
 
     def _load_positions(self) -> Dict[str, Position]:
-        """Load open positions from trades database"""
-        import sqlite3
-        project_root = Path(__file__).parent
-        db_path = project_root / "data" / "trades.db"
-
+        """Load open positions from centralized database"""
         positions = {}
 
-        if not db_path.exists():
+        if not DATA_MANAGER_AVAILABLE:
             return positions
 
         try:
-            conn = sqlite3.connect(db_path)
-            cur = conn.cursor()
+            db_positions = data_manager.get_positions()
 
-            # Get all trades to determine open positions (same logic as engine.py)
-            cur.execute("""
-                SELECT id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at
-                FROM trades
-                ORDER BY timestamp ASC
-            """)
+            for pos_data in db_positions:
+                symbol = pos_data.get("symbol")
+                if not symbol:
+                    continue
 
-            all_trades = cur.fetchall()
-            conn.close()
+                # Parse entry time
+                entry_time_str = pos_data.get("entry_time")
+                try:
+                    entry_time = datetime.fromisoformat(entry_time_str) if entry_time_str else datetime.now()
+                except (ValueError, TypeError):
+                    entry_time = datetime.now()
 
-            # Track positions per symbol
-            position_data = {}
+                side = pos_data.get("side", "long")
+                entry_price = pos_data.get("entry_price", 0.0)
 
-            for trade in all_trades:
-                trade_id, timestamp, symbol, signal, last_price, entry_price, pnl, created_at = trade
+                positions[symbol] = Position(
+                    symbol=symbol,
+                    side=side,
+                    entry_price=entry_price,
+                    size=pos_data.get("size", 0.0),
+                    stop_loss=pos_data.get("stop_loss"),
+                    take_profit=pos_data.get("take_profit"),
+                    entry_time=entry_time,
+                    signal_source=pos_data.get("signal_source", "restored"),
+                    unrealized_pnl=pos_data.get("unrealized_pnl", 0.0)
+                )
 
-                if symbol not in position_data:
-                    position_data[symbol] = {
-                        "symbol": symbol,
-                        "entry_time": timestamp,
-                        "entry_price": entry_price or last_price,
-                        "current_price": last_price,
-                        "trade_count": 0,
-                        "signal": signal,
-                    }
-
-                position_data[symbol]["trade_count"] += 1
-                position_data[symbol]["current_price"] = last_price
-                position_data[symbol]["signal"] = signal
-
-            # Create Position objects for open positions (odd trade count)
-            for symbol, data in position_data.items():
-                if data["trade_count"] % 2 == 1:  # Odd = open position
-                    try:
-                        entry_time = datetime.fromisoformat(data["entry_time"]) if data["entry_time"] else datetime.now()
-                    except (ValueError, TypeError) as e:
-                        logger.debug(f"Could not parse entry_time for {symbol}: {e}")
-                        entry_time = datetime.now()
-
-                    # Determine side from signal
-                    side = "long" if data["signal"] == "BUY" else "short"
-
-                    # Calculate position size (use a default based on config)
-                    position_size = self.config.initial_capital * self.config.max_position_pct
-
-                    entry_price = data["entry_price"]
-                    current_price = data["current_price"]
-
-                    # Calculate unrealized P&L based on last known price
-                    if entry_price > 0 and current_price > 0:
-                        if side == "long":
-                            unrealized_pnl = (current_price - entry_price) / entry_price * position_size
-                        else:
-                            unrealized_pnl = (entry_price - current_price) / entry_price * position_size
-                    else:
-                        unrealized_pnl = 0.0
-
-                    # Calculate stop/take profit from config (not hardcoded)
-                    stop_loss = entry_price * (1 - self.config.stop_loss_pct if side == "long" else 1 + self.config.stop_loss_pct)
-                    take_profit = entry_price * (1 + self.config.take_profit_pct if side == "long" else 1 - self.config.take_profit_pct)
-
-                    positions[symbol] = Position(
-                        symbol=symbol,
-                        side=side,
-                        entry_price=entry_price,
-                        size=position_size,
-                        stop_loss=stop_loss,
-                        take_profit=take_profit,
-                        entry_time=entry_time,
-                        signal_source="restored",
-                        unrealized_pnl=unrealized_pnl
-                    )
-
-                    logger.info(f"Restored position: {side} {symbol} @ ${entry_price:.2f}, unrealized P&L: ${unrealized_pnl:.2f}")
+                logger.info(f"Restored position: {side} {symbol} @ ${entry_price:.2f}")
 
             if positions:
                 logger.info(f"Restored {len(positions)} open positions from database")
@@ -786,30 +657,30 @@ class JJBotPro:
         return positions
 
     def _load_trade_history(self) -> List[TradeRecord]:
-        """Load trade history from bot_state.json"""
-        project_root = Path(__file__).parent
-        state_file = project_root / "data" / "bot_state.json"
-
+        """Load trade history from centralized database"""
         trade_history = []
 
-        if not state_file.exists():
+        if not DATA_MANAGER_AVAILABLE:
             return trade_history
 
         try:
-            with open(state_file) as f:
-                saved_data = json.load(f)
+            trades = data_manager.get_trades(limit=500)  # Get last 500 trades
 
-            trade_history_data = saved_data.get("trade_history", [])
-
-            for trade_data in trade_history_data:
+            for trade_data in trades:
                 # Parse datetime strings
                 entry_time = trade_data.get("entry_time")
                 if isinstance(entry_time, str):
-                    entry_time = datetime.fromisoformat(entry_time)
+                    try:
+                        entry_time = datetime.fromisoformat(entry_time)
+                    except (ValueError, TypeError):
+                        entry_time = datetime.now()
 
                 exit_time = trade_data.get("exit_time")
                 if isinstance(exit_time, str):
-                    exit_time = datetime.fromisoformat(exit_time)
+                    try:
+                        exit_time = datetime.fromisoformat(exit_time)
+                    except (ValueError, TypeError):
+                        exit_time = datetime.now()
 
                 trade = TradeRecord(
                     symbol=trade_data.get("symbol", ""),
@@ -835,66 +706,55 @@ class JJBotPro:
         return trade_history
 
     def _save_state(self):
-        """Save bot state to file (atomic write using temp file + rename)"""
-        # Use absolute path relative to this file (same as _load_state does)
-        project_root = Path(__file__).parent
-        state_file = project_root / "data" / "bot_state.json"
-        temp_file = project_root / "data" / "bot_state.json.tmp"
+        """Save bot state to centralized SQLite database"""
+        if not DATA_MANAGER_AVAILABLE:
+            logger.warning("Data manager not available, cannot save state")
+            return
 
         try:
-            os.makedirs(project_root / "data", exist_ok=True)
-            logger.debug(f"Saving state to: {state_file}")
+            # Update bot state in database
+            data_manager.update_bot_state(
+                equity=self.equity,
+                peak_equity=self.peak_equity,
+                daily_pnl=self.daily_pnl,
+                daily_start_equity=self.daily_start_equity,
+                total_pnl=self.stats.get("total_pnl", 0.0),
+                total_trades=self.stats.get("total_trades", 0),
+                winning_trades=self.stats.get("winning_trades", 0),
+                losing_trades=self.stats.get("total_trades", 0) - self.stats.get("winning_trades", 0),
+                trading_iq=self.stats.get("trading_iq", 0),
+                expertise_level=self.stats.get("expertise_level", "Untrained"),
+                training_sessions=self.stats.get("training_sessions", 0),
+                total_training_episodes=self.stats.get("total_training_episodes", 0),
+                total_training_trades=self.stats.get("total_training_trades", 0),
+                last_training_date=self.stats.get("last_training_date"),
+                avg_win_rate=self.stats.get("avg_win_rate", 0.0),
+                avg_profit_factor=self.stats.get("avg_profit_factor", 0.0),
+                best_win_rate=self.stats.get("best_win_rate", 0.0),
+                best_profit_factor=self.stats.get("best_profit_factor", 0.0),
+                mode=self.config.mode
+            )
 
-            # Convert trade history to serializable format
-            trade_history_data = []
-            for trade in self.trade_history:
-                trade_history_data.append({
-                    "symbol": trade.symbol,
-                    "side": trade.side,
-                    "entry_price": trade.entry_price,
-                    "exit_price": trade.exit_price,
-                    "size": trade.size,
-                    "pnl": trade.pnl,
-                    "pnl_pct": trade.pnl_pct,
-                    "entry_time": trade.entry_time.isoformat() if isinstance(trade.entry_time, datetime) else trade.entry_time,
-                    "exit_time": trade.exit_time.isoformat() if isinstance(trade.exit_time, datetime) else trade.exit_time,
-                    "signal_source": trade.signal_source,
-                    "exit_reason": trade.exit_reason,
-                })
-
-            state = {
-                "equity": self.equity,
-                "initial_capital": self.config.initial_capital,
-                "peak_equity": self.peak_equity,
-                "daily_pnl": self.daily_pnl,
-                "daily_start_equity": self.daily_start_equity,
-                "stats": self.stats.copy(),  # Make a copy to avoid modifying original
-                "trade_history": trade_history_data,  # Save full trade history
-                "last_updated": datetime.now().isoformat()
-            }
-            # Handle datetime in stats
-            if state["stats"].get("start_time"):
-                state["stats"]["start_time"] = state["stats"]["start_time"].isoformat() if isinstance(state["stats"]["start_time"], datetime) else state["stats"]["start_time"]
-
-            # ATOMIC WRITE: Write to temp file first, then rename
-            # This prevents corrupt state files from crashes during write
-            with open(temp_file, "w") as f:
-                json.dump(state, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())  # Ensure data is written to disk
-
-            # Atomic rename (works on POSIX systems including Linux)
-            os.replace(temp_file, state_file)
+            # Save open positions
+            for symbol, pos in self.positions.items():
+                data_manager.save_position(
+                    symbol=symbol,
+                    side=pos.side,
+                    size=pos.size,
+                    entry_price=pos.entry_price,
+                    entry_time=pos.entry_time.isoformat() if isinstance(pos.entry_time, datetime) else str(pos.entry_time),
+                    current_price=getattr(pos, 'current_price', pos.entry_price),
+                    unrealized_pnl=pos.unrealized_pnl,
+                    stop_loss=pos.stop_loss,
+                    take_profit=pos.take_profit,
+                    trailing_stop=getattr(pos, 'trailing_stop', None),
+                    signal_source=pos.signal_source
+                )
 
             logger.debug(f"State saved: equity=${self.equity:.2f}, IQ={self.stats.get('trading_iq', 0)}")
+
         except Exception as e:
             logger.error(f"FAILED to save state: {e}", exc_info=True)
-            # Clean up temp file if it exists
-            try:
-                if temp_file.exists():
-                    temp_file.unlink()
-            except Exception:
-                pass
 
     def _save_mode_to_config(self, mode: str):
         """Save mode to bot_config.json so next start uses correct mode"""
@@ -2393,17 +2253,25 @@ class JJBotPro:
         )
         self.trade_history.append(trade)
 
-        # Log trade to database for persistence
-        if DB_AVAILABLE and db_log_trade:
+        # Log trade to centralized database
+        if DATA_MANAGER_AVAILABLE:
             try:
-                db_log_trade({
-                    "timestamp": exit_time.isoformat(),
-                    "symbol": symbol,
-                    "signal": f"CLOSE_{pos.side.upper()}",
-                    "last_price": actual_exit_price,
-                    "vwap": (pos.entry_price + actual_exit_price) / 2,
-                    "pnl": pnl
-                })
+                data_manager.record_trade(
+                    symbol=symbol,
+                    side=pos.side,
+                    size=pos.size,
+                    entry_price=pos.entry_price,
+                    exit_price=actual_exit_price,
+                    entry_time=pos.entry_time.isoformat() if isinstance(pos.entry_time, datetime) else str(pos.entry_time),
+                    exit_time=exit_time.isoformat(),
+                    pnl=pnl,
+                    pnl_pct=pnl_pct,
+                    slippage=total_slippage_pct,
+                    signal_source=pos.signal_source,
+                    exit_reason=reason
+                )
+                # Remove closed position from database
+                data_manager.remove_position(symbol)
             except Exception as e:
                 logger.warning(f"Failed to log trade to database: {e}")
 
@@ -2671,6 +2539,13 @@ class JJBotPro:
         self.training_progress["using_real_data"] = using_real_data
         self.training_progress["data_symbols"] = _CACHE_SYMBOLS if using_real_data else []
 
+        # Create training session ID for tracking
+        training_session_id = None
+        if DATA_MANAGER_AVAILABLE:
+            training_session_id = data_manager.start_training_session()
+            self.training_progress["session_id"] = training_session_id
+            logger.info(f"Training session started: {training_session_id}")
+
         completed_episodes = 0
         for episode in range(self.config.train_episodes):
             if not self.running:
@@ -2812,6 +2687,32 @@ class JJBotPro:
             self.training_progress["learning_rate"] = float(metrics.get('learning_rate', 3e-4))
             self.training_progress["clip_fraction"] = float(metrics.get('clip_fraction', 0))
             self.training_progress["gradient_norm"] = float(metrics.get('gradient_norm', 0))
+
+            # Record training episode to database
+            if DATA_MANAGER_AVAILABLE and training_session_id:
+                try:
+                    data_manager.record_training_episode(
+                        session_id=training_session_id,
+                        episode=episode + 1,
+                        symbol=current_symbol if current_symbol != 'N/A' else None,
+                        total_reward=float(metrics.get('episode_reward', 0)),
+                        avg_reward=float(self.training_progress.get('avg_reward', 0)),
+                        total_pnl=float(metrics.get('total_pnl', 0)),
+                        trades=int(metrics.get('num_trades', 0)),
+                        wins=int(metrics.get('wins', 0)),
+                        losses=int(metrics.get('losses', 0)),
+                        win_rate=win_rate,
+                        profit_factor=profit_factor,
+                        max_drawdown=float(metrics.get('max_drawdown_pct', 0)),
+                        sharpe_ratio=float(metrics.get('sharpe_ratio', 0)),
+                        policy_loss=float(metrics.get('policy_loss', 0)),
+                        value_loss=float(metrics.get('value_loss', 0)),
+                        entropy=float(metrics.get('entropy', 0)),
+                        learning_rate=float(metrics.get('learning_rate', 3e-4)),
+                        steps=int(metrics.get('steps', 0))
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to record training episode: {e}")
 
             if episode % 10 == 0:
                 symbol_info = f" [{current_symbol}]" if using_real_data else ""
