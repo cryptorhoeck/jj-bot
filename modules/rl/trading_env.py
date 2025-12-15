@@ -460,6 +460,15 @@ class TradingEnvironment:
     """
     Reinforcement Learning Environment for Trading
 
+    REALISTIC COST MODEL (for real money trading):
+    - Slippage: 0.2% per trade (market orders in crypto)
+    - Spread: 0.1% bid-ask (0.05% each side)
+    - Commission: 0.1% per trade (Kraken taker fee)
+    - TOTAL ROUND-TRIP COST: ~0.7%
+
+    This means a trade must capture >0.7% price move just to break even.
+    The model must learn strategies with real edge, not exploit unrealistic execution.
+
     State Space:
     - Price features (returns, volatility, momentum)
     - Technical indicators (RSI, MACD, BB)
@@ -482,19 +491,21 @@ class TradingEnvironment:
         self,
         initial_balance: float = 10000.0,
         max_position_size: float = 0.1,  # 10% of equity
-        commission: float = 0.001,  # 0.1%
-        slippage: float = 0.0005,  # 0.05%
+        commission: float = 0.001,  # 0.1% (Kraken taker fee)
+        slippage: float = 0.002,  # 0.2% - realistic for crypto market orders
+        spread: float = 0.001,  # 0.1% bid-ask spread (half-spread applied each side)
         lookback_window: int = 50,
         max_steps: int = 10000,
         reward_scaling: float = 100.0,  # Increased 100x for effective RL learning
         risk_penalty: float = 0.1,
-        trade_penalty: float = 0.001,  # Slightly higher to prevent overtrading
+        trade_penalty: float = 0.005,  # Higher penalty to prevent overtrading (real costs matter)
         inference_only: bool = False,  # If True, skip reset (no dummy data warning)
     ):
         self.initial_balance = initial_balance
         self.max_position_size = max_position_size
         self.commission = commission
         self.slippage = slippage
+        self.spread = spread  # Bid-ask spread
         self.lookback_window = lookback_window
         self.max_steps = max_steps
         self.reward_scaling = reward_scaling
@@ -749,15 +760,20 @@ class TradingEnvironment:
         return self._get_observation(), reward, self.done, info
 
     def _open_position(self, side: str):
-        """Open a new position"""
+        """Open a new position with realistic execution costs"""
         # Calculate position size
         position_value = self.equity * self.max_position_size
 
-        # Apply slippage
+        # Apply spread + slippage (realistic execution)
+        # Buying: pay ask price (mid + half spread) + slippage
+        # Selling: get bid price (mid - half spread) - slippage
+        half_spread = self.spread / 2
         if side == "long":
-            entry_price = self.current_price * (1 + self.slippage)
+            # Buying at ask + slippage
+            entry_price = self.current_price * (1 + half_spread + self.slippage)
         else:
-            entry_price = self.current_price * (1 - self.slippage)
+            # Selling at bid - slippage
+            entry_price = self.current_price * (1 - half_spread - self.slippage)
 
         # Deduct commission
         commission_cost = position_value * self.commission
@@ -772,16 +788,21 @@ class TradingEnvironment:
         )
 
     def _close_position(self) -> float:
-        """Close current position and return realized P&L"""
+        """Close current position with realistic execution costs"""
         if self.position.side == "flat":
             return 0.0
 
-        # Calculate exit price with slippage
+        # Calculate exit price with spread + slippage
+        # Closing long (selling): get bid price - slippage
+        # Closing short (buying back): pay ask price + slippage
+        half_spread = self.spread / 2
         if self.position.side == "long":
-            exit_price = self.current_price * (1 - self.slippage)
+            # Selling at bid - slippage
+            exit_price = self.current_price * (1 - half_spread - self.slippage)
             pnl = (exit_price - self.position.entry_price) / self.position.entry_price
         else:
-            exit_price = self.current_price * (1 + self.slippage)
+            # Buying back at ask + slippage
+            exit_price = self.current_price * (1 + half_spread + self.slippage)
             pnl = (self.position.entry_price - exit_price) / self.position.entry_price
 
         realized_pnl = pnl * self.position.size
