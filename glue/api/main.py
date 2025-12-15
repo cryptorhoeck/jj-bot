@@ -515,6 +515,27 @@ async def clear_data():
     try:
         if DATA_MANAGER_AVAILABLE:
             counts = data_manager.reset_trading_data(initial_capital)
+
+            # Also update bot_state.json to prevent stale equity values
+            state_file = PROJECT_ROOT / "data" / "bot_state.json"
+            if state_file.exists():
+                try:
+                    with open(state_file) as f:
+                        state = json.load(f)
+                    state["equity"] = initial_capital
+                    state["peak_equity"] = initial_capital
+                    state["daily_start_equity"] = initial_capital
+                    state["daily_pnl"] = 0.0
+                    # Reset trading stats but preserve training stats
+                    if "stats" in state:
+                        state["stats"]["total_trades"] = 0
+                        state["stats"]["winning_trades"] = 0
+                        state["stats"]["total_pnl"] = 0.0
+                    with open(state_file, "w") as f:
+                        json.dump(state, f, indent=2)
+                except Exception as e:
+                    logger.warning(f"Could not update bot_state.json: {e}")
+
             return {
                 "status": "cleared",
                 "message": f"Trading data cleared, equity reset to ${initial_capital:,.2f}. Training IQ preserved.",
@@ -603,6 +624,39 @@ async def reset_all_data():
             shutil.copy2(model_file, backup_path)
             backed_up.append(f"ppo_agent.pt -> {backup_path.name}")
             model_file.unlink()
+
+        # Also reset bot_state.json to prevent stale equity values
+        state_file = PROJECT_ROOT / "data" / "bot_state.json"
+        if state_file.exists():
+            try:
+                # Reset to clean state with configured initial_capital
+                clean_state = {
+                    "equity": initial_capital,
+                    "peak_equity": initial_capital,
+                    "daily_pnl": 0.0,
+                    "daily_start_equity": initial_capital,
+                    "stats": {
+                        "total_trades": 0,
+                        "winning_trades": 0,
+                        "total_pnl": 0.0,
+                        "signals_analyzed": 0,
+                        "start_time": None,
+                        "trading_iq": 0,
+                        "expertise_level": "Untrained",
+                        "training_sessions": 0,
+                        "total_training_episodes": 0,
+                        "total_training_trades": 0,
+                        "last_training_date": None,
+                        "avg_win_rate": 0.0,
+                        "avg_profit_factor": 0.0,
+                        "avg_reward": 0.0
+                    },
+                    "trade_history": []
+                }
+                with open(state_file, "w") as f:
+                    json.dump(clean_state, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Could not reset bot_state.json: {e}")
 
         return {
             "status": "cleared",

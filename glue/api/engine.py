@@ -219,22 +219,28 @@ def get_summary() -> Dict[str, Any]:
             for row in open_positions_rows
         }
 
-        # Calculate current equity from saved state or fallback to calculation
-        saved_state = get_saved_state()
+        # Get initial_capital from config
         config = get_config()
-
-        # Get initial_capital: state -> config -> default 100000
-        default_capital = 100000.0
+        starting_capital = 10000.0  # fallback default
         if config:
-            default_capital = config.get("initial_capital", 100000.0)
+            starting_capital = config.get("initial_capital", 10000.0)
 
-        if saved_state and "equity" in saved_state:
-            current_equity = saved_state["equity"]
-            starting_capital = saved_state.get("initial_capital", default_capital)
-        else:
-            # Fallback: use config's initial_capital
-            starting_capital = default_capital
-            current_equity = starting_capital + total_pnl
+        # Try to get equity from centralized database first (source of truth)
+        try:
+            from modules.database import data_manager
+            bot_state = data_manager.get_bot_state()
+            if bot_state and bot_state.get("equity", 0) > 0:
+                current_equity = bot_state["equity"]
+            else:
+                # No database state - use config's initial_capital + PnL
+                current_equity = starting_capital + total_pnl
+        except Exception:
+            # Fallback to JSON state if database unavailable
+            saved_state = get_saved_state()
+            if saved_state and "equity" in saved_state:
+                current_equity = saved_state["equity"]
+            else:
+                current_equity = starting_capital + total_pnl
 
         # Get latest trade timestamp
         cur.execute("SELECT MAX(timestamp) FROM trades")
