@@ -242,7 +242,7 @@ class HealthCheckServer:
                 self._dms_task = asyncio.create_task(self._dead_mans_switch_monitor())
                 logger.info(f"Dead man's switch enabled with {self._dms_timeout}s timeout")
 
-            logger.info(f"Health check server started on http://{self.host}:{self.port}")
+            logger.info(f"Health check server started on http://{'localhost' if self.host == '0.0.0.0' else self.host}:{self.port}")
             return True
 
         except OSError as e:
