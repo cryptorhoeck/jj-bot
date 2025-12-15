@@ -141,35 +141,60 @@ async def get_bot_status():
             "best_profit_factor": bot.stats.get("best_profit_factor", 0),
         }
     else:
-        # Load persistent IQ and training history from state file when bot is not running
-        state_file = os.path.join(project_root, 'data', 'bot_state.json')
-        if os.path.exists(state_file):
+        # Load persistent IQ and training history from database when bot is not running
+        if DATA_MANAGER_AVAILABLE:
             try:
-                with open(state_file) as f:
-                    saved_state = json.load(f)
-                    saved_stats = saved_state.get("stats", {})
-                    status["trading_iq"] = saved_stats.get("trading_iq", 0)
-                    status["expertise_level"] = saved_stats.get("expertise_level", "Untrained")
-                    status["training_history"] = {
-                        "training_sessions": saved_stats.get("training_sessions", 0),
-                        "total_training_episodes": saved_stats.get("total_training_episodes", 0),
-                        "total_training_trades": saved_stats.get("total_training_trades", 0),
-                        "last_training_date": saved_stats.get("last_training_date"),
-                        "avg_win_rate": saved_stats.get("avg_win_rate", 0),
-                        "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),
-                        "avg_reward": saved_stats.get("avg_reward", 0),
-                        "best_win_rate": saved_stats.get("best_win_rate", 0),
-                        "best_profit_factor": saved_stats.get("best_profit_factor", 0),
-                    }
+                # Use cumulative metrics from database as source of truth
+                cumulative = data_manager.get_cumulative_training_metrics()
+                bot_state = data_manager.get_bot_state()
+                status["trading_iq"] = cumulative.get("trading_iq", 0)
+                status["expertise_level"] = cumulative.get("expertise_level", "Untrained")
+                status["training_history"] = {
+                    "training_sessions": cumulative.get("total_sessions", 0),
+                    "total_training_episodes": cumulative.get("total_episodes", 0),
+                    "total_training_trades": bot_state.get("total_training_trades", 0),
+                    "last_training_date": bot_state.get("last_training_date"),
+                    "avg_win_rate": cumulative.get("avg_win_rate", 0),
+                    "avg_profit_factor": cumulative.get("avg_profit_factor", 0),
+                    "avg_reward": 0,  # Not tracked in cumulative
+                    "best_win_rate": cumulative.get("best_win_rate", 0),
+                    "best_profit_factor": cumulative.get("best_profit_factor", 0),
+                }
             except Exception as e:
-                logger.warning(f"Could not load trading stats: {e}")
+                logger.warning(f"Could not load training stats from database: {e}")
                 status["trading_iq"] = 0
                 status["expertise_level"] = "Untrained"
                 status["training_history"] = {}
         else:
-            status["trading_iq"] = 0
-            status["expertise_level"] = "Untrained"
-            status["training_history"] = {}
+            # Fallback to JSON file if database not available
+            state_file = os.path.join(project_root, 'data', 'bot_state.json')
+            if os.path.exists(state_file):
+                try:
+                    with open(state_file) as f:
+                        saved_state = json.load(f)
+                        saved_stats = saved_state.get("stats", {})
+                        status["trading_iq"] = saved_stats.get("trading_iq", 0)
+                        status["expertise_level"] = saved_stats.get("expertise_level", "Untrained")
+                        status["training_history"] = {
+                            "training_sessions": saved_stats.get("training_sessions", 0),
+                            "total_training_episodes": saved_stats.get("total_training_episodes", 0),
+                            "total_training_trades": saved_stats.get("total_training_trades", 0),
+                            "last_training_date": saved_stats.get("last_training_date"),
+                            "avg_win_rate": saved_stats.get("avg_win_rate", 0),
+                            "avg_profit_factor": saved_stats.get("avg_profit_factor", 0),
+                            "avg_reward": saved_stats.get("avg_reward", 0),
+                            "best_win_rate": saved_stats.get("best_win_rate", 0),
+                            "best_profit_factor": saved_stats.get("best_profit_factor", 0),
+                        }
+                except Exception as e:
+                    logger.warning(f"Could not load trading stats: {e}")
+                    status["trading_iq"] = 0
+                    status["expertise_level"] = "Untrained"
+                    status["training_history"] = {}
+            else:
+                status["trading_iq"] = 0
+                status["expertise_level"] = "Untrained"
+                status["training_history"] = {}
 
     if config:
         status["config"] = {
