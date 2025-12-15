@@ -436,23 +436,27 @@ export function TrainingTab({
       {/* Additional Training Stats - shown when we have history */}
       {(trainingHistory.training_sessions > 0 || trainingHistory.total_training_trades > 0) && (
         <div className="card p-6">
-          <h3 className="text-lg font-semibold mb-4">📈 Training Performance</h3>
+          <h3 className="text-lg font-semibold mb-4">📈 Training Performance <span className="text-xs text-muted font-normal">(per-episode averages)</span></h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold">{trainingHistory.total_training_trades?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted">Total Training Trades</p>
+              <p className="text-2xl font-bold">
+                {trainingHistory.total_training_episodes > 0
+                  ? Math.round(trainingHistory.total_training_trades / trainingHistory.total_training_episodes).toLocaleString()
+                  : 0}
+              </p>
+              <p className="text-xs text-muted">Avg Trades/Episode</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
               <p className="text-2xl font-bold">{trainingHistory.avg_reward?.toFixed(2) || 0}</p>
               <p className="text-xs text-muted">Avg Reward</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold text-success">{trainingHistory.best_win_rate?.toFixed(1) || 0}%</p>
-              <p className="text-xs text-muted">Best Win Rate</p>
+              <p className="text-2xl font-bold text-success">{trainingHistory.avg_win_rate?.toFixed(1) || 0}%</p>
+              <p className="text-xs text-muted">Avg Win Rate</p>
             </div>
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-              <p className="text-2xl font-bold text-success">{trainingHistory.best_profit_factor?.toFixed(2) || 0}</p>
-              <p className="text-xs text-muted">Best Profit Factor</p>
+              <p className="text-2xl font-bold text-success">{trainingHistory.avg_profit_factor?.toFixed(2) || 0}</p>
+              <p className="text-xs text-muted">Avg Profit Factor</p>
             </div>
           </div>
         </div>
@@ -532,6 +536,9 @@ export function TrainingTab({
                 {isTraining && (
                   <span className="badge badge-success text-xs animate-pulse">LIVE</span>
                 )}
+                <span className="text-xs text-muted" title="Training metrics show simulated performance. Real trading results may differ significantly.">
+                  ⓘ Simulation
+                </span>
               </div>
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-muted">
@@ -558,14 +565,16 @@ export function TrainingTab({
                 <p className="text-xs text-muted">{isTraining ? 'Last' : 'Final'} Episode P&L</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className="text-2xl font-bold">{(metrics.total_trades || 0).toLocaleString()}</p>
-                <p className="text-xs text-muted">Total Trades</p>
+                <p className="text-2xl font-bold">{metricsCurrentEpisode > 0 ? ((metrics.total_trades || 0) / metricsCurrentEpisode).toFixed(1) : '—'}</p>
+                <p className="text-xs text-muted">Avg Trades/Episode</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${metrics.simulated_equity != null ? (metrics.simulated_equity >= 10000 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
-                  {metrics.simulated_equity != null ? `$${metrics.simulated_equity.toLocaleString(undefined, {maximumFractionDigits: 0})}` : '—'}
+                <p className={`text-2xl font-bold ${metricsCurrentEpisode > 0 && metrics.cumulative_pnl != null ? ((metrics.cumulative_pnl / metricsCurrentEpisode) >= 0 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
+                  {metricsCurrentEpisode > 0 && metrics.cumulative_pnl != null
+                    ? `$${(metrics.cumulative_pnl / metricsCurrentEpisode).toFixed(2)}`
+                    : '—'}
                 </p>
-                <p className="text-xs text-muted">{isTraining ? 'Simulated' : 'Final'} Equity</p>
+                <p className="text-xs text-muted">Avg P&L/Episode</p>
               </div>
             </div>
 
@@ -667,15 +676,19 @@ export function TrainingTab({
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
-                  ${metrics.avg_win_amount != null ? metrics.avg_win_amount.toFixed(0) : '—'}
+                  {metrics.avg_win_amount != null
+                    ? (metrics.avg_win_amount >= 1 ? `$${metrics.avg_win_amount.toFixed(2)}` : `${(metrics.avg_win_amount * 100).toFixed(1)}¢`)
+                    : '—'}
                 </p>
-                <p className="text-xs text-muted">Avg Win $</p>
+                <p className="text-xs text-muted">Avg Win</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-danger">
-                  ${metrics.avg_loss_amount != null ? metrics.avg_loss_amount.toFixed(0) : '—'}
+                  {metrics.avg_loss_amount != null
+                    ? (metrics.avg_loss_amount >= 1 ? `$${metrics.avg_loss_amount.toFixed(2)}` : `${(metrics.avg_loss_amount * 100).toFixed(1)}¢`)
+                    : '—'}
                 </p>
-                <p className="text-xs text-muted">Avg Loss $</p>
+                <p className="text-xs text-muted">Avg Loss</p>
               </div>
               <div className="text-center p-3 bg-[var(--bg-tertiary)] rounded-lg">
                 <p className="text-lg font-bold text-success">
@@ -737,11 +750,13 @@ export function TrainingTab({
                 <p className="text-[10px] text-muted mt-1">Return/Drawdown</p>
               </div>
               <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
-                <p className={`text-2xl font-bold ${metrics.simulated_equity != null ? ((metrics.simulated_equity - 10000) >= 0 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
-                  {metrics.simulated_equity != null ? `${((metrics.simulated_equity - 10000) / 10000 * 100).toFixed(1)}%` : '—'}
+                <p className={`text-2xl font-bold ${metricsCurrentEpisode > 0 && metrics.cumulative_pnl != null ? ((metrics.cumulative_pnl / metricsCurrentEpisode / 10000 * 100) >= 0 ? 'text-success' : 'text-danger') : 'text-muted'}`}>
+                  {metricsCurrentEpisode > 0 && metrics.cumulative_pnl != null
+                    ? `${(metrics.cumulative_pnl / metricsCurrentEpisode / 10000 * 100).toFixed(2)}%`
+                    : '—'}
                 </p>
-                <p className="text-xs text-muted">Total Return</p>
-                <p className="text-[10px] text-muted mt-1">From $10,000</p>
+                <p className="text-xs text-muted">Avg Return/Episode</p>
+                <p className="text-[10px] text-muted mt-1">Per $10k capital</p>
               </div>
             </div>
           </div>
