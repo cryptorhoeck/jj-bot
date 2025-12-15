@@ -276,6 +276,37 @@ export function TrainingTab({
     return formatTime(remainingMs);
   };
 
+  // Estimate training time based on historical performance
+  const getEstimatedTrainingTime = () => {
+    // During training: use live calculation
+    if (isTraining && elapsedMs > 0 && currentEpisode > 0) {
+      const msPerEpisode = elapsedMs / currentEpisode;
+      const totalEstimatedMs = trainSettings.episodes * msPerEpisode;
+      const remainingMs = totalEstimatedMs - elapsedMs;
+      return {
+        total: formatTime(totalEstimatedMs),
+        remaining: formatTime(remainingMs),
+        isLive: true,
+        rate: (currentEpisode / (elapsedMs / 1000 / 60)).toFixed(0) // episodes/min
+      };
+    }
+
+    // Before training: use historical average from cumulative metrics
+    if (cumulativeMetrics?.total_duration_ms > 0 && cumulativeMetrics?.total_episodes > 0) {
+      const msPerEpisode = cumulativeMetrics.total_duration_ms / cumulativeMetrics.total_episodes;
+      const estimatedMs = trainSettings.episodes * msPerEpisode;
+      return {
+        total: formatTime(estimatedMs),
+        remaining: null,
+        isLive: false,
+        rate: (cumulativeMetrics.total_episodes / (cumulativeMetrics.total_duration_ms / 1000 / 60)).toFixed(0)
+      };
+    }
+
+    // No historical data - return null to show static estimate
+    return null;
+  };
+
   // Save settings to config
   const saveSettings = async (updates) => {
     try {
@@ -1188,11 +1219,28 @@ export function TrainingTab({
               <p className="font-bold">{(trainSettings.episodes * 5).toLocaleString()}+</p>
             </div>
             <div>
-              <p className="text-muted">Est. training time</p>
+              <p className="text-muted">
+                {(() => {
+                  const est = getEstimatedTrainingTime();
+                  if (est?.isLive) return 'Est. remaining';
+                  if (est) return 'Est. training time';
+                  return 'Est. training time';
+                })()}
+              </p>
               <p className="font-bold">
-                {trainSettings.episodes <= 500 ? '~2-5 min' :
-                 trainSettings.episodes <= 1000 ? '~5-10 min' :
-                 trainSettings.episodes <= 2000 ? '~10-20 min' : '~20+ min'}
+                {(() => {
+                  const est = getEstimatedTrainingTime();
+                  if (est?.isLive) {
+                    return <span className="text-success">{est.remaining} <span className="text-xs text-muted">({est.rate}/min)</span></span>;
+                  }
+                  if (est) {
+                    return <span className="text-info">{est.total} <span className="text-xs text-muted">({est.rate}/min)</span></span>;
+                  }
+                  // Fallback for no historical data
+                  return trainSettings.episodes <= 500 ? '~2-5 min' :
+                         trainSettings.episodes <= 1000 ? '~5-10 min' :
+                         trainSettings.episodes <= 2000 ? '~10-20 min' : '~20+ min';
+                })()}
               </p>
             </div>
           </div>

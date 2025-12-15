@@ -2568,6 +2568,10 @@ class JJBotPro:
         self.training_progress["using_real_data"] = using_real_data
         self.training_progress["data_symbols"] = _CACHE_SYMBOLS if using_real_data else []
 
+        # Track training start time for duration calculation
+        import time
+        training_start_time_ms = int(time.time() * 1000)
+
         # Create training session ID for tracking
         training_session_id = None
         if DATA_MANAGER_AVAILABLE:
@@ -2874,12 +2878,16 @@ class JJBotPro:
                     "profit_factor": session_pf,
                 }
 
+                # Calculate session duration in milliseconds
+                session_duration_ms = int(time.time() * 1000) - training_start_time_ms
+
                 data_manager.update_cumulative_training_metrics(
                     session_metrics=session_metrics,
                     iq=self.stats.get("trading_iq", 0),
-                    expertise_level=self.stats.get("expertise_level", "Untrained")
+                    expertise_level=self.stats.get("expertise_level", "Untrained"),
+                    session_duration_ms=session_duration_ms
                 )
-                logger.info("Cumulative training metrics saved to database")
+                logger.info(f"Cumulative training metrics saved to database (duration: {session_duration_ms / 1000:.1f}s)")
             except Exception as e:
                 logger.warning(f"Failed to save cumulative training metrics: {e}")
 

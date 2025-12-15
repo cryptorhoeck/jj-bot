@@ -177,7 +177,8 @@ def init_database():
             training_worst_episode_pnl REAL DEFAULT 0.0,
             training_total_sharpe REAL DEFAULT 0.0,
             training_total_sortino REAL DEFAULT 0.0,
-            training_total_max_drawdown REAL DEFAULT 0.0
+            training_total_max_drawdown REAL DEFAULT 0.0,
+            training_total_duration_ms INTEGER DEFAULT 0
         )
         """)
 
@@ -261,6 +262,7 @@ def init_database():
             ("training_total_sharpe", "REAL DEFAULT 0.0"),
             ("training_total_sortino", "REAL DEFAULT 0.0"),
             ("training_total_max_drawdown", "REAL DEFAULT 0.0"),
+            ("training_total_duration_ms", "INTEGER DEFAULT 0"),
         ]
 
         for col_name, col_type in new_columns:
@@ -323,7 +325,8 @@ def reset_bot_state(initial_equity: float = 0.0) -> None:
                 training_best_win_streak, training_worst_loss_streak,
                 training_total_reward, training_long_trades, training_short_trades,
                 training_best_episode_pnl, training_worst_episode_pnl,
-                training_total_sharpe, training_total_sortino, training_total_max_drawdown
+                training_total_sharpe, training_total_sortino, training_total_max_drawdown,
+                training_total_duration_ms
             ) VALUES (
                 1, ?, ?, ?, 'Untrained', 'paper', datetime('now'),
                 0, 0, 0, 0,
@@ -334,7 +337,8 @@ def reset_bot_state(initial_equity: float = 0.0) -> None:
                 0, 0,
                 0.0, 0, 0,
                 0.0, 0.0,
-                0.0, 0.0, 0.0
+                0.0, 0.0, 0.0,
+                0
             )
         """, (initial_equity, initial_equity, initial_equity))
 
@@ -369,7 +373,8 @@ def get_cumulative_training_metrics() -> Dict[str, Any]:
                 avg_win_rate,
                 avg_profit_factor,
                 best_win_rate,
-                best_profit_factor
+                best_profit_factor,
+                training_total_duration_ms
             FROM bot_state WHERE id = 1
         """)
         row = cur.fetchone()
@@ -400,6 +405,7 @@ def get_cumulative_training_metrics() -> Dict[str, Any]:
                 "avg_profit_factor": row[22] or 0.0,
                 "best_win_rate": row[23] or 0.0,
                 "best_profit_factor": row[24] or 0.0,
+                "total_duration_ms": row[25] or 0,
             }
         return {}
 
@@ -407,11 +413,18 @@ def get_cumulative_training_metrics() -> Dict[str, Any]:
 def update_cumulative_training_metrics(
     session_metrics: Dict[str, Any],
     iq: int = None,
-    expertise_level: str = None
+    expertise_level: str = None,
+    session_duration_ms: int = 0
 ) -> None:
     """
     Update cumulative training metrics by adding session metrics to lifetime totals.
     Call this at the end of each training session.
+
+    Args:
+        session_metrics: Metrics from the current training session
+        iq: Trading IQ score
+        expertise_level: Expertise level string
+        session_duration_ms: Duration of this training session in milliseconds
     """
     current = get_cumulative_training_metrics()
 
@@ -427,6 +440,7 @@ def update_cumulative_training_metrics(
     new_total_sharpe = current.get("total_sharpe", 0.0) + session_metrics.get("total_sharpe", 0.0)
     new_total_sortino = current.get("total_sortino", 0.0) + session_metrics.get("total_sortino", 0.0)
     new_total_max_drawdown = current.get("total_max_drawdown", 0.0) + session_metrics.get("total_max_drawdown", 0.0)
+    new_total_duration_ms = current.get("total_duration_ms", 0) + session_duration_ms
 
     # Take best/worst values
     new_largest_win = max(current.get("largest_win", 0.0), session_metrics.get("largest_win", 0.0))
@@ -465,6 +479,7 @@ def update_cumulative_training_metrics(
         training_total_sharpe=new_total_sharpe,
         training_total_sortino=new_total_sortino,
         training_total_max_drawdown=new_total_max_drawdown,
+        training_total_duration_ms=new_total_duration_ms,
         avg_win_rate=new_avg_win_rate,
         avg_profit_factor=new_avg_pf,
         best_win_rate=new_best_win_rate,
@@ -998,7 +1013,8 @@ def reset_all_data(initial_equity: float = 0.0) -> Dict[str, int]:
                 training_best_win_streak, training_worst_loss_streak,
                 training_total_reward, training_long_trades, training_short_trades,
                 training_best_episode_pnl, training_worst_episode_pnl,
-                training_total_sharpe, training_total_sortino, training_total_max_drawdown
+                training_total_sharpe, training_total_sortino, training_total_max_drawdown,
+                training_total_duration_ms
             ) VALUES (
                 1, ?, ?, ?, 'Untrained', 'paper', datetime('now'),
                 0, 0, 0, 0,
@@ -1009,7 +1025,8 @@ def reset_all_data(initial_equity: float = 0.0) -> Dict[str, int]:
                 0, 0,
                 0.0, 0, 0,
                 0.0, 0.0,
-                0.0, 0.0, 0.0
+                0.0, 0.0, 0.0,
+                0
             )
         """, (initial_equity, initial_equity, initial_equity))
         counts['bot_state'] = 1
@@ -1099,6 +1116,7 @@ def reset_training_data() -> Dict[str, int]:
                 training_total_sharpe = 0.0,
                 training_total_sortino = 0.0,
                 training_total_max_drawdown = 0.0,
+                training_total_duration_ms = 0,
                 last_updated = datetime('now')
             WHERE id = 1
         """)
