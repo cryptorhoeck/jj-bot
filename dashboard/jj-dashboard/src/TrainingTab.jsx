@@ -99,6 +99,9 @@ export function TrainingTab({
     best_profit_factor: 0
   });
 
+  // Cumulative lifetime training metrics (persist across all sessions)
+  const [cumulativeMetrics, setCumulativeMetrics] = useState(null);
+
   // Training time tracking - use milliseconds for precision
   const [trainingStartTime, setTrainingStartTime] = useState(null);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -139,6 +142,31 @@ export function TrainingTab({
     };
     loadConfig();
   }, [API_BASE]);
+
+  // Load cumulative training metrics
+  const fetchCumulativeMetrics = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/rl/cumulative-metrics`);
+      const data = await response.json();
+      if (data.status === 'ok' && data.metrics) {
+        setCumulativeMetrics(data.metrics);
+      }
+    } catch (error) {
+      console.error('Error loading cumulative metrics:', error);
+    }
+  }, [API_BASE]);
+
+  useEffect(() => {
+    fetchCumulativeMetrics();
+  }, [fetchCumulativeMetrics]);
+
+  // Refresh cumulative metrics when training stops
+  useEffect(() => {
+    if (!isTraining && trainingHistory.training_sessions > 0) {
+      // Fetch updated cumulative metrics after training ends
+      fetchCumulativeMetrics();
+    }
+  }, [isTraining, trainingHistory.training_sessions, fetchCumulativeMetrics]);
 
   // Poll for training progress
   useEffect(() => {
@@ -457,6 +485,119 @@ export function TrainingTab({
             <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
               <p className="text-2xl font-bold text-success">{trainingHistory.avg_profit_factor?.toFixed(2) || 0}</p>
               <p className="text-xs text-muted">Avg Profit Factor</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lifetime Cumulative Stats - Always visible when we have data */}
+      {cumulativeMetrics && (cumulativeMetrics.total_sessions > 0 || cumulativeMetrics.total_episodes > 0) && (
+        <div className="card p-6 border-2 border-purple-500/30">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-lg font-semibold">🏆 Lifetime Cumulative Stats</h3>
+            <span className="badge badge-purple text-xs">All Sessions</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* Total Sessions & Episodes */}
+            <div className="text-center p-4 bg-purple-500/10 rounded-xl border border-purple-500/30">
+              <p className="text-2xl font-bold text-purple-400">{cumulativeMetrics.total_sessions || 0}</p>
+              <p className="text-xs text-muted">Total Sessions</p>
+            </div>
+            <div className="text-center p-4 bg-purple-500/10 rounded-xl border border-purple-500/30">
+              <p className="text-2xl font-bold text-purple-400">{(cumulativeMetrics.total_episodes || 0).toLocaleString()}</p>
+              <p className="text-xs text-muted">Total Episodes</p>
+            </div>
+
+            {/* Cumulative P&L */}
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className={`text-2xl font-bold ${(cumulativeMetrics.cumulative_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                ${(cumulativeMetrics.cumulative_pnl || 0).toFixed(0)}
+              </p>
+              <p className="text-xs text-muted">Cumulative P&L</p>
+            </div>
+
+            {/* Win Rate */}
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className="text-2xl font-bold">{cumulativeMetrics.avg_win_rate?.toFixed(1) || 0}%</p>
+              <p className="text-xs text-muted">Lifetime Win Rate</p>
+            </div>
+
+            {/* Profit Factor */}
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className={`text-2xl font-bold ${(cumulativeMetrics.avg_profit_factor || 0) >= 1 ? 'text-success' : 'text-danger'}`}>
+                {cumulativeMetrics.avg_profit_factor?.toFixed(2) || '—'}
+              </p>
+              <p className="text-xs text-muted">Lifetime PF</p>
+            </div>
+
+            {/* Total Reward */}
+            <div className="text-center p-4 bg-[var(--bg-tertiary)] rounded-xl">
+              <p className={`text-2xl font-bold ${(cumulativeMetrics.total_reward || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                {(cumulativeMetrics.total_reward || 0).toFixed(0)}
+              </p>
+              <p className="text-xs text-muted">Total Reward</p>
+            </div>
+          </div>
+
+          {/* Trade Statistics */}
+          <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+            <h4 className="text-sm font-semibold mb-3 text-muted">Trade Statistics (All Time)</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+              <div className="text-center p-3 bg-success/10 rounded-lg border border-success/30">
+                <p className="text-lg font-bold text-success">{(cumulativeMetrics.total_wins || 0).toLocaleString()}</p>
+                <p className="text-xs text-muted">Total Wins</p>
+              </div>
+              <div className="text-center p-3 bg-danger/10 rounded-lg border border-danger/30">
+                <p className="text-lg font-bold text-danger">{(cumulativeMetrics.total_losses || 0).toLocaleString()}</p>
+                <p className="text-xs text-muted">Total Losses</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold text-success">${(cumulativeMetrics.total_win_amount || 0).toFixed(0)}</p>
+                <p className="text-xs text-muted">Gross Wins</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold text-danger">${(cumulativeMetrics.total_loss_amount || 0).toFixed(0)}</p>
+                <p className="text-xs text-muted">Gross Losses</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold text-success">${(cumulativeMetrics.largest_win || 0).toFixed(0)}</p>
+                <p className="text-xs text-muted">Best Win</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold text-danger">${(cumulativeMetrics.largest_loss || 0).toFixed(0)}</p>
+                <p className="text-xs text-muted">Worst Loss</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold">{cumulativeMetrics.long_trades || 0}</p>
+                <p className="text-xs text-muted">Long Trades</p>
+              </div>
+              <div className="text-center p-3 bg-[var(--bg-secondary)] rounded-lg">
+                <p className="text-lg font-bold">{cumulativeMetrics.short_trades || 0}</p>
+                <p className="text-xs text-muted">Short Trades</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Best Records */}
+          <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+            <h4 className="text-sm font-semibold mb-3 text-muted">Best Records (All Time)</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-center p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
+                <p className="text-lg font-bold text-yellow-400">{cumulativeMetrics.best_win_rate?.toFixed(1) || 0}%</p>
+                <p className="text-xs text-muted">Best Win Rate</p>
+              </div>
+              <div className="text-center p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
+                <p className="text-lg font-bold text-yellow-400">{cumulativeMetrics.best_profit_factor?.toFixed(2) || '—'}</p>
+                <p className="text-xs text-muted">Best Profit Factor</p>
+              </div>
+              <div className="text-center p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
+                <p className="text-lg font-bold text-yellow-400">${(cumulativeMetrics.best_episode_pnl || 0).toFixed(0)}</p>
+                <p className="text-xs text-muted">Best Episode P&L</p>
+              </div>
+              <div className="text-center p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
+                <p className="text-lg font-bold text-yellow-400">{cumulativeMetrics.best_win_streak || 0}</p>
+                <p className="text-xs text-muted">Best Win Streak</p>
+              </div>
             </div>
           </div>
         </div>

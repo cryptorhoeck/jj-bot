@@ -159,7 +159,25 @@ def init_database():
             best_win_rate REAL DEFAULT 0.0,
             best_profit_factor REAL DEFAULT 0.0,
             mode TEXT DEFAULT 'paper',
-            last_updated TEXT
+            last_updated TEXT,
+            -- Cumulative training metrics (persist across sessions)
+            cumulative_training_pnl REAL DEFAULT 0.0,
+            training_total_wins INTEGER DEFAULT 0,
+            training_total_losses INTEGER DEFAULT 0,
+            training_total_win_amount REAL DEFAULT 0.0,
+            training_total_loss_amount REAL DEFAULT 0.0,
+            training_largest_win REAL DEFAULT 0.0,
+            training_largest_loss REAL DEFAULT 0.0,
+            training_best_win_streak INTEGER DEFAULT 0,
+            training_worst_loss_streak INTEGER DEFAULT 0,
+            training_total_reward REAL DEFAULT 0.0,
+            training_long_trades INTEGER DEFAULT 0,
+            training_short_trades INTEGER DEFAULT 0,
+            training_best_episode_pnl REAL DEFAULT 0.0,
+            training_worst_episode_pnl REAL DEFAULT 0.0,
+            training_total_sharpe REAL DEFAULT 0.0,
+            training_total_sortino REAL DEFAULT 0.0,
+            training_total_max_drawdown REAL DEFAULT 0.0
         )
         """)
 
@@ -221,6 +239,34 @@ def init_database():
                 VALUES (1, 0.0, 0.0, 0.0, 'Untrained', 'paper', datetime('now'))
             """)
 
+        # Migration: Add cumulative training metrics columns if they don't exist
+        cur.execute("PRAGMA table_info(bot_state)")
+        existing_columns = {row[1] for row in cur.fetchall()}
+
+        new_columns = [
+            ("cumulative_training_pnl", "REAL DEFAULT 0.0"),
+            ("training_total_wins", "INTEGER DEFAULT 0"),
+            ("training_total_losses", "INTEGER DEFAULT 0"),
+            ("training_total_win_amount", "REAL DEFAULT 0.0"),
+            ("training_total_loss_amount", "REAL DEFAULT 0.0"),
+            ("training_largest_win", "REAL DEFAULT 0.0"),
+            ("training_largest_loss", "REAL DEFAULT 0.0"),
+            ("training_best_win_streak", "INTEGER DEFAULT 0"),
+            ("training_worst_loss_streak", "INTEGER DEFAULT 0"),
+            ("training_total_reward", "REAL DEFAULT 0.0"),
+            ("training_long_trades", "INTEGER DEFAULT 0"),
+            ("training_short_trades", "INTEGER DEFAULT 0"),
+            ("training_best_episode_pnl", "REAL DEFAULT 0.0"),
+            ("training_worst_episode_pnl", "REAL DEFAULT 0.0"),
+            ("training_total_sharpe", "REAL DEFAULT 0.0"),
+            ("training_total_sortino", "REAL DEFAULT 0.0"),
+            ("training_total_max_drawdown", "REAL DEFAULT 0.0"),
+        ]
+
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                cur.execute(f"ALTER TABLE bot_state ADD COLUMN {col_name} {col_type}")
+
         print(f"[OK] Database initialized: {DB_PATH}")
 
 
@@ -270,6 +316,141 @@ def reset_bot_state(initial_equity: float = 0.0) -> None:
             INSERT INTO bot_state (id, equity, peak_equity, daily_start_equity, expertise_level, mode, last_updated)
             VALUES (1, ?, ?, ?, 'Untrained', 'paper', datetime('now'))
         """, (initial_equity, initial_equity, initial_equity))
+
+
+def get_cumulative_training_metrics() -> Dict[str, Any]:
+    """Get cumulative training metrics that persist across sessions"""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                cumulative_training_pnl,
+                training_total_wins,
+                training_total_losses,
+                training_total_win_amount,
+                training_total_loss_amount,
+                training_largest_win,
+                training_largest_loss,
+                training_best_win_streak,
+                training_worst_loss_streak,
+                training_total_reward,
+                training_long_trades,
+                training_short_trades,
+                training_best_episode_pnl,
+                training_worst_episode_pnl,
+                training_total_sharpe,
+                training_total_sortino,
+                training_total_max_drawdown,
+                total_training_episodes,
+                training_sessions,
+                trading_iq,
+                expertise_level,
+                avg_win_rate,
+                avg_profit_factor,
+                best_win_rate,
+                best_profit_factor
+            FROM bot_state WHERE id = 1
+        """)
+        row = cur.fetchone()
+        if row:
+            return {
+                "cumulative_pnl": row[0] or 0.0,
+                "total_wins": row[1] or 0,
+                "total_losses": row[2] or 0,
+                "total_win_amount": row[3] or 0.0,
+                "total_loss_amount": row[4] or 0.0,
+                "largest_win": row[5] or 0.0,
+                "largest_loss": row[6] or 0.0,
+                "best_win_streak": row[7] or 0,
+                "worst_loss_streak": row[8] or 0,
+                "total_reward": row[9] or 0.0,
+                "long_trades": row[10] or 0,
+                "short_trades": row[11] or 0,
+                "best_episode_pnl": row[12] or 0.0,
+                "worst_episode_pnl": row[13] or 0.0,
+                "total_sharpe": row[14] or 0.0,
+                "total_sortino": row[15] or 0.0,
+                "total_max_drawdown": row[16] or 0.0,
+                "total_episodes": row[17] or 0,
+                "total_sessions": row[18] or 0,
+                "trading_iq": row[19] or 0,
+                "expertise_level": row[20] or "Untrained",
+                "avg_win_rate": row[21] or 0.0,
+                "avg_profit_factor": row[22] or 0.0,
+                "best_win_rate": row[23] or 0.0,
+                "best_profit_factor": row[24] or 0.0,
+            }
+        return {}
+
+
+def update_cumulative_training_metrics(
+    session_metrics: Dict[str, Any],
+    iq: int = None,
+    expertise_level: str = None
+) -> None:
+    """
+    Update cumulative training metrics by adding session metrics to lifetime totals.
+    Call this at the end of each training session.
+    """
+    current = get_cumulative_training_metrics()
+
+    # Accumulate totals
+    new_cumulative_pnl = current.get("cumulative_pnl", 0.0) + session_metrics.get("cumulative_pnl", 0.0)
+    new_total_wins = current.get("total_wins", 0) + session_metrics.get("total_wins", 0)
+    new_total_losses = current.get("total_losses", 0) + session_metrics.get("total_losses", 0)
+    new_total_win_amount = current.get("total_win_amount", 0.0) + session_metrics.get("total_win_amount", 0.0)
+    new_total_loss_amount = current.get("total_loss_amount", 0.0) + session_metrics.get("total_loss_amount", 0.0)
+    new_total_reward = current.get("total_reward", 0.0) + session_metrics.get("total_reward", 0.0)
+    new_long_trades = current.get("long_trades", 0) + session_metrics.get("long_trades", 0)
+    new_short_trades = current.get("short_trades", 0) + session_metrics.get("short_trades", 0)
+    new_total_sharpe = current.get("total_sharpe", 0.0) + session_metrics.get("total_sharpe", 0.0)
+    new_total_sortino = current.get("total_sortino", 0.0) + session_metrics.get("total_sortino", 0.0)
+    new_total_max_drawdown = current.get("total_max_drawdown", 0.0) + session_metrics.get("total_max_drawdown", 0.0)
+
+    # Take best/worst values
+    new_largest_win = max(current.get("largest_win", 0.0), session_metrics.get("largest_win", 0.0))
+    new_largest_loss = max(current.get("largest_loss", 0.0), session_metrics.get("largest_loss", 0.0))
+    new_best_win_streak = max(current.get("best_win_streak", 0), session_metrics.get("best_win_streak", 0))
+    new_worst_loss_streak = max(current.get("worst_loss_streak", 0), session_metrics.get("worst_loss_streak", 0))
+    new_best_episode_pnl = max(current.get("best_episode_pnl", 0.0), session_metrics.get("best_episode_pnl", 0.0))
+    new_worst_episode_pnl = min(current.get("worst_episode_pnl", 0.0), session_metrics.get("worst_episode_pnl", 0.0))
+
+    # Calculate new averages
+    total_trades = new_total_wins + new_total_losses
+    new_avg_win_rate = (new_total_wins / total_trades * 100) if total_trades > 0 else 0.0
+    new_avg_pf = (new_total_win_amount / new_total_loss_amount) if new_total_loss_amount > 0 else new_total_win_amount
+
+    # Track best rates ever achieved
+    session_win_rate = session_metrics.get("win_rate", 0.0)
+    session_pf = session_metrics.get("profit_factor", 0.0)
+    new_best_win_rate = max(current.get("best_win_rate", 0.0), session_win_rate)
+    new_best_profit_factor = max(current.get("best_profit_factor", 0.0), session_pf)
+
+    update_bot_state(
+        cumulative_training_pnl=new_cumulative_pnl,
+        training_total_wins=new_total_wins,
+        training_total_losses=new_total_losses,
+        training_total_win_amount=new_total_win_amount,
+        training_total_loss_amount=new_total_loss_amount,
+        training_largest_win=new_largest_win,
+        training_largest_loss=new_largest_loss,
+        training_best_win_streak=new_best_win_streak,
+        training_worst_loss_streak=new_worst_loss_streak,
+        training_total_reward=new_total_reward,
+        training_long_trades=new_long_trades,
+        training_short_trades=new_short_trades,
+        training_best_episode_pnl=new_best_episode_pnl,
+        training_worst_episode_pnl=new_worst_episode_pnl,
+        training_total_sharpe=new_total_sharpe,
+        training_total_sortino=new_total_sortino,
+        training_total_max_drawdown=new_total_max_drawdown,
+        avg_win_rate=new_avg_win_rate,
+        avg_profit_factor=new_avg_pf,
+        best_win_rate=new_best_win_rate,
+        best_profit_factor=new_best_profit_factor,
+        trading_iq=iq if iq is not None else current.get("trading_iq", 0),
+        expertise_level=expertise_level if expertise_level else current.get("expertise_level", "Untrained"),
+    )
 
 
 # ============================================================================

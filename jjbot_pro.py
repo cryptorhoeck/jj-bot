@@ -2842,6 +2842,47 @@ class JJBotPro:
             except Exception as e:
                 logger.warning(f"Failed to register model version: {e}")
 
+            # Save cumulative training metrics to database (persist across sessions)
+            try:
+                # Calculate session win rate and profit factor
+                session_ep_count = self.training_metrics.get("episode_count", 0)
+                session_win_rate = 0.0
+                session_pf = 0.0
+                if session_ep_count > 0:
+                    session_win_rate = (self.training_metrics.get("total_win_rate", 0) / session_ep_count) * 100
+                    session_pf = self.training_metrics.get("total_profit_factor", 0) / session_ep_count
+
+                session_metrics = {
+                    "cumulative_pnl": self.training_metrics.get("cumulative_pnl", 0.0),
+                    "total_wins": self.training_metrics.get("total_wins", 0),
+                    "total_losses": self.training_metrics.get("total_losses", 0),
+                    "total_win_amount": self.training_metrics.get("total_win_amount", 0.0),
+                    "total_loss_amount": self.training_metrics.get("total_loss_amount", 0.0),
+                    "largest_win": self.training_metrics.get("largest_win", 0.0),
+                    "largest_loss": self.training_metrics.get("largest_loss", 0.0),
+                    "best_win_streak": self.training_metrics.get("best_win_streak", 0),
+                    "worst_loss_streak": self.training_metrics.get("worst_loss_streak", 0),
+                    "total_reward": self.training_metrics.get("total_reward", 0.0),
+                    "long_trades": self.training_metrics.get("long_trades", 0),
+                    "short_trades": self.training_metrics.get("short_trades", 0),
+                    "best_episode_pnl": self.training_metrics.get("best_episode_pnl", 0.0),
+                    "worst_episode_pnl": self.training_metrics.get("worst_episode_pnl", 0.0),
+                    "total_sharpe": self.training_metrics.get("total_sharpe", 0.0),
+                    "total_sortino": self.training_metrics.get("total_sortino", 0.0),
+                    "total_max_drawdown": self.training_metrics.get("total_max_drawdown", 0.0),
+                    "win_rate": session_win_rate,
+                    "profit_factor": session_pf,
+                }
+
+                data_manager.update_cumulative_training_metrics(
+                    session_metrics=session_metrics,
+                    iq=self.stats.get("trading_iq", 0),
+                    expertise_level=self.stats.get("expertise_level", "Untrained")
+                )
+                logger.info("Cumulative training metrics saved to database")
+            except Exception as e:
+                logger.warning(f"Failed to save cumulative training metrics: {e}")
+
         # Switch back to paper mode (both in-memory and config file)
         self.config.mode = "paper"
         self._save_mode_to_config("paper")

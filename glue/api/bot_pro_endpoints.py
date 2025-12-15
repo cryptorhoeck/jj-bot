@@ -27,6 +27,14 @@ try:
 except ImportError:
     AI_AVAILABLE = False
 
+# Import database module
+try:
+    from modules.database import data_manager
+    DATA_MANAGER_AVAILABLE = True
+except ImportError:
+    data_manager = None
+    DATA_MANAGER_AVAILABLE = False
+
 router = APIRouter(prefix="/api/pro", tags=["JJ-Bot Pro"])
 
 
@@ -604,6 +612,23 @@ async def get_rl_status():
             status["training_metrics"] = json.load(f)
 
     return status
+
+
+@router.get("/rl/cumulative-metrics")
+async def get_cumulative_training_metrics():
+    """Get cumulative training metrics that persist across all sessions"""
+    if not DATA_MANAGER_AVAILABLE:
+        return {"status": "error", "message": "Database not available"}
+
+    try:
+        metrics = data_manager.get_cumulative_training_metrics()
+        return {
+            "status": "ok",
+            "metrics": metrics
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cumulative training metrics: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 # ===== LOGS =====
