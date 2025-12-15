@@ -411,6 +411,14 @@ class JJBotPro:
                 "avg_entry_slippage_pct": 0.0,
                 "avg_exit_slippage_pct": 0.0,
                 "slippage_trades_count": 0,
+                # Signal debugging stats (reset each status log cycle)
+                "rl_hold_count": 0,
+                "rl_buy_signals": 0,
+                "rl_sell_signals": 0,
+                "rl_close_signals": 0,
+                "low_confidence_rejections": 0,
+                "insufficient_candles": 0,
+                "signals_passed_to_handler": 0,
             }
 
         # Track equity at session start for accurate return calculation
@@ -1596,6 +1604,8 @@ class JJBotPro:
                 candles = self.data_feed.get_candles(symbol, "1h", 100) if self.data_feed else []
 
                 if len(candles) < 50:
+                    # Track insufficient candle data
+                    self.stats["insufficient_candles"] = self.stats.get("insufficient_candles", 0) + 1
                     # Log this issue periodically (not every cycle)
                     if not hasattr(self, '_candle_warning_count'):
                         self._candle_warning_count = {}
@@ -1618,10 +1628,12 @@ class JJBotPro:
                         if action == 0:  # HOLD
                             # Model says wait - don't generate any signal
                             # This is a valid decision, not an error
+                            self.stats["rl_hold_count"] = self.stats.get("rl_hold_count", 0) + 1
                             logger.debug(f"RL agent HOLD for {symbol} (conf: {confidence:.1%})")
-                            pass
 
                         elif action == 1:  # BUY
+                            self.stats["rl_buy_signals"] = self.stats.get("rl_buy_signals", 0) + 1
+                            logger.info(f"RL BUY signal: {symbol} @ ${price:.2f} (conf: {confidence:.1%})")
                             signals.append(TradeSignal(
                                 symbol=symbol,
                                 direction="long",
@@ -1633,6 +1645,8 @@ class JJBotPro:
                             ))
 
                         elif action == 2:  # SELL
+                            self.stats["rl_sell_signals"] = self.stats.get("rl_sell_signals", 0) + 1
+                            logger.info(f"RL SELL signal: {symbol} @ ${price:.2f} (conf: {confidence:.1%})")
                             signals.append(TradeSignal(
                                 symbol=symbol,
                                 direction="short",
@@ -1644,6 +1658,7 @@ class JJBotPro:
                             ))
 
                         elif action == 3:  # CLOSE
+                            self.stats["rl_close_signals"] = self.stats.get("rl_close_signals", 0) + 1
                             # Model says close existing position
                             if symbol in self.positions:
                                 logger.info(f"RL agent CLOSE signal for {symbol} (conf: {confidence:.1%})")
@@ -1667,10 +1682,12 @@ class JJBotPro:
             edge_type = combined.get("edge_type", "unknown") if isinstance(combined, dict) else getattr(combined, "edge_type", "unknown")
 
             if combined and conf >= self.config.min_signal_confidence:
+                self.stats["signals_passed_to_handler"] = self.stats.get("signals_passed_to_handler", 0) + 1
                 await self._handle_signal(symbol, combined)
             elif combined and conf < self.config.min_signal_confidence:
-                # Log low confidence rejection
-                logger.debug(f"Signal rejected for {symbol}: confidence too low ({conf:.2%} < {self.config.min_signal_confidence:.2%})")
+                # Track and log low confidence rejection
+                self.stats["low_confidence_rejections"] = self.stats.get("low_confidence_rejections", 0) + 1
+                logger.info(f"Signal REJECTED for {symbol}: confidence too low ({conf:.1%} < {self.config.min_signal_confidence:.0%} required)")
                 if self.audit:
                     self.audit.log_signal_rejected(
                         symbol=symbol,
@@ -1754,7 +1771,7 @@ class JJBotPro:
 
         # Skip if already have position in this symbol
         if symbol in self.positions:
-            logger.debug(f"Signal rejected for {symbol}: already have position")
+            logger.info(f"Signal SKIPPED for {symbol}: already have open position")
             if self.audit:
                 self.audit.log_signal_rejected(
                     symbol=symbol,
@@ -2411,6 +2428,32 @@ class JJBotPro:
             f"Win Rate: {win_rate:.1f}% | "
             f"P&L: ${self.stats['total_pnl']:,.2f}"
         )
+
+        # Log signal analysis summary (helps debug why no trades are happening)
+        rl_hold = self.stats.get("rl_hold_count", 0)
+        rl_buy = self.stats.get("rl_buy_signals", 0)
+        rl_sell = self.stats.get("rl_sell_signals", 0)
+        rl_close = self.stats.get("rl_close_signals", 0)
+        low_conf = self.stats.get("low_confidence_rejections", 0)
+        insuff_candles = self.stats.get("insufficient_candles", 0)
+        passed = self.stats.get("signals_passed_to_handler", 0)
+
+        # Only log if there's been any signal activity
+        total_rl_actions = rl_hold + rl_buy + rl_sell + rl_close
+        if total_rl_actions > 0 or low_conf > 0:
+            logger.info(
+                f"SIGNALS | RL: HOLD={rl_hold} BUY={rl_buy} SELL={rl_sell} CLOSE={rl_close} | "
+                f"LowConf={low_conf} | NoCandles={insuff_candles} | Passed={passed}"
+            )
+
+        # Reset signal stats for next cycle
+        self.stats["rl_hold_count"] = 0
+        self.stats["rl_buy_signals"] = 0
+        self.stats["rl_sell_signals"] = 0
+        self.stats["rl_close_signals"] = 0
+        self.stats["low_confidence_rejections"] = 0
+        self.stats["insufficient_candles"] = 0
+        self.stats["signals_passed_to_handler"] = 0
 
     def _calculate_trading_iq(self):
         """Calculate Trading IQ based on cumulative performance (mimics human IQ scale)
