@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
 
-// Currency configuration
+// Currency configuration - CAD is the base currency (rate 1.0)
+// Rates are FROM CAD TO other currencies
 const CURRENCIES = {
-  CAD: { symbol: 'C$', name: 'Canadian Dollar', rate: 1.36 },
-  USD: { symbol: '$', name: 'US Dollar', rate: 1.0 },
-  EUR: { symbol: '€', name: 'Euro', rate: 0.92 },
-  GBP: { symbol: '£', name: 'British Pound', rate: 0.79 },
-  AUD: { symbol: 'A$', name: 'Australian Dollar', rate: 1.53 },
-  JPY: { symbol: '¥', name: 'Japanese Yen', rate: 149.5 },
-  CHF: { symbol: 'Fr', name: 'Swiss Franc', rate: 0.88 },
+  CAD: { symbol: 'C$', name: 'Canadian Dollar', rate: 1.0 },
+  USD: { symbol: '$', name: 'US Dollar', rate: 0.735 },  // 1 CAD = 0.735 USD
+  EUR: { symbol: '€', name: 'Euro', rate: 0.676 },       // 1 CAD = 0.676 EUR
+  GBP: { symbol: '£', name: 'British Pound', rate: 0.581 }, // 1 CAD = 0.581 GBP
+  AUD: { symbol: 'A$', name: 'Australian Dollar', rate: 1.125 }, // 1 CAD = 1.125 AUD
+  JPY: { symbol: '¥', name: 'Japanese Yen', rate: 109.9 }, // 1 CAD = 109.9 JPY
+  CHF: { symbol: 'Fr', name: 'Swiss Franc', rate: 0.647 }, // 1 CAD = 0.647 CHF
 };
 
-// Format currency - always show full value
+// Format currency - amounts are in CAD, convert to selected currency
 const formatCurrency = (value, currency = 'CAD') => {
   const curr = CURRENCIES[currency] || CURRENCIES.CAD;
   const converted = value * curr.rate;
@@ -36,7 +37,7 @@ const getAutoFontSize = (text, baseSize = 1.5, minSize = 0.65) => {
   return `${minSize}rem`;                        // max length = 0.65rem
 };
 
-export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus }) {
+export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, currency = 'CAD' }) {
   const [equityCurve, setEquityCurve] = useState([]);
   const [openPositions, setOpenPositions] = useState([]);
   const [riskStatus, setRiskStatus] = useState(null);
@@ -48,11 +49,6 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   const [trainingHistory, setTrainingHistory] = useState({});
   const [trainingProgress, setTrainingProgress] = useState(null);
 
-  // Currency state - default to CAD
-  const [currency, setCurrency] = useState(() => {
-    return localStorage.getItem('jjbot_currency') || 'CAD';
-  });
-
   // Equity curve zoom/range state
   const [chartRange, setChartRange] = useState('all'); // '1h', '4h', '1d', '1w', 'all'
   const [chartHeight, setChartHeight] = useState(300);
@@ -60,11 +56,6 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
   // Y-axis zoom state (dollar range)
   const [yAxisZoom, setYAxisZoom] = useState(100); // percentage of data range to show (100 = full, 50 = zoomed in 2x)
   const [yAxisOffset, setYAxisOffset] = useState(50); // where the zoom window is centered (0-100)
-
-  // Save currency preference
-  useEffect(() => {
-    localStorage.setItem('jjbot_currency', currency);
-  }, [currency]);
 
   // Use botStatus from props as fallback for training detection
   const isTraining = trainingProgress?.is_training || (botStatus?.mode === 'training' && botStatus?.running);
@@ -239,31 +230,8 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus })
 
   const yAxisDomain = getYAxisDomain();
 
-  // Currency selector component
-  const CurrencySelector = () => (
-    <select
-      value={currency}
-      onChange={(e) => setCurrency(e.target.value)}
-      className="px-2 py-1 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)] cursor-pointer hover:bg-[var(--bg-secondary)] transition-colors"
-    >
-      {Object.entries(CURRENCIES).map(([code, { name, symbol }]) => (
-        <option key={code} value={code}>
-          {symbol} {code}
-        </option>
-      ))}
-    </select>
-  );
-
   return (
     <div className="space-y-4">
-      {/* Currency Selector - Top Right */}
-      <div className="flex justify-end mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted">Currency:</span>
-          <CurrencySelector />
-        </div>
-      </div>
-
       {/* Performance Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {/* Current Equity - with auto-scaling text */}

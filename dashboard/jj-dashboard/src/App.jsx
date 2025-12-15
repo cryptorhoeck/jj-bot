@@ -11,6 +11,18 @@ import './App.css';
 const API_BASE = 'http://127.0.0.1:8000';
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 
+// Currency configuration - CAD is the base currency
+// All amounts in the system are stored in CAD
+const CURRENCIES = {
+  CAD: { symbol: 'C$', name: 'Canadian Dollar', code: 'CAD' },
+  USD: { symbol: '$', name: 'US Dollar', code: 'USD' },
+  EUR: { symbol: '€', name: 'Euro', code: 'EUR' },
+  GBP: { symbol: '£', name: 'British Pound', code: 'GBP' },
+  AUD: { symbol: 'A$', name: 'Australian Dollar', code: 'AUD' },
+  JPY: { symbol: '¥', name: 'Japanese Yen', code: 'JPY' },
+  CHF: { symbol: 'Fr', name: 'Swiss Franc', code: 'CHF' },
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [trades, setTrades] = useState([]);
@@ -25,6 +37,9 @@ function App() {
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true); // Default to dark mode for trading
+  const [currency, setCurrency] = useState(() => {
+    return localStorage.getItem('jjbot_currency') || 'CAD';
+  });
   const [wsConnected, setWsConnected] = useState(false);
   const [realtimeEvents, setRealtimeEvents] = useState([]);
   const [symbols, setSymbols] = useState([]);
@@ -97,6 +112,11 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Save currency preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('jjbot_currency', currency);
+  }, [currency]);
 
   // ALL FETCH FUNCTIONS
   const fetchTrades = async () => {
@@ -531,6 +551,27 @@ function App() {
                 </button>
               )}
 
+              {/* Currency Selector */}
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="btn btn-ghost px-2 py-1.5 text-sm font-medium cursor-pointer"
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                  color: 'var(--text-primary)',
+                  minWidth: '70px'
+                }}
+                title="Display currency"
+              >
+                {Object.entries(CURRENCIES).map(([code, curr]) => (
+                  <option key={code} value={code}>
+                    {curr.symbol} {code}
+                  </option>
+                ))}
+              </select>
+
               {/* Dark Mode Toggle */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -579,6 +620,7 @@ function App() {
               trades={trades}
               API_BASE={API_BASE}
               botStatus={botStatus}
+              currency={currency}
             />
           )}
 

@@ -131,6 +131,12 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
   const [analyticsPeriod, setAnalyticsPeriod] = useState('all');
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
+  // Model versions state
+  const [modelVersions, setModelVersions] = useState([]);
+  const [activeModel, setActiveModel] = useState(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelStats, setModelStats] = useState([]);
+
   // Load backups on mount
   useEffect(() => {
     loadBackups();
@@ -142,6 +148,13 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
       loadAnalytics();
     }
   }, [viewMode, analyticsPeriod]);
+
+  // Load model versions when switching to models view
+  useEffect(() => {
+    if (viewMode === 'models') {
+      loadModelVersions();
+    }
+  }, [viewMode]);
 
   const loadBackups = async () => {
     setLoadingBackups(true);
@@ -170,6 +183,35 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
       console.error('Error loading analytics:', error);
     }
     setLoadingAnalytics(false);
+  };
+
+  const loadModelVersions = async () => {
+    setLoadingModels(true);
+    try {
+      // Fetch model versions, active model, and performance by model
+      const [versionsRes, activeRes, statsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/analytics/enhanced/model-versions?limit=50`),
+        fetch(`${API_BASE}/api/analytics/enhanced/model-versions/active`),
+        fetch(`${API_BASE}/api/analytics/enhanced/trades-by-model?limit=20`)
+      ]);
+
+      const versionsData = await versionsRes.json();
+      const activeData = await activeRes.json();
+      const statsData = await statsRes.json();
+
+      if (versionsData.success) {
+        setModelVersions(versionsData.data?.versions || []);
+      }
+      if (activeData.success) {
+        setActiveModel(activeData.data);
+      }
+      if (statsData.success) {
+        setModelStats(statsData.data?.models || []);
+      }
+    } catch (error) {
+      console.error('Error loading model versions:', error);
+    }
+    setLoadingModels(false);
   };
 
   const createBackup = async () => {
@@ -351,6 +393,15 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span>Analytics</span>
+          </button>
+          <button
+            onClick={() => setViewMode('models')}
+            className={`nav-tab ${viewMode === 'models' ? 'active' : ''}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span>Models</span>
           </button>
         </div>
       </div>
@@ -926,6 +977,206 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
               <p className="text-muted">No analytics data available. Start trading to generate analytics.</p>
             </div>
           )}
+        </>
+      )}
+
+      {/* Models View */}
+      {viewMode === 'models' && (
+        <>
+          {/* Header with Refresh */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <h2 className="text-lg font-semibold">AI Model Versions</h2>
+                <p className="text-sm text-muted">Track and compare different model versions</p>
+              </div>
+            </div>
+            <button onClick={loadModelVersions} disabled={loadingModels} className="btn btn-secondary btn-sm">
+              {loadingModels ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+
+          {loadingModels && modelVersions.length === 0 && (
+            <div className="card p-12 text-center">
+              <div className="spinner w-8 h-8 mx-auto mb-4"></div>
+              <p className="text-muted">Loading model versions...</p>
+            </div>
+          )}
+
+          {/* Active Model Card */}
+          {activeModel && (
+            <div className="card card-success p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <span className="text-success">●</span>
+                  Active Model
+                </h3>
+                <span className="badge badge-success">Currently In Use</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <div className="p-3 rounded-lg bg-success/10 text-center">
+                  <p className="text-lg font-mono font-bold text-success">{activeModel.version}</p>
+                  <p className="text-xs text-muted">Version</p>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-center">
+                  <p className="text-xl font-bold text-purple-400">{activeModel.final_iq || 0}</p>
+                  <p className="text-xs text-muted">Trading IQ</p>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-center">
+                  <p className="text-xl font-bold">{activeModel.final_win_rate?.toFixed(1) || 0}%</p>
+                  <p className="text-xs text-muted">Win Rate</p>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-center">
+                  <p className={`text-xl font-bold ${(activeModel.final_profit_factor || 0) >= 1 ? 'text-success' : 'text-danger'}`}>
+                    {activeModel.final_profit_factor?.toFixed(2) || '0.00'}
+                  </p>
+                  <p className="text-xs text-muted">Profit Factor</p>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-center">
+                  <p className="text-xl font-bold">{activeModel.training_episodes?.toLocaleString() || 0}</p>
+                  <p className="text-xs text-muted">Episodes</p>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] text-center">
+                  <p className="text-sm font-medium">
+                    {activeModel.created_at ? new Date(activeModel.created_at).toLocaleDateString() : 'N/A'}
+                  </p>
+                  <p className="text-xs text-muted">Created</p>
+                </div>
+              </div>
+              {activeModel.notes && (
+                <p className="mt-4 text-sm text-muted">{activeModel.notes}</p>
+              )}
+            </div>
+          )}
+
+          {/* Model Performance Comparison */}
+          {modelStats.length > 0 && (
+            <div className="card p-6">
+              <h3 className="text-lg font-semibold mb-4">Performance by Model Version</h3>
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Model Version</th>
+                      <th className="text-center">Trades</th>
+                      <th className="text-center">Wins</th>
+                      <th className="text-center">Losses</th>
+                      <th className="text-center">Win Rate</th>
+                      <th className="text-right">Total P&L</th>
+                      <th className="text-right">Avg P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelStats.map((stat, idx) => (
+                      <tr key={idx}>
+                        <td className="font-mono font-semibold">
+                          {stat.model_version === activeModel?.version && (
+                            <span className="text-success mr-2">●</span>
+                          )}
+                          {stat.model_version}
+                        </td>
+                        <td className="text-center">{stat.trade_count}</td>
+                        <td className="text-center text-success">{stat.wins}</td>
+                        <td className="text-center text-danger">{stat.losses}</td>
+                        <td className="text-center">
+                          <span className={stat.win_rate >= 50 ? 'text-success' : 'text-danger'}>
+                            {stat.win_rate}%
+                          </span>
+                        </td>
+                        <td className={`text-right font-semibold ${stat.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                          ${stat.total_pnl?.toFixed(2)}
+                        </td>
+                        <td className={`text-right ${stat.avg_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                          ${stat.avg_pnl?.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* All Model Versions */}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold mb-4">All Model Versions ({modelVersions.length})</h3>
+            {modelVersions.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {modelVersions.map((model, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-4 rounded-xl border ${
+                      model.is_active
+                        ? 'bg-success/5 border-success/30'
+                        : 'bg-[var(--bg-tertiary)] border-[var(--border-color)]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-mono font-bold text-sm">{model.version}</span>
+                      {model.is_active && <span className="badge badge-success text-xs">Active</span>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-muted">IQ:</span>
+                        <span className="ml-1 font-medium text-purple-400">{model.final_iq || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted">Win Rate:</span>
+                        <span className="ml-1 font-medium">{model.final_win_rate?.toFixed(1) || 0}%</span>
+                      </div>
+                      <div>
+                        <span className="text-muted">PF:</span>
+                        <span className={`ml-1 font-medium ${(model.final_profit_factor || 0) >= 1 ? 'text-success' : 'text-danger'}`}>
+                          {model.final_profit_factor?.toFixed(2) || '0.00'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted">Episodes:</span>
+                        <span className="ml-1 font-medium">{model.training_episodes?.toLocaleString() || 0}</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-[var(--border-color)]">
+                      <p className="text-xs text-muted">
+                        Created: {model.created_at ? new Date(model.created_at).toLocaleString() : 'N/A'}
+                      </p>
+                      {model.notes && (
+                        <p className="text-xs text-muted mt-1 truncate" title={model.notes}>
+                          {model.notes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-4">🤖</div>
+                <p className="text-lg font-semibold mb-2">No Model Versions Yet</p>
+                <p className="text-muted">
+                  Model versions are created automatically when training completes.
+                  <br />
+                  Start a training session to create your first model version!
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Info Card */}
+          <div className="card p-6 bg-info/5 border-info/30">
+            <h4 className="font-semibold mb-2 flex items-center gap-2">
+              <svg className="w-5 h-5 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              About Model Versioning
+            </h4>
+            <p className="text-sm text-muted">
+              Each time training completes, a new model version is automatically created and backed up.
+              Model versions track the AI's performance at each training checkpoint, including Trading IQ,
+              win rate, profit factor, and training episode count. This allows you to compare how
+              your AI improves over time and track which model version made each trade.
+            </p>
+          </div>
         </>
       )}
 
