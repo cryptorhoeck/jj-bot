@@ -46,8 +46,11 @@ const TIMEFRAME_OPTIONS = [
 const HISTORY_OPTIONS = [
   { value: 30, label: '30 days' },
   { value: 90, label: '90 days' },
-  { value: 180, label: '180 days' },
+  { value: 180, label: '6 months' },
   { value: 365, label: '1 year' },
+  { value: 730, label: '2 years' },
+  { value: 1825, label: '5 years ⚠️' },
+  { value: 3650, label: '10 years ⚠️' },
 ];
 
 // Calculate estimated candles based on timeframe and history
@@ -1124,6 +1127,11 @@ export function TrainingTab({
               ))}
             </select>
             <p className="text-xs text-muted mt-1">How far back to learn from</p>
+            {trainSettings.history_days >= 1825 && (
+              <p className="text-xs text-warning mt-1">
+                ⚠️ {trainSettings.history_days >= 3650 ? '10 years' : '5 years'} = ~{Math.round(trainSettings.history_days / 365 * 60)} min data fetch (Kraken rate limits)
+              </p>
+            )}
           </div>
         </div>
 
