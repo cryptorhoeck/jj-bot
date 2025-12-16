@@ -570,7 +570,12 @@ class TradingEnvironment:
         return self._get_observation()
 
     def _get_real_data_segment(self) -> np.ndarray:
-        """Get a random segment of real market data for training"""
+        """Get a random segment of real market data for training
+
+        Includes data augmentation to prevent long/short bias:
+        - 50% chance to invert price data (turns bull market into bear market)
+        - This teaches the model that shorts can be profitable too
+        """
         global _DATA_CACHE, _CACHE_SYMBOLS
 
         if not _DATA_CACHE:
@@ -595,7 +600,93 @@ class TradingEnvironment:
             # Update max_steps for this episode
             self.max_steps = len(segment) - self.lookback_window - 1
 
+        # DATA AUGMENTATION: 50% chance to invert prices (create synthetic bear market)
+        # This prevents the model from learning a long-only bias from bull market data
+        if random.random() < 0.5:
+            segment = self._invert_price_data(segment)
+            self._current_symbol = f"{symbol}_INV"  # Mark as inverted for logging
+
         return segment
+
+    def _invert_price_data(self, data: np.ndarray) -> np.ndarray:
+        """
+        Invert price data to create synthetic bear market from bull market.
+
+        This transforms an uptrend into a downtrend while preserving:
+        - Volatility patterns
+        - Volume patterns
+        - Technical indicator relationships
+
+        The key insight: if price goes from 100 -> 110 (10% gain),
+        inverted it becomes 100 -> 90.9 (10% loss equivalent).
+        """
+        inverted = data.copy()
+
+        # Feature 0: Close price - invert around the mean
+        prices = data[:, 0]
+        price_mean = np.mean(prices)
+        # Reflect prices around the mean: new_price = 2*mean - old_price
+        # This turns uptrends into downtrends
+        inverted[:, 0] = 2 * price_mean - prices
+
+        # Ensure prices stay positive (shift up if needed)
+        min_price = np.min(inverted[:, 0])
+        if min_price <= 0:
+            inverted[:, 0] += abs(min_price) + 1.0
+
+        # Feature 1: Returns - negate (up becomes down)
+        inverted[:, 1] = -data[:, 1]
+
+        # Feature 2: Log returns - negate
+        inverted[:, 2] = -data[:, 2]
+
+        # Feature 3: Volatility - keep same (volatility is symmetric)
+        # inverted[:, 3] = data[:, 3]  # Already copied
+
+        # Feature 4: RSI - invert (high RSI becomes low RSI)
+        # RSI is 0-1 normalized, so: inverted = 1 - original
+        inverted[:, 4] = 1.0 - data[:, 4]
+
+        # Feature 5-6: MACD - negate (bullish becomes bearish)
+        inverted[:, 5] = -data[:, 5]
+        inverted[:, 6] = -data[:, 6]
+
+        # Feature 7: BB position - negate (above band becomes below band)
+        inverted[:, 7] = -data[:, 7]
+
+        # Feature 8-9: BB distances - swap (upper becomes lower)
+        inverted[:, 8] = data[:, 9]  # Distance to upper <- distance to lower
+        inverted[:, 9] = data[:, 8]  # Distance to lower <- distance to upper
+
+        # Feature 10: Volume - keep same (volume patterns preserved)
+        # inverted[:, 10] = data[:, 10]  # Already copied
+
+        # Feature 11-12: Momentum - negate
+        inverted[:, 11] = -data[:, 11]
+        inverted[:, 12] = -data[:, 12]
+
+        # Feature 13: SMA crossover - negate
+        inverted[:, 13] = -data[:, 13]
+
+        # Feature 14: High-Low range - keep same (range is symmetric)
+        # inverted[:, 14] = data[:, 14]  # Already copied
+
+        # Feature 15: Close position in range - invert
+        inverted[:, 15] = 1.0 - data[:, 15]
+
+        # Feature 16: ATR - keep same (volatility measure)
+        # inverted[:, 16] = data[:, 16]  # Already copied
+
+        # Feature 17: Stochastic %K - invert
+        inverted[:, 17] = 1.0 - data[:, 17]
+
+        # Feature 18: OBV trend - negate
+        inverted[:, 18] = -data[:, 18]
+
+        # Feature 19: VWAP deviation - negate
+        inverted[:, 19] = -data[:, 19]
+
+        return inverted
 
     def _generate_dummy_data(self) -> np.ndarray:
         """Generate dummy price data for testing"""
