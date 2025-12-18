@@ -500,6 +500,7 @@ async def export_data():
 async def clear_data():
     """Clear trading data only - preserves training IQ but resets equity"""
     from pathlib import Path
+    from bot_pro_endpoints import get_bot
 
     # Load config to get initial_capital (defaults to 0 if not set)
     PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -536,10 +537,37 @@ async def clear_data():
                 except Exception as e:
                     logger.warning(f"Could not update bot_state.json: {e}")
 
+            # CRITICAL: Also reset the running bot's in-memory state
+            bot = get_bot()
+            bot_reset = False
+            if bot:
+                try:
+                    # Reset equity and positions
+                    bot.equity = initial_capital
+                    bot.peak_equity = initial_capital
+                    bot.daily_pnl = 0.0
+                    bot.daily_start_equity = initial_capital
+
+                    # Clear positions and trade history
+                    bot.positions.clear()
+                    bot.trade_history.clear()
+
+                    # Reset stats but preserve training stats
+                    bot.stats["total_trades"] = 0
+                    bot.stats["winning_trades"] = 0
+                    bot.stats["total_pnl"] = 0.0
+                    bot.stats["signals_analyzed"] = 0
+
+                    bot_reset = True
+                    logger.info(f"Bot in-memory state reset to ${initial_capital:,.2f}")
+                except Exception as e:
+                    logger.warning(f"Could not reset running bot state: {e}")
+
             return {
                 "status": "cleared",
                 "message": f"Trading data cleared, equity reset to ${initial_capital:,.2f}. Training IQ preserved.",
-                "cleared": counts
+                "cleared": counts,
+                "bot_reset": bot_reset
             }
         else:
             return {"status": "error", "message": "Data manager not available"}
