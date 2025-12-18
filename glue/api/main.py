@@ -517,6 +517,24 @@ async def clear_data():
         if DATA_MANAGER_AVAILABLE:
             counts = data_manager.reset_trading_data(initial_capital)
 
+            # ALSO clear the legacy trades.db (used by engine.py)
+            # This is a separate database from jjbot.db
+            trades_db_path = PROJECT_ROOT / "data" / "trades.db"
+            if trades_db_path.exists():
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(str(trades_db_path))
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM trades")
+                    legacy_count = cur.fetchone()[0]
+                    cur.execute("DELETE FROM trades")
+                    conn.commit()
+                    conn.close()
+                    counts["legacy_trades_db"] = legacy_count
+                    logger.info(f"Cleared {legacy_count} trades from legacy trades.db")
+                except Exception as e:
+                    logger.warning(f"Could not clear legacy trades.db: {e}")
+
             # Also update bot_state.json to prevent stale equity values
             state_file = PROJECT_ROOT / "data" / "bot_state.json"
             if state_file.exists():
