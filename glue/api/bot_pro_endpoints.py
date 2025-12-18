@@ -256,6 +256,7 @@ async def get_bot_config():
 async def update_bot_config(updates: BotConfigUpdate):
     """Update bot configuration"""
     config = load_config() or {}
+    old_capital = config.get("initial_capital", 0)
 
     # Apply updates
     for field, value in updates.dict(exclude_none=True).items():
@@ -263,10 +264,47 @@ async def update_bot_config(updates: BotConfigUpdate):
 
     save_config(config)
 
+    # If initial_capital changed, also update equity in bot_state.json and database
+    new_capital = config.get("initial_capital", 0)
+    equity_synced = False
+    if updates.initial_capital is not None and new_capital != old_capital:
+        try:
+            # Update bot_state.json
+            project_root = os.path.join(os.path.dirname(__file__), '..', '..')
+            state_file = os.path.join(project_root, 'data', 'bot_state.json')
+            if os.path.exists(state_file):
+                with open(state_file) as f:
+                    state = json.load(f)
+                state["equity"] = new_capital
+                state["peak_equity"] = new_capital
+                state["daily_start_equity"] = new_capital
+                with open(state_file, 'w') as f:
+                    json.dump(state, f, indent=2)
+
+            # Update database if available
+            if DATA_MANAGER_AVAILABLE:
+                from modules.database import data_manager
+                data_manager.update_bot_state(
+                    equity=new_capital,
+                    peak_equity=new_capital,
+                    daily_pnl=0.0
+                )
+
+            equity_synced = True
+        except Exception as e:
+            print(f"[CONFIG] Warning: Could not sync equity: {e}")
+
+    message = "Configuration updated."
+    if equity_synced:
+        message = f"Configuration updated. Equity synced to ${new_capital:,.2f}."
+    elif updates.initial_capital is not None:
+        message += " Restart bot to apply capital changes."
+
     return {
         "status": "updated",
         "config": config,
-        "message": "Configuration updated. Restart bot to apply changes."
+        "equity_synced": equity_synced,
+        "message": message
     }
 
 
