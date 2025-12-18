@@ -1670,6 +1670,12 @@ class JJBotPro:
 
         # 4. Combine signals and decide
         if signals:
+            # Check if any RL signal is present (not just edge strategies)
+            has_rl_signal = any(
+                (s.get("edge_type") if isinstance(s, dict) else getattr(s, "edge_type", "")) == "rl_agent"
+                for s in signals
+            )
+
             # Use first signal (demo mode) or combine (production)
             if self._demo_mode or not self.edge_manager:
                 combined = signals[0]
@@ -1685,9 +1691,17 @@ class JJBotPro:
                 self.stats["signals_passed_to_handler"] = self.stats.get("signals_passed_to_handler", 0) + 1
                 await self._handle_signal(symbol, combined)
             elif combined and conf < self.config.min_signal_confidence:
-                # Track and log low confidence rejection
+                # Track low confidence rejection
                 self.stats["low_confidence_rejections"] = self.stats.get("low_confidence_rejections", 0) + 1
-                logger.info(f"Signal REJECTED for {symbol}: confidence too low ({conf:.1%} < {self.config.min_signal_confidence:.0%} required)")
+                reason = combined.get("reason", "") if isinstance(combined, dict) else getattr(combined, "reason", "")
+                reason_short = reason[:50] + "..." if len(reason) > 50 else reason
+
+                # Only log at INFO level if RL signal was present (meaningful rejection)
+                # Edge-only weak signals are logged at DEBUG to reduce noise
+                if has_rl_signal or conf >= 0.25:
+                    logger.info(f"Signal REJECTED for {symbol}: {direction} {edge_type} ({conf:.1%} < {self.config.min_signal_confidence:.0%}) - {reason_short}")
+                else:
+                    logger.debug(f"Weak edge signal skipped for {symbol}: {direction} {edge_type} ({conf:.1%}) - {reason_short}")
                 if self.audit:
                     self.audit.log_signal_rejected(
                         symbol=symbol,
