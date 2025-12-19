@@ -2048,7 +2048,8 @@ class JJBotPro:
                     "signal": f"OPEN_{direction.upper()}",
                     "last_price": filled_price,
                     "vwap": filled_price,
-                    "pnl": 0.0  # No P&L on entry
+                    "pnl": 0.0,  # No P&L on entry
+                    "strategy": edge_type or "unknown"
                 })
             except Exception as e:
                 logger.warning(f"Failed to log trade entry to database: {e}")
@@ -2361,6 +2362,21 @@ class JJBotPro:
         # Update equity
         self.equity += pnl
         self.peak_equity = max(self.peak_equity, self.equity)
+
+        # Log trade CLOSE to legacy database (trades.db) for Data Analytics page
+        if DB_AVAILABLE and db_log_trade:
+            try:
+                db_log_trade({
+                    "timestamp": exit_time.isoformat(),
+                    "symbol": symbol,
+                    "signal": f"CLOSE_{pos.side.upper()}",
+                    "last_price": actual_exit_price,
+                    "vwap": actual_exit_price,
+                    "pnl": pnl,  # Actual P&L on close
+                    "strategy": pos.signal_source or "unknown"
+                })
+            except Exception as e:
+                logger.warning(f"Failed to log trade close to database: {e}")
 
         # Remove position
         del self.positions[symbol]

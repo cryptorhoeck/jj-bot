@@ -62,16 +62,19 @@ def init_db() -> None:
             signal TEXT,
             last_price REAL,
             vwap REAL,
-            pnl REAL DEFAULT 0.0
+            pnl REAL DEFAULT 0.0,
+            strategy TEXT DEFAULT 'unknown'
         )
         """)
-        
-        # Check if pnl column exists, add it if not
+
+        # Check if columns exist, add them if not
         cur.execute("PRAGMA table_info(trades)")
         columns = [col[1] for col in cur.fetchall()]
         if 'pnl' not in columns:
             cur.execute("ALTER TABLE trades ADD COLUMN pnl REAL DEFAULT 0.0")
-        
+        if 'strategy' not in columns:
+            cur.execute("ALTER TABLE trades ADD COLUMN strategy TEXT DEFAULT 'unknown'")
+
         conn.commit()
     print("[GORILLA] Database initialized for JJ Gorilla")
 
@@ -81,20 +84,21 @@ def log_trade(trade: Dict[str, Any]) -> None:
 
     Args:
         trade: Dictionary containing trade data with keys:
-               timestamp, symbol, signal, last_price, vwap, pnl
+               timestamp, symbol, signal, last_price, vwap, pnl, strategy
     """
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-        INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO trades (timestamp, symbol, signal, last_price, vwap, pnl, strategy)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
-            trade["timestamp"], 
-            trade["symbol"], 
-            trade["signal"], 
-            trade["last_price"], 
-            trade["vwap"], 
-            trade.get("pnl", 0.0)
+            trade["timestamp"],
+            trade["symbol"],
+            trade["signal"],
+            trade["last_price"],
+            trade["vwap"],
+            trade.get("pnl", 0.0),
+            trade.get("strategy", "unknown")
         ))
         conn.commit()
 
@@ -111,21 +115,22 @@ def get_trades(limit: int = 50) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-        SELECT timestamp, symbol, signal, last_price, vwap, pnl 
-        FROM trades 
-        ORDER BY id DESC 
+        SELECT timestamp, symbol, signal, last_price, vwap, pnl, strategy
+        FROM trades
+        ORDER BY id DESC
         LIMIT ?
         """, (limit,))
-        
+
         rows = cur.fetchall()
         return [
             {
                 "timestamp": row[0],
-                "symbol": row[1], 
+                "symbol": row[1],
                 "signal": row[2],
                 "last_price": row[3],
                 "vwap": row[4],
-                "pnl": row[5]
+                "pnl": row[5],
+                "strategy": row[6] if len(row) > 6 else "unknown"
             }
             for row in rows
         ]

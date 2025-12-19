@@ -506,12 +506,13 @@ async def get_comprehensive_analytics(
         cursor = conn.cursor()
 
         # Build time filter
-        time_filter = ""
+        # Only count CLOSE records for meaningful P&L stats (OPEN records have pnl=0)
+        time_filter = "WHERE signal LIKE 'CLOSE%'"
         if period != "all":
             period_hours = {"24h": 24, "7d": 168, "30d": 720, "90d": 2160}.get(period, 0)
             if period_hours:
                 time_threshold = (datetime.now() - timedelta(hours=period_hours)).isoformat()
-                time_filter = f"WHERE timestamp >= '{time_threshold}'"
+                time_filter = f"WHERE signal LIKE 'CLOSE%' AND timestamp >= '{time_threshold}'"
 
         # === OVERVIEW METRICS ===
         cursor.execute(f"""
