@@ -7,7 +7,6 @@ function DelayedNumberInput({ value, onChange, className, step, min, max, multip
     multiplier !== 1 ? (value * multiplier).toFixed(decimals) : value
   );
 
-  // Sync local value when external value changes (e.g., from server)
   useEffect(() => {
     const displayValue = multiplier !== 1 ? (value * multiplier).toFixed(decimals) : value;
     setLocalValue(displayValue);
@@ -40,6 +39,49 @@ function DelayedNumberInput({ value, onChange, className, step, min, max, multip
   );
 }
 
+// Collapsible Section Component
+function Section({ title, icon, children, defaultOpen = true, badge = null }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 flex items-center justify-between bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span>{icon}</span>
+          <span className="font-semibold">{title}</span>
+          {badge && <span className="badge badge-info ml-2">{badge}</span>}
+        </div>
+        <span className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+      {isOpen && <div className="p-4">{children}</div>}
+    </div>
+  );
+}
+
+// Toggle Switch Component
+function ToggleSwitch({ checked, onChange, label, description }) {
+  return (
+    <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-tertiary)]">
+      <div>
+        <p className="font-medium">{label}</p>
+        {description && <p className="text-sm text-muted">{description}</p>}
+      </div>
+      <label className="relative inline-flex items-center cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="sr-only peer"
+        />
+        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
+      </label>
+    </div>
+  );
+}
+
 export function TradingTab({
   darkMode,
   API_BASE,
@@ -50,40 +92,29 @@ export function TradingTab({
   setSelectedSymbols,
   availableSymbols = []
 }) {
-  // Use shared state from App.jsx when available, otherwise manage locally
   const [botRunning, setBotRunning] = useState(sharedBotStatus?.running || false);
   const [loading, setLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState('control'); // control, config, symbols, strategies
 
-  // Sync with shared state when it changes
-  useEffect(() => {
-    if (sharedBotStatus) {
-      setBotRunning(sharedBotStatus.running || false);
-    }
-  }, [sharedBotStatus]);
-
-  // Recommended default config (professional trading settings)
+  // Default config
   const DEFAULT_CONFIG = {
     mode: 'paper',
     initial_capital: 0,
-    max_position_pct: 0.02,      // 2% per trade (conservative)
-    max_positions: 5,            // Max 5 concurrent positions
-    stop_loss_pct: 0.02,         // 2% stop loss
-    take_profit_pct: 0.04,       // 4% take profit (2:1 risk/reward)
-    max_daily_loss_pct: 0.05,    // 5% max daily loss
-    max_drawdown_pct: 0.10,      // 10% max drawdown
-    circuit_breaker_losses: 3,   // 3 consecutive losses triggers breaker
-    circuit_breaker_cooldown_minutes: 30, // 30 min cooldown
-    min_signal_confidence: 0.60, // 60% minimum confidence
+    max_position_pct: 0.02,
+    max_positions: 5,
+    stop_loss_pct: 0.02,
+    take_profit_pct: 0.04,
+    max_daily_loss_pct: 0.05,
+    max_drawdown_pct: 0.10,
+    circuit_breaker_losses: 3,
+    circuit_breaker_cooldown_minutes: 30,
+    min_signal_confidence: 0.60,
     use_rl_agent: true,
     use_edge_strategies: true,
     use_alternative_data: true,
     symbols: []
   };
 
-  // Pro config state
   const [proConfig, setProConfig] = useState({...DEFAULT_CONFIG});
-
   const [botStats, setBotStats] = useState({
     equity: 0,
     positions: 0,
@@ -91,9 +122,15 @@ export function TradingTab({
     total_pnl: 0,
     win_rate: 0
   });
-
   const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
+
+  // Sync with shared state
+  useEffect(() => {
+    if (sharedBotStatus) {
+      setBotRunning(sharedBotStatus.running || false);
+    }
+  }, [sharedBotStatus]);
 
   // Load bot status
   const checkBotStatus = useCallback(async () => {
@@ -123,7 +160,6 @@ export function TradingTab({
       const data = await response.json();
       if (data.config) {
         setProConfig(prev => ({ ...prev, ...data.config }));
-        // Only update symbols from config if we have none selected (first load)
         if (data.config.symbols && selectedSymbols.length === 0) {
           setSelectedSymbols(data.config.symbols.map(s => s.replace('/USD', '')));
         }
@@ -175,97 +211,74 @@ export function TradingTab({
     }
   };
 
-  // Sync selectedSymbols to server config when they change (from either tab)
+  // Sync symbols to server
   useEffect(() => {
-    // Skip initial empty state and when loading from server
     if (selectedSymbols.length === 0) return;
-
     const symbolsWithPair = selectedSymbols.map(s => s.includes('/') ? s : `${s}/USD`);
     const currentSymbols = proConfig.symbols || [];
-
-    // Only sync if symbols actually changed
     if (JSON.stringify(symbolsWithPair.sort()) !== JSON.stringify(currentSymbols.sort())) {
-      // Debounce the save to avoid too many API calls
       const timeoutId = setTimeout(() => {
-        saveConfig({ symbols: symbolsWithPair }, true); // silent save
+        saveConfig({ symbols: symbolsWithPair }, true);
       }, 500);
       return () => clearTimeout(timeoutId);
     }
   }, [selectedSymbols]);
 
-  // Update config field with immediate save for sliders, debounce for text inputs
+  // Update config
   const updateConfig = (field, value, immediate = false) => {
     const newConfig = { ...proConfig, [field]: value };
     setProConfig(newConfig);
-
     if (updateConfig.timeout) clearTimeout(updateConfig.timeout);
-
     if (immediate) {
-      // Save immediately for sliders and toggles
       saveConfig({ [field]: value });
     } else {
-      // Debounce for text inputs
       updateConfig.timeout = setTimeout(() => {
         saveConfig({ [field]: value });
       }, 500);
     }
   };
 
-  // Reset to recommended defaults
+  // Reset to defaults
   const resetToDefaults = async () => {
-    if (!window.confirm('Reset all settings to recommended defaults? This will optimize for conservative trading with proper risk management.')) {
-      return;
-    }
-
-    // Keep current symbols if any, otherwise use defaults
+    if (!window.confirm('Reset all settings to recommended defaults?')) return;
     const defaultSymbols = proConfig.symbols.length > 0 ? proConfig.symbols : [
       'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'DOGE/USD',
       'ADA/USD', 'AVAX/USD', 'DOT/USD', 'LINK/USD', 'ATOM/USD'
     ];
-
-    const resetConfig = {
-      ...DEFAULT_CONFIG,
-      symbols: defaultSymbols
-    };
-
+    const resetConfig = { ...DEFAULT_CONFIG, symbols: defaultSymbols };
     setProConfig(resetConfig);
     setSelectedSymbols(defaultSymbols);
-
     try {
       await fetch(`${API_BASE}/api/pro/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(resetConfig)
       });
-      toast.success('Settings reset to recommended defaults');
+      toast.success('Settings reset to defaults');
     } catch (error) {
       toast.error('Failed to save default settings');
     }
   };
 
-  // Toggle symbol selection
+  // Toggle symbol
   const toggleSymbol = (symbol) => {
     const newSymbols = selectedSymbols.includes(symbol)
       ? selectedSymbols.filter(s => s !== symbol)
       : [...selectedSymbols, symbol];
     setSelectedSymbols(newSymbols);
-
-    // Save to config as SYMBOL/USD format
-    const symbolsWithPair = newSymbols.map(s => `${s}/USD`);
-    saveConfig({ symbols: symbolsWithPair });
+    saveConfig({ symbols: newSymbols.map(s => `${s}/USD`) });
   };
 
-  // Start bot in paper trading mode
+  // Start/Stop bot
   const startBot = async () => {
     setLoading(true);
     try {
-      // Explicitly request paper mode to ensure we're trading, not training
       const response = await fetch(`${API_BASE}/api/pro/start?mode=paper`, { method: 'POST' });
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
         toast.success('Paper trading started!');
-        onBotStatusChange?.(); // Notify App.jsx to refresh status
+        onBotStatusChange?.();
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to start bot');
       }
@@ -275,7 +288,6 @@ export function TradingTab({
     setLoading(false);
   };
 
-  // Stop bot
   const stopBot = async () => {
     setLoading(true);
     try {
@@ -284,7 +296,7 @@ export function TradingTab({
       if (data.status === 'stopped' || data.status === 'not_running') {
         setBotRunning(false);
         toast.success('Bot stopped');
-        onBotStatusChange?.(); // Notify App.jsx to refresh status
+        onBotStatusChange?.();
       } else if (data.status === 'error') {
         toast.error(data.message || 'Failed to stop');
       }
@@ -294,186 +306,131 @@ export function TradingTab({
     setLoading(false);
   };
 
-  // Filter symbols by search
   const filteredSymbols = availableSymbols.filter(s =>
     s.toLowerCase().includes(symbolSearch.toLowerCase())
   );
 
   return (
-    <div className="space-y-6">
-      {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-[var(--border-color)] pb-2">
-        {['control', 'config', 'symbols', 'strategies'].map(section => (
-          <button
-            key={section}
-            onClick={() => setActiveSection(section)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeSection === section
-                ? 'bg-info text-white'
-                : 'text-muted hover:bg-[var(--bg-tertiary)]'
-            }`}
-          >
-            {section === 'control' && '🤖 Control'}
-            {section === 'config' && '⚙️ Settings'}
-            {section === 'symbols' && '📊 Symbols'}
-            {section === 'strategies' && '🧠 Strategies'}
-          </button>
-        ))}
-      </div>
-
-      {/* CONTROL SECTION */}
-      {activeSection === 'control' && (
-        <>
+    <div className="space-y-4">
+      {/* ===== HEADER CONTROL BAR ===== */}
+      <div className={`card p-4 ${botRunning ? 'border-2 border-success' : ''}`}>
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
           {/* Bot Status & Control */}
-          <div className={`card p-6 ${botRunning ? 'card-success' : ''}`}>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${botRunning ? 'bg-success/10' : 'bg-[var(--bg-tertiary)]'}`}>
-                  <span className="text-3xl">{botRunning ? '🟢' : '⚪'}</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">JJ-Bot Pro</h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`badge ${botRunning ? 'badge-live' : 'badge-warning'}`}>
-                      {botRunning ? '▶ Trading' : '⏹ Stopped'}
-                    </span>
-                    {proConfig.mode === 'live' && (
-                      <span className="badge badge-danger">⚠️ LIVE MONEY</span>
-                    )}
-                    <span className="text-sm text-muted">{selectedSymbols.length} symbols</span>
-                  </div>
-                </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={botRunning ? stopBot : startBot}
+              disabled={loading}
+              className={`btn btn-lg min-w-[140px] ${botRunning ? 'btn-danger' : 'btn-success'}`}
+            >
+              {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹ Stop' : '▶ Start'}
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${botRunning ? 'bg-success animate-pulse' : 'bg-gray-500'}`}></span>
+                <span className="font-semibold">{botRunning ? 'Trading Active' : 'Stopped'}</span>
+                {proConfig.mode === 'live' && (
+                  <span className="badge badge-danger text-xs">LIVE</span>
+                )}
               </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={botRunning ? stopBot : startBot}
-                  disabled={loading}
-                  className={`btn btn-lg ${botRunning ? 'btn-danger' : 'btn-success'}`}
-                >
-                  {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹️ Stop' : '▶️ Start Trading'}
-                </button>
-              </div>
+              <p className="text-sm text-muted">
+                {selectedSymbols.length} symbols • {proConfig.use_rl_agent ? 'RL' : ''}{proConfig.use_rl_agent && proConfig.use_edge_strategies ? '+' : ''}{proConfig.use_edge_strategies ? 'Edge' : ''} strategy
+              </p>
             </div>
-
-            {/* Live Stats */}
-            {botRunning && (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-4 border-t border-[var(--border-color)]">
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Equity</p>
-                  <p className="text-lg font-bold">${botStats.equity?.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Positions</p>
-                  <p className="text-lg font-bold">{botStats.positions}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Trades</p>
-                  <p className="text-lg font-bold">{botStats.total_trades}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">P&L</p>
-                  <p className={`text-lg font-bold ${botStats.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
-                    ${botStats.total_pnl?.toFixed(2)}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted uppercase">Win Rate</p>
-                  <p className="text-lg font-bold">{botStats.win_rate?.toFixed(1)}%</p>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Info Card - Modes Explained */}
-          {!botRunning && (
-            <div className="card p-6 bg-[var(--bg-secondary)]">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">💡</div>
-                <div className="flex-1">
-                  <h3 className="font-semibold mb-2">How It Works</h3>
-                  <div className="space-y-2 text-sm text-muted">
-                    <p>
-                      <strong className="text-[var(--text-color)]">▶️ Start Trading:</strong> Bot trades with real market data in paper mode (no real money). Click "Stop" to pause.
-                    </p>
-                    <p>
-                      <strong className="text-[var(--text-color)]">🧠 Training:</strong> Go to the <strong>Training</strong> tab to train the AI model and improve trading decisions.
-                    </p>
-                  </div>
-                </div>
-              </div>
+          {/* Metrics Bar */}
+          <div className="flex-1 grid grid-cols-5 gap-2 lg:gap-4">
+            <div className="text-center p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted">Equity</p>
+              <p className="font-bold">${botStats.equity?.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
             </div>
-          )}
+            <div className="text-center p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted">P&L</p>
+              <p className={`font-bold ${botStats.total_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                ${botStats.total_pnl?.toFixed(2)}
+              </p>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted">Win Rate</p>
+              <p className="font-bold">{botStats.win_rate?.toFixed(1)}%</p>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted">Trades</p>
+              <p className="font-bold">{botStats.total_trades}</p>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-[var(--bg-tertiary)]">
+              <p className="text-xs text-muted">Positions</p>
+              <p className="font-bold">{positions.length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* Open Positions */}
-          {positions.length > 0 && (
-            <div className="card p-6">
-              <h3 className="text-lg font-semibold mb-4">📈 Open Positions ({positions.length})</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-muted text-left border-b border-[var(--border-color)]">
-                      <th className="pb-2">Symbol</th>
-                      <th className="pb-2">Side</th>
-                      <th className="pb-2">Entry</th>
-                      <th className="pb-2">Current</th>
-                      <th className="pb-2">P&L</th>
-                      <th className="pb-2">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {positions.map((pos, idx) => (
-                      <tr key={idx} className="border-b border-[var(--border-color)]">
-                        <td className="py-2 font-semibold">{pos.symbol}</td>
-                        <td className={pos.side === 'long' ? 'text-success' : 'text-danger'}>
-                          {pos.side?.toUpperCase()}
-                        </td>
-                        <td>${pos.entry_price?.toFixed(2)}</td>
-                        <td>${pos.current_price?.toFixed(2)}</td>
-                        <td className={pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}>
-                          ${pos.unrealized_pnl?.toFixed(2)}
-                        </td>
-                        <td className="text-muted">{pos.signal_source}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
+      {/* ===== OPEN POSITIONS ===== */}
+      {positions.length > 0 && (
+        <Section title="Open Positions" icon="📈" badge={positions.length} defaultOpen={true}>
+          <div className="overflow-x-auto -mx-4 px-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted text-left border-b border-[var(--border-color)]">
+                  <th className="pb-2 pr-4">Symbol</th>
+                  <th className="pb-2 pr-4">Side</th>
+                  <th className="pb-2 pr-4">Entry</th>
+                  <th className="pb-2 pr-4">Current</th>
+                  <th className="pb-2 pr-4">P&L</th>
+                  <th className="pb-2">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map((pos, idx) => (
+                  <tr key={idx} className="border-b border-[var(--border-color)]">
+                    <td className="py-2 pr-4 font-semibold">{pos.symbol}</td>
+                    <td className={`pr-4 ${pos.side === 'long' ? 'text-success' : 'text-danger'}`}>
+                      {pos.side?.toUpperCase()}
+                    </td>
+                    <td className="pr-4">${pos.entry_price?.toFixed(2)}</td>
+                    <td className="pr-4">${pos.current_price?.toFixed(2)}</td>
+                    <td className={`pr-4 font-medium ${pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+                      ${pos.unrealized_pnl?.toFixed(2)}
+                    </td>
+                    <td className="text-muted text-xs">{pos.signal_source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
       )}
 
-      {/* SETTINGS SECTION */}
-      {activeSection === 'config' && (
-        <div className="space-y-6">
+      {/* ===== MAIN CONTENT: 2-COLUMN LAYOUT ===== */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* LEFT COLUMN: SETTINGS */}
+        <div className="space-y-4">
           {/* Trading Mode */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">🎯 Trading Mode</h3>
-            <div className="flex gap-4">
+          <Section title="Trading Mode" icon="🎯" defaultOpen={false}>
+            <div className="flex gap-2">
               {['paper', 'live'].map(mode => (
                 <button
                   key={mode}
                   onClick={() => updateConfig('mode', mode, true)}
-                  className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
                     proConfig.mode === mode
                       ? mode === 'live' ? 'bg-danger text-white' : 'bg-success text-white'
                       : 'bg-[var(--bg-tertiary)] text-muted hover:bg-[var(--bg-secondary)]'
                   }`}
                 >
-                  {mode === 'paper' ? '📝 Paper Trading' : '💰 Live Trading'}
+                  {mode === 'paper' ? '📝 Paper' : '💰 Live'}
                 </button>
               ))}
             </div>
             {proConfig.mode === 'live' && (
-              <p className="mt-2 text-danger text-sm">⚠️ Live trading uses real funds. Use with caution!</p>
+              <p className="mt-2 text-danger text-sm">⚠️ Live trading uses real funds!</p>
             )}
-          </div>
+          </Section>
 
           {/* Capital & Position Sizing */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">💰 Capital & Position Sizing</h3>
-            <div className="grid md:grid-cols-3 gap-4">
+          <Section title="Capital & Position Sizing" icon="💰" defaultOpen={false}>
+            <div className="space-y-3">
               <div>
                 <label className="input-label">Initial Capital ($)</label>
                 <DelayedNumberInput
@@ -482,343 +439,298 @@ export function TradingTab({
                   className="input"
                 />
               </div>
-              <div>
-                <label className="input-label">Position Size (%)</label>
-                <DelayedNumberInput
-                  step="1"
-                  value={proConfig.max_position_pct}
-                  multiplier={100}
-                  decimals={0}
-                  onChange={(val) => updateConfig('max_position_pct', val)}
-                  className="input"
-                />
-                <p className="text-xs text-muted mt-1">${(proConfig.initial_capital * proConfig.max_position_pct).toFixed(0)} per trade</p>
-              </div>
-              <div>
-                <label className="input-label">Max Concurrent Positions</label>
-                <DelayedNumberInput
-                  value={proConfig.max_positions}
-                  onChange={(val) => updateConfig('max_positions', Math.round(val))}
-                  className="input"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Risk Management */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">🛡️ Risk Management</h3>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="input-label">Stop Loss (%)</label>
-                <DelayedNumberInput
-                  step="0.1"
-                  value={proConfig.stop_loss_pct}
-                  multiplier={100}
-                  decimals={1}
-                  onChange={(val) => updateConfig('stop_loss_pct', val)}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="input-label">Take Profit (%)</label>
-                <DelayedNumberInput
-                  step="0.1"
-                  value={proConfig.take_profit_pct}
-                  multiplier={100}
-                  decimals={1}
-                  onChange={(val) => updateConfig('take_profit_pct', val)}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="input-label">Max Daily Loss (%)</label>
-                <DelayedNumberInput
-                  step="0.1"
-                  value={proConfig.max_daily_loss_pct}
-                  multiplier={100}
-                  decimals={1}
-                  onChange={(val) => updateConfig('max_daily_loss_pct', val)}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="input-label">Max Drawdown (%)</label>
-                <DelayedNumberInput
-                  step="0.1"
-                  value={proConfig.max_drawdown_pct}
-                  multiplier={100}
-                  decimals={1}
-                  onChange={(val) => updateConfig('max_drawdown_pct', val)}
-                  className="input"
-                />
-              </div>
-            </div>
-
-            {/* Circuit Breaker Settings */}
-            <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
-              <h4 className="text-md font-medium mb-3">⚡ Circuit Breaker</h4>
-              <p className="text-sm text-muted mb-3">
-                Automatically pauses trading after consecutive losses to protect your account
-              </p>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="input-label">Consecutive Losses to Trigger</label>
+                  <label className="input-label">Position Size (%)</label>
                   <DelayedNumberInput
                     step="1"
-                    min="1"
-                    max="10"
-                    value={proConfig.circuit_breaker_losses || 3}
-                    onChange={(val) => updateConfig('circuit_breaker_losses', Math.max(1, Math.round(val)))}
+                    value={proConfig.max_position_pct}
+                    multiplier={100}
+                    decimals={0}
+                    onChange={(val) => updateConfig('max_position_pct', val)}
                     className="input"
                   />
+                  <p className="text-xs text-muted mt-1">${(proConfig.initial_capital * proConfig.max_position_pct).toFixed(0)}/trade</p>
                 </div>
                 <div>
-                  <label className="input-label">Cooldown Period (minutes)</label>
+                  <label className="input-label">Max Positions</label>
                   <DelayedNumberInput
-                    step="5"
-                    min="5"
-                    max="480"
-                    value={proConfig.circuit_breaker_cooldown_minutes || 30}
-                    onChange={(val) => updateConfig('circuit_breaker_cooldown_minutes', Math.max(5, Math.round(val)))}
+                    value={proConfig.max_positions}
+                    onChange={(val) => updateConfig('max_positions', Math.round(val))}
                     className="input"
                   />
                 </div>
               </div>
             </div>
-          </div>
+          </Section>
+
+          {/* Risk Management */}
+          <Section title="Risk Management" icon="🛡️" defaultOpen={false}>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Stop Loss (%)</label>
+                  <DelayedNumberInput
+                    step="0.1"
+                    value={proConfig.stop_loss_pct}
+                    multiplier={100}
+                    decimals={1}
+                    onChange={(val) => updateConfig('stop_loss_pct', val)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Take Profit (%)</label>
+                  <DelayedNumberInput
+                    step="0.1"
+                    value={proConfig.take_profit_pct}
+                    multiplier={100}
+                    decimals={1}
+                    onChange={(val) => updateConfig('take_profit_pct', val)}
+                    className="input"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Max Daily Loss (%)</label>
+                  <DelayedNumberInput
+                    step="0.1"
+                    value={proConfig.max_daily_loss_pct}
+                    multiplier={100}
+                    decimals={1}
+                    onChange={(val) => updateConfig('max_daily_loss_pct', val)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Max Drawdown (%)</label>
+                  <DelayedNumberInput
+                    step="0.1"
+                    value={proConfig.max_drawdown_pct}
+                    multiplier={100}
+                    decimals={1}
+                    onChange={(val) => updateConfig('max_drawdown_pct', val)}
+                    className="input"
+                  />
+                </div>
+              </div>
+
+              {/* Circuit Breaker */}
+              <div className="pt-3 border-t border-[var(--border-color)]">
+                <p className="text-sm font-medium mb-2">⚡ Circuit Breaker</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="input-label text-xs">Losses to Trigger</label>
+                    <DelayedNumberInput
+                      step="1"
+                      min="1"
+                      max="10"
+                      value={proConfig.circuit_breaker_losses || 3}
+                      onChange={(val) => updateConfig('circuit_breaker_losses', Math.max(1, Math.round(val)))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="input-label text-xs">Cooldown (min)</label>
+                    <DelayedNumberInput
+                      step="5"
+                      min="5"
+                      max="480"
+                      value={proConfig.circuit_breaker_cooldown_minutes || 30}
+                      onChange={(val) => updateConfig('circuit_breaker_cooldown_minutes', Math.max(5, Math.round(val)))}
+                      className="input"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Section>
 
           {/* Signal Confidence */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">🎚️ Signal Confidence Threshold</h3>
-            <div className="flex items-center gap-4">
+          <Section title="Signal Confidence" icon="🎚️" defaultOpen={false}>
+            <div>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="0.9"
+                  step="0.05"
+                  value={proConfig.min_signal_confidence}
+                  onChange={(e) => updateConfig('min_signal_confidence', parseFloat(e.target.value), true)}
+                  className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-xl font-bold w-16 text-center">
+                  {(proConfig.min_signal_confidence * 100).toFixed(0)}%
+                </span>
+              </div>
+              <p className="text-xs text-muted mt-2">
+                Lower = more trades (riskier) • Higher = fewer trades (safer)
+              </p>
+            </div>
+          </Section>
+
+          {/* Reset Button */}
+          <button
+            onClick={resetToDefaults}
+            className="w-full btn bg-warning/20 text-warning hover:bg-warning/30"
+          >
+            🔄 Reset All to Defaults
+          </button>
+        </div>
+
+        {/* RIGHT COLUMN: SYMBOLS & STRATEGIES */}
+        <div className="space-y-4">
+          {/* Symbols */}
+          <Section title="Trading Symbols" icon="📊" badge={selectedSymbols.length} defaultOpen={true}>
+            {/* Search & Quick Actions */}
+            <div className="space-y-3 mb-3">
               <input
-                type="range"
-                min="0.1"
-                max="0.9"
-                step="0.05"
-                value={proConfig.min_signal_confidence}
-                onChange={(e) => updateConfig('min_signal_confidence', parseFloat(e.target.value), true)}
-                className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer"
+                type="text"
+                placeholder="Search symbols..."
+                value={symbolSearch}
+                onChange={(e) => setSymbolSearch(e.target.value)}
+                className="input"
               />
-              <span className="text-xl font-bold w-16 text-center">
-                {(proConfig.min_signal_confidence * 100).toFixed(0)}%
-              </span>
-            </div>
-            <p className="text-sm text-muted mt-2">
-              Lower = more trades (riskier) | Higher = fewer trades (safer)
-            </p>
-          </div>
-
-          {/* Reset to Defaults */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">🔄 Reset Settings</h3>
-                <p className="text-sm text-muted">
-                  Restore recommended defaults: 2% position size, 2:1 risk/reward, 60% confidence threshold
-                </p>
-              </div>
-              <button
-                onClick={resetToDefaults}
-                className="btn bg-warning/20 text-warning hover:bg-warning/30 px-6 py-2"
-              >
-                Reset to Defaults
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SYMBOLS SECTION */}
-      {activeSection === 'symbols' && (
-        <div className="card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">📊 Trading Symbols</h3>
-            <span className="badge badge-info">{selectedSymbols.length} selected</span>
-          </div>
-
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search symbols..."
-            value={symbolSearch}
-            onChange={(e) => setSymbolSearch(e.target.value)}
-            className="input mb-4"
-          />
-
-          {/* Quick Actions */}
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => {
-                setSelectedSymbols(availableSymbols.slice(0, 10));
-                saveConfig({ symbols: availableSymbols.slice(0, 10).map(s => `${s}/USD`) });
-              }}
-              className="btn btn-sm"
-            >
-              Top 10
-            </button>
-            <button
-              onClick={() => {
-                setSelectedSymbols(availableSymbols.slice(0, 25));
-                saveConfig({ symbols: availableSymbols.slice(0, 25).map(s => `${s}/USD`) });
-              }}
-              className="btn btn-sm"
-            >
-              Top 25
-            </button>
-            <button
-              onClick={() => {
-                setSelectedSymbols(availableSymbols);
-                saveConfig({ symbols: availableSymbols.map(s => `${s}/USD`) });
-              }}
-              className="btn btn-sm"
-            >
-              All 50
-            </button>
-            <button
-              onClick={() => {
-                setSelectedSymbols([]);
-                saveConfig({ symbols: [] });
-              }}
-              className="btn btn-sm btn-danger"
-            >
-              Clear All
-            </button>
-          </div>
-
-          {/* Symbol Grid */}
-          <div className="grid grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2">
-            {filteredSymbols.map(symbol => (
-              <button
-                key={symbol}
-                onClick={() => toggleSymbol(symbol)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  selectedSymbols.includes(symbol)
-                    ? 'bg-info text-white'
-                    : 'bg-[var(--bg-tertiary)] text-muted hover:bg-[var(--bg-secondary)]'
-                }`}
-              >
-                {symbol}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* STRATEGIES SECTION */}
-      {activeSection === 'strategies' && (
-        <div className="space-y-6">
-          {/* Strategy Toggles */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">🧠 Strategy Components</h3>
-            <div className="space-y-4">
-              {/* RL Agent */}
-              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <div>
-                  <p className="font-semibold">🤖 RL Agent (PPO)</p>
-                  <p className="text-sm text-muted">Neural network that learns from trading experience</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={proConfig.use_rl_agent}
-                    onChange={(e) => updateConfig('use_rl_agent', e.target.checked, true)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
-                </label>
-              </div>
-
-              {/* Edge Strategies */}
-              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <div>
-                  <p className="font-semibold">📈 Edge Strategies</p>
-                  <p className="text-sm text-muted">Funding rate, sentiment, order flow, liquidations</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={proConfig.use_edge_strategies}
-                    onChange={(e) => updateConfig('use_edge_strategies', e.target.checked, true)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
-                </label>
-              </div>
-
-              {/* Alternative Data */}
-              <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <div>
-                  <p className="font-semibold">📊 Alternative Data</p>
-                  <p className="text-sm text-muted">Social sentiment, on-chain metrics, whale activity</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={proConfig.use_alternative_data}
-                    onChange={(e) => updateConfig('use_alternative_data', e.target.checked, true)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-info"></div>
-                </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedSymbols(availableSymbols.slice(0, 10));
+                    saveConfig({ symbols: availableSymbols.slice(0, 10).map(s => `${s}/USD`) });
+                  }}
+                  className="btn btn-sm"
+                >
+                  Top 10
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedSymbols(availableSymbols.slice(0, 25));
+                    saveConfig({ symbols: availableSymbols.slice(0, 25).map(s => `${s}/USD`) });
+                  }}
+                  className="btn btn-sm"
+                >
+                  Top 25
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedSymbols(availableSymbols);
+                    saveConfig({ symbols: availableSymbols.map(s => `${s}/USD`) });
+                  }}
+                  className="btn btn-sm"
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedSymbols([]);
+                    saveConfig({ symbols: [] });
+                  }}
+                  className="btn btn-sm btn-danger"
+                >
+                  Clear
+                </button>
               </div>
             </div>
-          </div>
 
-          {/* Available Strategies Info */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold mb-4">📋 Edge Strategies (4)</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="font-semibold text-info">💰 Funding Rate Arbitrage</p>
-                <p className="text-sm text-muted">Trade when funding rates are extremely positive/negative</p>
+            {/* Symbol Grid */}
+            <div className="grid grid-cols-5 gap-1.5 max-h-[200px] overflow-y-auto">
+              {filteredSymbols.map(symbol => (
+                <button
+                  key={symbol}
+                  onClick={() => toggleSymbol(symbol)}
+                  className={`px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                    selectedSymbols.includes(symbol)
+                      ? 'bg-info text-white'
+                      : 'bg-[var(--bg-tertiary)] text-muted hover:bg-[var(--bg-secondary)]'
+                  }`}
+                >
+                  {symbol}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Strategies */}
+          <Section title="Strategy Components" icon="🧠" defaultOpen={true}>
+            <div className="space-y-2">
+              <ToggleSwitch
+                checked={proConfig.use_rl_agent}
+                onChange={(val) => updateConfig('use_rl_agent', val, true)}
+                label="🤖 RL Agent (PPO)"
+                description="Neural network trained on market data"
+              />
+              <ToggleSwitch
+                checked={proConfig.use_edge_strategies}
+                onChange={(val) => updateConfig('use_edge_strategies', val, true)}
+                label="📈 Edge Strategies"
+                description="Funding, sentiment, order flow, liquidations"
+              />
+              <ToggleSwitch
+                checked={proConfig.use_alternative_data}
+                onChange={(val) => updateConfig('use_alternative_data', val, true)}
+                label="📊 Alternative Data"
+                description="Social sentiment, on-chain, whale activity"
+              />
+            </div>
+          </Section>
+
+          {/* Edge Strategies Info */}
+          <Section title="Available Edge Strategies" icon="📋" defaultOpen={false}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2 rounded bg-[var(--bg-tertiary)]">
+                <p className="text-xs font-medium text-info">💰 Funding Rate</p>
+                <p className="text-xs text-muted">Trade extreme rates</p>
               </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="font-semibold text-warning">😨 Sentiment Extreme</p>
-                <p className="text-sm text-muted">Counter-trade when fear/greed reaches extremes</p>
+              <div className="p-2 rounded bg-[var(--bg-tertiary)]">
+                <p className="text-xs font-medium text-warning">😨 Sentiment</p>
+                <p className="text-xs text-muted">Fear/greed extremes</p>
               </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="font-semibold text-success">📊 Order Flow Imbalance</p>
-                <p className="text-sm text-muted">Detect heavy buy/sell pressure imbalances</p>
+              <div className="p-2 rounded bg-[var(--bg-tertiary)]">
+                <p className="text-xs font-medium text-success">📊 Order Flow</p>
+                <p className="text-xs text-muted">Buy/sell imbalance</p>
               </div>
-              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                <p className="font-semibold text-danger">💥 Liquidation Cascade</p>
-                <p className="text-sm text-muted">Trade liquidation-driven price movements</p>
+              <div className="p-2 rounded bg-[var(--bg-tertiary)]">
+                <p className="text-xs font-medium text-danger">💥 Liquidations</p>
+                <p className="text-xs text-muted">Cascade movements</p>
               </div>
             </div>
-          </div>
+          </Section>
 
           {/* Strategy Performance */}
           {learningData?.top_strategies?.length > 0 && (
-            <div className="card p-6">
-              <h3 className="text-lg font-semibold mb-4">🏆 Strategy Performance (24h)</h3>
-              <div className="grid md:grid-cols-3 gap-4">
-                {learningData.top_strategies.slice(0, 6).map((strat, idx) => (
-                  <div key={strat.name} className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold">{strat.name}</span>
-                      {idx === 0 && <span className="text-yellow-500">🥇</span>}
-                      {idx === 1 && <span className="text-gray-400">🥈</span>}
-                      {idx === 2 && <span className="text-amber-600">🥉</span>}
+            <Section title="Strategy Performance (24h)" icon="🏆" defaultOpen={false}>
+              <div className="space-y-2">
+                {learningData.top_strategies.slice(0, 4).map((strat, idx) => (
+                  <div key={strat.name} className="flex items-center justify-between p-2 rounded bg-[var(--bg-tertiary)]">
+                    <div className="flex items-center gap-2">
+                      {idx === 0 && <span>🥇</span>}
+                      {idx === 1 && <span>🥈</span>}
+                      {idx === 2 && <span>🥉</span>}
+                      <span className="text-sm font-medium">{strat.name}</span>
                     </div>
-                    <div className="text-sm space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-muted">Win Rate</span>
-                        <span>{(strat.win_rate * 100).toFixed(0)}%</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted">P&L</span>
-                        <span className={strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}>
-                          ${strat.total_pnl?.toFixed(2)}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span>{(strat.win_rate * 100).toFixed(0)}% win</span>
+                      <span className={strat.total_pnl >= 0 ? 'text-success' : 'text-danger'}>
+                        ${strat.total_pnl?.toFixed(0)}
+                      </span>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </Section>
           )}
+        </div>
+      </div>
+
+      {/* Info Card - Only when stopped */}
+      {!botRunning && (
+        <div className="card p-4 bg-[var(--bg-secondary)]">
+          <div className="flex items-start gap-3">
+            <span className="text-xl">💡</span>
+            <div className="text-sm text-muted">
+              <strong className="text-[var(--text-color)]">Ready to trade:</strong> Configure your settings above, select symbols, then click Start to begin paper trading. Go to the <strong>Training</strong> tab to train the AI model first.
+            </div>
+          </div>
         </div>
       )}
     </div>
