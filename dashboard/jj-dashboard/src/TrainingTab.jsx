@@ -1128,9 +1128,17 @@ export function TrainingTab({
             </select>
             <p className="text-xs text-muted mt-1">How far back to learn from</p>
             {trainSettings.history_days >= 1825 && (
-              <p className="text-xs text-warning mt-1">
-                ⚠️ {trainSettings.history_days >= 3650 ? '10 years' : '5 years'} = ~{Math.round(trainSettings.history_days / 365 * 60)} min data fetch (Kraken rate limits)
-              </p>
+              <div className="mt-2 p-2 rounded bg-warning/10 border border-warning/30">
+                <p className="text-xs text-warning font-medium">
+                  ⚠️ Long history ({trainSettings.history_days >= 3650 ? '10yr' : '5yr'}) requires many API requests
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  Estimated time: {Math.round(trainSettings.history_days * selectedSymbols.length / 500)}+ minutes
+                </p>
+                <p className="text-xs text-muted">
+                  Tip: Consider 1-2 year history with fewer symbols, or run overnight
+                </p>
+              </div>
             )}
           </div>
         </div>

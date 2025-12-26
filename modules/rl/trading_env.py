@@ -74,11 +74,11 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
 
     logger.info(f"Fetching {days} days of {timeframe} data ({total_candles_needed:,} candles) for {len(symbols)} symbols...")
 
-    # Kraken rate limit: ~1 request per 3 seconds to be safe
-    # Use ccxt's built-in rate limiter plus our own delays
+    # Kraken rate limit: Be more conservative to avoid rate limits
+    # Public API allows ~15-20 requests/minute, so 4-5 seconds is safer
     exchange = ccxt.kraken({
         'enableRateLimit': True,
-        'rateLimit': 3000,  # 3 seconds between requests (Kraken safe limit)
+        'rateLimit': 4000,  # 4 seconds between requests
     })
 
     try:
@@ -90,10 +90,12 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
     data_cache = {}
     kraken_limit = 720  # Kraken's max per request
 
-    # Track request timing for rate limiting
+    # Track request timing for adaptive rate limiting
     request_count = 0
     last_request_time = 0
-    MIN_REQUEST_INTERVAL = 3.5  # Seconds between requests (conservative)
+    rate_limit_hits = 0
+    MIN_REQUEST_INTERVAL = 4.0  # Increased from 3.5 to be more conservative
+    current_interval = MIN_REQUEST_INTERVAL  # Adaptive interval
 
     for symbol_idx, symbol in enumerate(symbols):
         if symbol not in exchange.markets:
@@ -111,36 +113,44 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
             logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {symbol}: {requests_needed} requests needed...")
 
             for req_num in range(requests_needed):
-                # Rate limiting with exponential backoff on failure
+                # Adaptive rate limiting - increase interval after rate limit hits
                 current_time = time.time()
                 elapsed = current_time - last_request_time
-                if elapsed < MIN_REQUEST_INTERVAL:
-                    sleep_time = MIN_REQUEST_INTERVAL - elapsed
+                if elapsed < current_interval:
+                    sleep_time = current_interval - elapsed
                     time.sleep(sleep_time)
 
                 # Retry logic with exponential backoff
-                max_retries = 3
-                retry_delay = 5  # Start with 5 second delay
+                max_retries = 5  # Increased from 3
+                retry_delay = 15  # Start with 15 second delay (increased from 5)
 
                 for retry in range(max_retries):
                     try:
                         last_request_time = time.time()
                         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=kraken_limit)
                         request_count += 1
+                        # Gradually decrease interval on success (min 4s)
+                        if current_interval > MIN_REQUEST_INTERVAL:
+                            current_interval = max(MIN_REQUEST_INTERVAL, current_interval * 0.95)
                         break  # Success, exit retry loop
                     except ccxt.RateLimitExceeded as e:
+                        rate_limit_hits += 1
+                        # Increase base interval after rate limit
+                        current_interval = min(10.0, current_interval * 1.25)
                         if retry < max_retries - 1:
-                            logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries}...")
+                            logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries} (interval now {current_interval:.1f}s)...")
                             time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
+                            retry_delay = min(60, retry_delay * 2)  # Cap at 60s
                         else:
                             raise e
                     except Exception as e:
-                        if "Too many requests" in str(e):
+                        if "Too many requests" in str(e) or "rate" in str(e).lower():
+                            rate_limit_hits += 1
+                            current_interval = min(10.0, current_interval * 1.25)
                             if retry < max_retries - 1:
-                                logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries}...")
+                                logger.warning(f"Rate limited on {symbol}, waiting {retry_delay}s before retry {retry+1}/{max_retries} (interval now {current_interval:.1f}s)...")
                                 time.sleep(retry_delay)
-                                retry_delay *= 2
+                                retry_delay = min(60, retry_delay * 2)
                             else:
                                 raise e
                         else:
@@ -188,8 +198,11 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
             logger.warning(f"Failed to fetch {symbol}: {e}")
             # On rate limit failure, add extra delay before next symbol
             if "Too many requests" in str(e) or "rate" in str(e).lower():
-                logger.info("Rate limit hit, adding 30 second cooldown...")
-                time.sleep(30)
+                cooldown = 60  # Increased from 30 to 60 seconds
+                logger.info(f"Rate limit hit, adding {cooldown}s cooldown before next symbol...")
+                time.sleep(cooldown)
+                # Also increase the base interval
+                current_interval = min(10.0, current_interval * 1.5)
             continue
 
     if data_cache:
@@ -198,7 +211,8 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         _CACHE_SYMBOLS = list(data_cache.keys())
         _CACHE_TIMEFRAME = timeframe
         _CACHE_DAYS = days
-        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days ({request_count} API requests)")
+        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days")
+        logger.info(f"  Total API requests: {request_count}, Rate limit hits: {rate_limit_hits}, Final interval: {current_interval:.1f}s")
     else:
         logger.warning("No data fetched, will use dummy data")
 
