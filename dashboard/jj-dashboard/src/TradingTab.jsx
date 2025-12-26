@@ -131,6 +131,7 @@ export function TradingTab({
   const [positions, setPositions] = useState([]);
   const [symbolPerformance, setSymbolPerformance] = useState([]);
   const [evaluationResult, setEvaluationResult] = useState(null);
+  const [evaluating, setEvaluating] = useState(false);
 
   // Sync with shared state
   useEffect(() => {
@@ -233,6 +234,8 @@ export function TradingTab({
 
   // Evaluate symbols for auto-disable
   const evaluateSymbols = async () => {
+    setEvaluating(true);
+    setEvaluationResult(null); // Clear previous results
     try {
       const minWinRate = proConfig.min_win_rate_threshold || 0.35;
       const minTrades = proConfig.min_trades_for_evaluation || 5;
@@ -242,10 +245,15 @@ export function TradingTab({
       );
       const data = await response.json();
       setEvaluationResult(data);
+      if (data.poor_performers?.length === 0) {
+        toast.success('No poor performers found!');
+      }
       return data;
     } catch (error) {
       toast.error('Failed to evaluate symbols');
       return null;
+    } finally {
+      setEvaluating(false);
     }
   };
 
@@ -695,12 +703,18 @@ export function TradingTab({
                   <div className="flex gap-2 pt-2">
                     <button
                       onClick={evaluateSymbols}
+                      disabled={evaluating}
                       className="flex-1 btn btn-sm"
                     >
-                      🔍 Evaluate
+                      {evaluating ? (
+                        <><span className="spinner w-4 h-4 mr-1"></span> Evaluating...</>
+                      ) : (
+                        '🔍 Evaluate'
+                      )}
                     </button>
                     <button
                       onClick={applyAutoDisable}
+                      disabled={evaluating || !evaluationResult?.poor_performers?.length}
                       className="flex-1 btn btn-sm btn-danger"
                     >
                       🚫 Apply
