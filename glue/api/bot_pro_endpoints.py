@@ -57,6 +57,11 @@ class BotConfigUpdate(BaseModel):
     use_edge_strategies: Optional[bool] = None
     use_alternative_data: Optional[bool] = None
     min_signal_confidence: Optional[float] = None
+    # Training settings
+    train_episodes: Optional[int] = None
+    train_timeframe: Optional[str] = None
+    train_history_days: Optional[int] = None
+    train_data_source: Optional[str] = None  # kraken, binance, or yahoo
     # Auto-disable poor performers
     auto_disable_symbols: Optional[bool] = None
     min_win_rate_threshold: Optional[float] = None  # e.g., 0.35 = 35%
@@ -512,14 +517,29 @@ async def emergency_stop(close_positions: bool = True, auth_token: Optional[str]
 
 
 @router.post("/train")
-async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90):
-    """Start RL agent training with configurable data settings"""
+async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90, data_source: str = "kraken"):
+    """Start RL agent training with configurable data settings
+
+    Args:
+        episodes: Number of training episodes
+        timeframe: Candle timeframe (1m, 5m, 15m, 1h, 4h, 1d)
+        history_days: Days of historical data to fetch
+        data_source: Data source for training (kraken, binance, yahoo)
+    """
     global _bot_instance
     import sys
 
+    # Validate data source
+    valid_sources = ["kraken", "binance", "yahoo"]
+    if data_source not in valid_sources:
+        return {
+            "status": "error",
+            "message": f"Invalid data source '{data_source}'. Valid options: {', '.join(valid_sources)}"
+        }
+
     # Force output to show
     print(f"\n{'='*60}", flush=True)
-    print(f"[TRAIN] TRAIN ENDPOINT CALLED - episodes={episodes}", flush=True)
+    print(f"[TRAIN] TRAIN ENDPOINT CALLED - episodes={episodes}, data_source={data_source}", flush=True)
     print(f"{'='*60}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
@@ -535,8 +555,9 @@ async def start_training(episodes: int = 100, timeframe: str = "1h", history_day
     config["train_episodes"] = episodes
     config["train_timeframe"] = timeframe
     config["train_history_days"] = history_days
+    config["train_data_source"] = data_source
     save_config(config)
-    print(f"[TRAIN] Config saved with mode={config['mode']}", flush=True)
+    print(f"[TRAIN] Config saved with mode={config['mode']}, data_source={data_source}", flush=True)
 
     # Verify config was saved correctly
     verify_config = load_config()

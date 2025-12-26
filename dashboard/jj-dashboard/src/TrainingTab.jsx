@@ -53,6 +53,13 @@ const HISTORY_OPTIONS = [
   { value: 3650, label: '10 years ⚠️' },
 ];
 
+// Available data sources
+const DATA_SOURCE_OPTIONS = [
+  { value: 'kraken', label: 'Kraken', description: 'Default exchange (slower, rate limited)' },
+  { value: 'binance', label: 'Binance', description: 'Fast, 1000 candles/request, public API' },
+  { value: 'yahoo', label: 'Yahoo Finance', description: 'Fastest, no rate limits, limited crypto coverage' },
+];
+
 // Calculate estimated candles based on timeframe and history
 const calculateCandles = (timeframe, historyDays) => {
   const tf = TIMEFRAME_OPTIONS.find(t => t.value === timeframe);
@@ -76,7 +83,8 @@ export function TrainingTab({
   const [trainSettings, setTrainSettings] = useState({
     episodes: 1000,
     timeframe: '1h',
-    history_days: 90
+    history_days: 90,
+    data_source: 'kraken'
   });
 
   // Training progress from bot
@@ -136,7 +144,8 @@ export function TrainingTab({
           setTrainSettings({
             episodes: data.config.train_episodes || 1000,
             timeframe: data.config.train_timeframe || '1h',
-            history_days: data.config.train_history_days || 90
+            history_days: data.config.train_history_days || 90,
+            data_source: data.config.train_data_source || 'kraken'
           });
         }
       } catch (error) {
@@ -317,6 +326,7 @@ export function TrainingTab({
       if (updates.episodes !== undefined) payload.train_episodes = updates.episodes;
       if (updates.timeframe !== undefined) payload.train_timeframe = updates.timeframe;
       if (updates.history_days !== undefined) payload.train_history_days = updates.history_days;
+      if (updates.data_source !== undefined) payload.train_data_source = updates.data_source;
 
       await fetch(`${API_BASE}/api/pro/config`, {
         method: 'PUT',
@@ -338,7 +348,7 @@ export function TrainingTab({
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_BASE}/api/pro/train?episodes=${trainSettings.episodes}&timeframe=${trainSettings.timeframe}&history_days=${trainSettings.history_days}`,
+        `${API_BASE}/api/pro/train?episodes=${trainSettings.episodes}&timeframe=${trainSettings.timeframe}&history_days=${trainSettings.history_days}&data_source=${trainSettings.data_source}`,
         { method: 'POST' }
       );
       const data = await response.json();
@@ -1073,7 +1083,7 @@ export function TrainingTab({
       {/* Training Settings */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold mb-4">⚙️ Training Settings</h3>
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Episodes */}
           <div>
             <label className="input-label">Training Episodes</label>
@@ -1137,6 +1147,41 @@ export function TrainingTab({
                 </p>
                 <p className="text-xs text-muted">
                   Tip: Consider 1-2 year history with fewer symbols, or run overnight
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Data Source */}
+          <div>
+            <label className="input-label">Data Source</label>
+            <select
+              value={trainSettings.data_source}
+              onChange={(e) => {
+                const data_source = e.target.value;
+                setTrainSettings(prev => ({ ...prev, data_source }));
+                saveSettings({ data_source });
+              }}
+              className="input"
+            >
+              {DATA_SOURCE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted mt-1">
+              {DATA_SOURCE_OPTIONS.find(o => o.value === trainSettings.data_source)?.description}
+            </p>
+            {trainSettings.data_source === 'yahoo' && (
+              <div className="mt-2 p-2 rounded bg-info/10 border border-info/30">
+                <p className="text-xs text-info font-medium">
+                  Yahoo Finance is fastest but may have limited crypto coverage
+                </p>
+              </div>
+            )}
+            {trainSettings.data_source === 'binance' && (
+              <div className="mt-2 p-2 rounded bg-success/10 border border-success/30">
+                <p className="text-xs text-success font-medium">
+                  Binance is 8x faster than Kraken for large datasets
                 </p>
               </div>
             )}

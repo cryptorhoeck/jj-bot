@@ -180,6 +180,7 @@ class BotConfig:
     train_episodes: int = 100
     train_timeframe: str = "1h"  # Candle size for training data
     train_history_days: int = 90  # Days of historical data
+    train_data_source: str = "kraken"  # Data source for training (kraken, binance, yahoo)
     rl_max_steps: int = 500  # Steps per training episode
     rl_n_epochs: int = 4  # PPO optimization epochs
     rl_batch_size: int = 128  # PPO batch size
@@ -1024,15 +1025,17 @@ class JJBotPro:
                     logger.error(error_msg)
                     raise ValueError(error_msg)
 
-                logger.info("Loading real historical data from Kraken for training...")
+                data_source = self.config.train_data_source or "kraken"
+                logger.info(f"Loading historical data from {data_source.upper()} for training...")
                 training_symbols = self.config.symbols  # Use ALL configured symbols
                 data = load_historical_data_sync(
                     symbols=training_symbols,
                     timeframe=self.config.train_timeframe,
-                    days=self.config.train_history_days
+                    days=self.config.train_history_days,
+                    data_source=data_source
                 )
                 if data:
-                    logger.info(f"Loaded real data for {len(data)} symbols - Training will use REAL market data!")
+                    logger.info(f"Loaded real data for {len(data)} symbols from {data_source.upper()} - Training will use REAL market data!")
                 else:
                     logger.warning("Failed to load real data - training will use simulated data")
 

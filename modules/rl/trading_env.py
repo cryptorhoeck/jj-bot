@@ -23,45 +23,161 @@ _CACHE_LOADED = False
 _CACHE_SYMBOLS: List[str] = []
 _CACHE_TIMEFRAME: str = ''
 _CACHE_DAYS: int = 0
+_CACHE_SOURCE: str = ''
 
 
-def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', days: int = 90) -> Dict[str, np.ndarray]:
+def _load_yahoo_data(symbols: List[str], timeframe: str, days: int) -> Dict[str, np.ndarray]:
     """
-    Synchronously fetch historical OHLCV data from Kraken with smart pagination.
+    Load historical data from Yahoo Finance using yfinance.
+    Much faster than exchange APIs with no rate limits.
+
+    Crypto symbols are converted: BTC/USD -> BTC-USD
+    """
+    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS, _CACHE_TIMEFRAME, _CACHE_DAYS, _CACHE_SOURCE
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance not installed. Install with: pip install yfinance")
+        return {}
+
+    # Yahoo Finance interval mapping
+    yf_interval_map = {
+        '1m': '1m',    # Only last 7 days available
+        '5m': '5m',    # Only last 60 days available
+        '15m': '15m',  # Only last 60 days available
+        '30m': '30m',  # Only last 60 days available
+        '1h': '1h',    # Only last 730 days available
+        '4h': '4h',    # Not directly supported, use 1h
+        '1d': '1d',    # Full history available
+    }
+
+    yf_interval = yf_interval_map.get(timeframe, '1h')
+
+    # Yahoo has limitations on historical data for intraday
+    # Adjust days based on interval
+    max_days = {
+        '1m': 7, '5m': 60, '15m': 60, '30m': 60, '1h': 730, '4h': 730, '1d': 10000
+    }
+    effective_days = min(days, max_days.get(timeframe, 90))
+    if effective_days < days:
+        logger.warning(f"Yahoo Finance limits {timeframe} data to {effective_days} days (requested {days})")
+
+    logger.info(f"Fetching {effective_days} days of {timeframe} data for {len(symbols)} symbols from Yahoo Finance...")
+
+    data_cache = {}
+
+    for symbol_idx, symbol in enumerate(symbols):
+        # Convert symbol format: BTC/USD -> BTC-USD for Yahoo
+        yahoo_symbol = symbol.replace('/', '-')
+
+        try:
+            logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {yahoo_symbol}...")
+
+            ticker = yf.Ticker(yahoo_symbol)
+
+            # Calculate period string
+            if effective_days <= 7:
+                period = '7d'
+            elif effective_days <= 30:
+                period = '1mo'
+            elif effective_days <= 90:
+                period = '3mo'
+            elif effective_days <= 180:
+                period = '6mo'
+            elif effective_days <= 365:
+                period = '1y'
+            elif effective_days <= 730:
+                period = '2y'
+            elif effective_days <= 1825:
+                period = '5y'
+            else:
+                period = '10y'
+
+            df = ticker.history(period=period, interval=yf_interval)
+
+            if df.empty or len(df) < 50:
+                logger.warning(f"Insufficient data for {yahoo_symbol}: {len(df)} candles")
+                continue
+
+            # Convert to OHLCV format: [timestamp, open, high, low, close, volume]
+            ohlcv_array = np.column_stack([
+                df.index.astype('int64') // 10**6,  # timestamp in ms
+                df['Open'].values,
+                df['High'].values,
+                df['Low'].values,
+                df['Close'].values,
+                df['Volume'].values
+            ]).astype(np.float64)
+
+            # Calculate features
+            features = calculate_features(ohlcv_array)
+
+            if features is not None and len(features) > 50:
+                data_cache[symbol] = features
+                logger.info(f"[OK] {symbol}: Loaded {len(features):,} candles from Yahoo")
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch {yahoo_symbol} from Yahoo: {e}")
+            continue
+
+    if data_cache:
+        _DATA_CACHE = data_cache
+        _CACHE_LOADED = True
+        _CACHE_SYMBOLS = list(data_cache.keys())
+        _CACHE_TIMEFRAME = timeframe
+        _CACHE_DAYS = effective_days
+        _CACHE_SOURCE = 'yahoo'
+        logger.info(f"Successfully cached {len(data_cache)} symbols from Yahoo Finance")
+    else:
+        logger.warning("No data fetched from Yahoo Finance")
+
+    return data_cache
+
+
+def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: str = '1h', days: int = 90, data_source: str = 'kraken') -> Dict[str, np.ndarray]:
+    """
+    Synchronously fetch historical OHLCV data from exchange with smart pagination.
     Automatically makes multiple requests to fetch the full history period.
 
-    Uses proper rate limiting to avoid Kraken's "Too many requests" error.
-    Kraken public API: 15 request budget, +1 per request, -0.33 per second
-    Safe rate: ~1 request per 3 seconds
+    Supported data sources:
+    - 'kraken': Default, slower due to rate limits (720 candles/request, 4s interval)
+    - 'binance': Faster (1000 candles/request, 0.5s interval), public API works worldwide
+    - 'yahoo': Uses yfinance (very fast, no rate limits, but limited crypto coverage)
 
     Args:
         symbols: List of trading pairs (e.g., ['BTC/USD', 'ETH/USD'])
         timeframe: Candle size ('5m', '15m', '1h', '4h', '1d')
         days: How many days of historical data to fetch
+        data_source: 'kraken', 'binance', or 'yahoo'
 
     Returns dict of symbol -> feature array (n_candles, n_features)
     """
-    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS, _CACHE_TIMEFRAME, _CACHE_DAYS
+    global _DATA_CACHE, _CACHE_LOADED, _CACHE_SYMBOLS, _CACHE_TIMEFRAME, _CACHE_DAYS, _CACHE_SOURCE
 
-    # Check if cache is valid (same timeframe and days)
+    # Check if cache is valid (same timeframe, days, and source)
     if _CACHE_LOADED and _DATA_CACHE:
-        if _CACHE_TIMEFRAME == timeframe and _CACHE_DAYS == days:
-            logger.info(f"Using cached data for {len(_DATA_CACHE)} symbols (timeframe={timeframe}, days={days})")
+        if _CACHE_TIMEFRAME == timeframe and _CACHE_DAYS == days and _CACHE_SOURCE == data_source:
+            logger.info(f"Using cached data for {len(_DATA_CACHE)} symbols (source={data_source}, timeframe={timeframe}, days={days})")
             return _DATA_CACHE
         else:
-            logger.info(f"Cache invalidated: settings changed from {_CACHE_TIMEFRAME}/{_CACHE_DAYS}d to {timeframe}/{days}d")
+            logger.info(f"Cache invalidated: settings changed from {_CACHE_SOURCE}/{_CACHE_TIMEFRAME}/{_CACHE_DAYS}d to {data_source}/{timeframe}/{days}d")
             _DATA_CACHE = {}
             _CACHE_LOADED = False
             _CACHE_SYMBOLS = []
+
+    if not symbols:
+        logger.error("No symbols provided for training data")
+        return {}
+
+    # Handle Yahoo Finance separately (uses yfinance library)
+    if data_source == 'yahoo':
+        return _load_yahoo_data(symbols, timeframe, days)
 
     try:
         import ccxt
     except ImportError:
         logger.warning("ccxt not installed, using dummy data")
-        return {}
-
-    if not symbols:
-        logger.error("No symbols provided for training data")
         return {}
 
     # Calculate candles needed based on timeframe and days
@@ -72,34 +188,49 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
     minutes_per_candle = timeframe_minutes.get(timeframe, 60)
     total_candles_needed = (days * 24 * 60) // minutes_per_candle
 
-    logger.info(f"Fetching {days} days of {timeframe} data ({total_candles_needed:,} candles) for {len(symbols)} symbols...")
+    logger.info(f"Fetching {days} days of {timeframe} data ({total_candles_needed:,} candles) for {len(symbols)} symbols from {data_source.upper()}...")
 
-    # Kraken rate limit: Be more conservative to avoid rate limits
-    # Public API allows ~15-20 requests/minute, so 4-5 seconds is safer
-    exchange = ccxt.kraken({
-        'enableRateLimit': True,
-        'rateLimit': 4000,  # 4 seconds between requests
-    })
+    # Configure exchange based on data source
+    if data_source == 'binance':
+        # Binance: 1000 candles/request, very generous rate limits
+        exchange = ccxt.binance({
+            'enableRateLimit': True,
+            'rateLimit': 500,  # 0.5 seconds between requests (Binance allows 1200 req/min)
+        })
+        candles_per_request = 1000
+        MIN_REQUEST_INTERVAL = 0.5  # Much faster than Kraken
+        # Convert symbols from /USD to /USDT for Binance
+        symbol_map = {s: s.replace('/USD', '/USDT') for s in symbols}
+    else:
+        # Kraken (default): 720 candles/request, strict rate limits
+        exchange = ccxt.kraken({
+            'enableRateLimit': True,
+            'rateLimit': 4000,  # 4 seconds between requests
+        })
+        candles_per_request = 720
+        MIN_REQUEST_INTERVAL = 4.0  # Conservative for Kraken
+        symbol_map = {s: s for s in symbols}  # No conversion needed
 
     try:
         exchange.load_markets()
     except Exception as e:
-        logger.error(f"Failed to load Kraken markets: {e}")
+        logger.error(f"Failed to load {data_source} markets: {e}")
         return {}
 
     data_cache = {}
-    kraken_limit = 720  # Kraken's max per request
 
     # Track request timing for adaptive rate limiting
     request_count = 0
     last_request_time = 0
     rate_limit_hits = 0
-    MIN_REQUEST_INTERVAL = 4.0  # Increased from 3.5 to be more conservative
     current_interval = MIN_REQUEST_INTERVAL  # Adaptive interval
 
     for symbol_idx, symbol in enumerate(symbols):
-        if symbol not in exchange.markets:
-            logger.warning(f"Symbol {symbol} not available on Kraken, skipping")
+        # Get the exchange-specific symbol (e.g., BTC/USDT for Binance)
+        exchange_symbol = symbol_map.get(symbol, symbol)
+
+        if exchange_symbol not in exchange.markets:
+            logger.warning(f"Symbol {exchange_symbol} not available on {data_source}, skipping")
             continue
 
         try:
@@ -108,9 +239,9 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
             since = None  # Start from most recent
 
             # Calculate how many requests we need
-            requests_needed = (total_candles_needed + kraken_limit - 1) // kraken_limit
+            requests_needed = (total_candles_needed + candles_per_request - 1) // candles_per_request
 
-            logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {symbol}: {requests_needed} requests needed...")
+            logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {exchange_symbol}: {requests_needed} requests needed...")
 
             for req_num in range(requests_needed):
                 # Adaptive rate limiting - increase interval after rate limit hits
@@ -127,7 +258,7 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
                 for retry in range(max_retries):
                     try:
                         last_request_time = time.time()
-                        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=kraken_limit)
+                        ohlcv = exchange.fetch_ohlcv(exchange_symbol, timeframe, since=since, limit=candles_per_request)
                         request_count += 1
                         # Gradually decrease interval on success (min 4s)
                         if current_interval > MIN_REQUEST_INTERVAL:
@@ -165,19 +296,19 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
 
                 # Progress logging
                 if req_num > 0 and (req_num + 1) % 5 == 0:
-                    logger.info(f"  {symbol}: {candles_fetched:,}/{total_candles_needed:,} candles fetched...")
+                    logger.info(f"  {exchange_symbol}: {candles_fetched:,}/{total_candles_needed:,} candles fetched...")
 
                 # Get the oldest timestamp from this batch to fetch older data next
                 oldest_timestamp = ohlcv[0][0]
                 # Go back one more candle to avoid duplicates
-                since = oldest_timestamp - (minutes_per_candle * 60 * 1000 * kraken_limit)
+                since = oldest_timestamp - (minutes_per_candle * 60 * 1000 * candles_per_request)
 
                 # Stop if we have enough or no more data
-                if candles_fetched >= total_candles_needed or len(ohlcv) < kraken_limit:
+                if candles_fetched >= total_candles_needed or len(ohlcv) < candles_per_request:
                     break
 
             if not all_ohlcv or len(all_ohlcv) < 100:
-                logger.warning(f"Insufficient data for {symbol}: {len(all_ohlcv) if all_ohlcv else 0} candles")
+                logger.warning(f"Insufficient data for {exchange_symbol}: {len(all_ohlcv) if all_ohlcv else 0} candles")
                 continue
 
             # Trim to requested amount if we got more
@@ -211,7 +342,8 @@ def load_historical_data_sync(symbols: Optional[List[str]] = None, timeframe: st
         _CACHE_SYMBOLS = list(data_cache.keys())
         _CACHE_TIMEFRAME = timeframe
         _CACHE_DAYS = days
-        logger.info(f"Successfully cached {len(data_cache)} symbols: {timeframe} candles for {days} days")
+        _CACHE_SOURCE = data_source
+        logger.info(f"Successfully cached {len(data_cache)} symbols from {data_source.upper()}: {timeframe} candles for {days} days")
         logger.info(f"  Total API requests: {request_count}, Rate limit hits: {rate_limit_hits}, Final interval: {current_interval:.1f}s")
     else:
         logger.warning("No data fetched, will use dummy data")

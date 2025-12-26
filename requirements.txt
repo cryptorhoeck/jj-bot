@@ -18,6 +18,9 @@ xgboost>=2.0.0
 # Exchange Integration (CCXT)
 ccxt>=4.0.0
 
+# Alternative Data Sources
+yfinance>=0.2.30
+
 # API & HTTP
 requests>=2.28.0
 python-dotenv>=1.0.0
