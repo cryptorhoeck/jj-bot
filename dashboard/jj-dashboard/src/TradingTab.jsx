@@ -111,7 +111,12 @@ export function TradingTab({
     use_rl_agent: true,
     use_edge_strategies: true,
     use_alternative_data: true,
-    symbols: []
+    symbols: [],
+    // Auto-disable settings
+    auto_disable_symbols: false,
+    min_win_rate_threshold: 0.35,
+    min_trades_for_evaluation: 5,
+    disabled_symbols: []
   };
 
   const [proConfig, setProConfig] = useState({...DEFAULT_CONFIG});
@@ -124,6 +129,8 @@ export function TradingTab({
   });
   const [symbolSearch, setSymbolSearch] = useState('');
   const [positions, setPositions] = useState([]);
+  const [symbolPerformance, setSymbolPerformance] = useState([]);
+  const [evaluationResult, setEvaluationResult] = useState(null);
 
   // Sync with shared state
   useEffect(() => {
@@ -208,6 +215,74 @@ export function TradingTab({
       }
     } catch (error) {
       if (!silent) toast.error('Failed to save config');
+    }
+  };
+
+  // Load symbol performance data
+  const loadSymbolPerformance = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/symbol-performance`);
+      const data = await response.json();
+      if (data.symbols) {
+        setSymbolPerformance(data.symbols);
+      }
+    } catch (error) {
+      console.error('Failed to load symbol performance:', error);
+    }
+  };
+
+  // Evaluate symbols for auto-disable
+  const evaluateSymbols = async () => {
+    try {
+      const minWinRate = proConfig.min_win_rate_threshold || 0.35;
+      const minTrades = proConfig.min_trades_for_evaluation || 5;
+      const response = await fetch(
+        `${API_BASE}/api/pro/evaluate-symbols?min_win_rate=${minWinRate}&min_trades=${minTrades}`,
+        { method: 'POST' }
+      );
+      const data = await response.json();
+      setEvaluationResult(data);
+      return data;
+    } catch (error) {
+      toast.error('Failed to evaluate symbols');
+      return null;
+    }
+  };
+
+  // Apply auto-disable
+  const applyAutoDisable = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/apply-auto-disable`, { method: 'POST' });
+      const data = await response.json();
+      if (data.status === 'applied') {
+        toast.success(`Disabled ${data.disabled?.length || 0} poor performing symbols`);
+        loadProConfig(); // Reload config to get updated symbols
+        setEvaluationResult(null);
+      } else if (data.status === 'disabled') {
+        toast.info('Auto-disable feature is not enabled');
+      } else {
+        toast.error(data.message || 'Failed to apply');
+      }
+    } catch (error) {
+      toast.error('Failed to apply auto-disable');
+    }
+  };
+
+  // Toggle individual symbol
+  const toggleSymbolEnabled = async (symbol, enabled) => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/pro/toggle-symbol?symbol=${encodeURIComponent(symbol)}&enabled=${enabled}`,
+        { method: 'POST' }
+      );
+      const data = await response.json();
+      if (data.status === 'updated') {
+        toast.success(`${symbol} ${enabled ? 'enabled' : 'disabled'}`);
+        loadProConfig();
+        loadSymbolPerformance();
+      }
+    } catch (error) {
+      toast.error('Failed to toggle symbol');
     }
   };
 
@@ -567,6 +642,113 @@ export function TradingTab({
               <p className="text-xs text-muted mt-2">
                 Lower = more trades (riskier) • Higher = fewer trades (safer)
               </p>
+            </div>
+          </Section>
+
+          {/* Auto-Disable Poor Performers */}
+          <Section title="Auto-Disable Poor Performers" icon="🚫" defaultOpen={false}>
+            <div className="space-y-4">
+              {/* Enable Toggle */}
+              <ToggleSwitch
+                checked={proConfig.auto_disable_symbols || false}
+                onChange={(val) => updateConfig('auto_disable_symbols', val, true)}
+                label="Enable Auto-Disable"
+                description="Automatically disable symbols with low win rates"
+              />
+
+              {/* Settings (only shown when enabled) */}
+              {proConfig.auto_disable_symbols && (
+                <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
+                  <div>
+                    <label className="input-label">Min Win Rate Threshold</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="0.5"
+                        step="0.05"
+                        value={proConfig.min_win_rate_threshold || 0.35}
+                        onChange={(e) => updateConfig('min_win_rate_threshold', parseFloat(e.target.value), true)}
+                        className="flex-1 h-2 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="font-bold w-12 text-center">
+                        {((proConfig.min_win_rate_threshold || 0.35) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted mt-1">Symbols below this win rate will be disabled</p>
+                  </div>
+
+                  <div>
+                    <label className="input-label">Min Trades for Evaluation</label>
+                    <DelayedNumberInput
+                      step="1"
+                      min="3"
+                      max="20"
+                      value={proConfig.min_trades_for_evaluation || 5}
+                      onChange={(val) => updateConfig('min_trades_for_evaluation', Math.max(3, Math.round(val)))}
+                      className="input"
+                    />
+                    <p className="text-xs text-muted mt-1">Symbols need this many trades before being evaluated</p>
+                  </div>
+
+                  {/* Evaluate & Apply Buttons */}
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={evaluateSymbols}
+                      className="flex-1 btn btn-sm"
+                    >
+                      🔍 Evaluate
+                    </button>
+                    <button
+                      onClick={applyAutoDisable}
+                      className="flex-1 btn btn-sm btn-danger"
+                    >
+                      🚫 Apply
+                    </button>
+                  </div>
+
+                  {/* Evaluation Results */}
+                  {evaluationResult && evaluationResult.poor_performers?.length > 0 && (
+                    <div className="mt-3 p-3 rounded-lg bg-danger/10 border border-danger/30">
+                      <p className="text-sm font-medium text-danger mb-2">
+                        {evaluationResult.poor_performers.length} symbols below {evaluationResult.threshold}:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {evaluationResult.poor_performers.slice(0, 10).map(s => (
+                          <span key={s.symbol} className="px-2 py-0.5 bg-danger/20 text-danger text-xs rounded">
+                            {s.symbol.replace('/USD', '')} ({s.win_rate}%)
+                          </span>
+                        ))}
+                        {evaluationResult.poor_performers.length > 10 && (
+                          <span className="text-xs text-muted">+{evaluationResult.poor_performers.length - 10} more</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Currently Disabled */}
+                  {proConfig.disabled_symbols?.length > 0 && (
+                    <div className="mt-2 p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                      <p className="text-xs font-medium mb-2">Disabled ({proConfig.disabled_symbols.length}):</p>
+                      <div className="flex flex-wrap gap-1">
+                        {proConfig.disabled_symbols.slice(0, 8).map(s => (
+                          <button
+                            key={s}
+                            onClick={() => toggleSymbolEnabled(s, true)}
+                            className="px-2 py-0.5 bg-gray-600 text-gray-300 text-xs rounded hover:bg-gray-500"
+                            title="Click to re-enable"
+                          >
+                            {s.replace('/USD', '')} ✕
+                          </button>
+                        ))}
+                        {proConfig.disabled_symbols.length > 8 && (
+                          <span className="text-xs text-muted">+{proConfig.disabled_symbols.length - 8} more</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Section>
 

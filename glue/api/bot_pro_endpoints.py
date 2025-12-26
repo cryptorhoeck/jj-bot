@@ -8,9 +8,10 @@ import sys
 import json
 import asyncio
 import logging
+import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,11 @@ class BotConfigUpdate(BaseModel):
     use_edge_strategies: Optional[bool] = None
     use_alternative_data: Optional[bool] = None
     min_signal_confidence: Optional[float] = None
+    # Auto-disable poor performers
+    auto_disable_symbols: Optional[bool] = None
+    min_win_rate_threshold: Optional[float] = None  # e.g., 0.35 = 35%
+    min_trades_for_evaluation: Optional[int] = None  # Min trades before evaluating
+    disabled_symbols: Optional[list] = None  # Manually/auto disabled symbols
 
 
 # Global bot instance - runs in same process as API
@@ -807,3 +813,245 @@ async def quick_start_paper():
     save_config(config)
 
     return await start_bot(mode="paper")
+
+
+# ===== SYMBOL PERFORMANCE & AUTO-DISABLE =====
+
+def get_trades_db_path():
+    """Get path to trades database"""
+    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
+    return os.path.join(project_root, 'data', 'trades.db')
+
+
+@router.get("/symbol-performance")
+async def get_symbol_performance():
+    """
+    Get performance stats for each symbol.
+    Returns win rate, total trades, P&L for each traded symbol.
+    """
+    db_path = get_trades_db_path()
+    
+    if not os.path.exists(db_path):
+        return {"symbols": [], "message": "No trade data available"}
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Get stats per symbol (only CLOSE records have P&L)
+        cursor.execute("""
+            SELECT 
+                symbol,
+                COUNT(*) as trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+                SUM(pnl) as total_pnl,
+                AVG(pnl) as avg_pnl,
+                MAX(pnl) as best_trade,
+                MIN(pnl) as worst_trade
+            FROM trades 
+            WHERE signal LIKE 'CLOSE%'
+            GROUP BY symbol
+            ORDER BY SUM(pnl) DESC
+        """)
+        
+        symbols = []
+        for row in cursor.fetchall():
+            symbol, trades, wins, losses, total_pnl, avg_pnl, best, worst = row
+            win_rate = (wins / trades * 100) if trades > 0 else 0
+            symbols.append({
+                "symbol": symbol,
+                "trades": trades,
+                "wins": wins or 0,
+                "losses": losses or 0,
+                "win_rate": round(win_rate, 1),
+                "total_pnl": round(total_pnl or 0, 2),
+                "avg_pnl": round(avg_pnl or 0, 2),
+                "best_trade": round(best or 0, 2),
+                "worst_trade": round(worst or 0, 2),
+                "status": "good" if win_rate >= 40 else "warning" if win_rate >= 30 else "poor"
+            })
+        
+        conn.close()
+        return {"symbols": symbols, "count": len(symbols)}
+        
+    except Exception as e:
+        logger.error(f"Failed to get symbol performance: {e}")
+        return {"symbols": [], "error": str(e)}
+
+
+@router.post("/evaluate-symbols")
+async def evaluate_symbols(
+    min_win_rate: float = Query(0.35, description="Minimum win rate threshold (0.35 = 35%)"),
+    min_trades: int = Query(5, description="Minimum trades before evaluation")
+):
+    """
+    Evaluate symbols and return list of poor performers that should be disabled.
+    Does NOT actually disable them - just returns recommendations.
+    """
+    db_path = get_trades_db_path()
+    
+    if not os.path.exists(db_path):
+        return {"poor_performers": [], "good_performers": [], "message": "No trade data"}
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                symbol,
+                COUNT(*) as trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(pnl) as total_pnl
+            FROM trades 
+            WHERE signal LIKE 'CLOSE%'
+            GROUP BY symbol
+            HAVING COUNT(*) >= ?
+        """, (min_trades,))
+        
+        poor_performers = []
+        good_performers = []
+        
+        for row in cursor.fetchall():
+            symbol, trades, wins, total_pnl = row
+            win_rate = (wins / trades) if trades > 0 else 0
+            
+            data = {
+                "symbol": symbol,
+                "trades": trades,
+                "win_rate": round(win_rate * 100, 1),
+                "total_pnl": round(total_pnl or 0, 2)
+            }
+            
+            if win_rate < min_win_rate:
+                poor_performers.append(data)
+            else:
+                good_performers.append(data)
+        
+        conn.close()
+        
+        # Sort poor performers by win rate (worst first)
+        poor_performers.sort(key=lambda x: x["win_rate"])
+        good_performers.sort(key=lambda x: x["win_rate"], reverse=True)
+        
+        return {
+            "poor_performers": poor_performers,
+            "good_performers": good_performers,
+            "threshold": f"{min_win_rate * 100}%",
+            "min_trades": min_trades,
+            "recommendation": f"Consider disabling {len(poor_performers)} symbols with < {min_win_rate * 100}% win rate"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to evaluate symbols: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/apply-auto-disable")
+async def apply_auto_disable():
+    """
+    Apply auto-disable based on current config settings.
+    Removes poor performing symbols from the active symbols list.
+    """
+    config = load_config()
+    if not config:
+        return {"status": "error", "message": "No config found"}
+    
+    # Check if feature is enabled
+    if not config.get("auto_disable_symbols", False):
+        return {"status": "disabled", "message": "Auto-disable feature is not enabled"}
+    
+    min_win_rate = config.get("min_win_rate_threshold", 0.35)
+    min_trades = config.get("min_trades_for_evaluation", 5)
+    current_symbols = config.get("symbols", [])
+    
+    # Get performance data
+    result = await evaluate_symbols(min_win_rate, min_trades)
+    
+    if "error" in result:
+        return {"status": "error", "message": result["error"]}
+    
+    poor_performers = result.get("poor_performers", [])
+    poor_symbols = [p["symbol"] for p in poor_performers]
+    
+    # Remove poor performers from active symbols
+    disabled = []
+    active_symbols = []
+    for symbol in current_symbols:
+        if symbol in poor_symbols:
+            disabled.append(symbol)
+        else:
+            active_symbols.append(symbol)
+    
+    # Update config
+    config["symbols"] = active_symbols
+    config["disabled_symbols"] = list(set(config.get("disabled_symbols", []) + disabled))
+    save_config(config)
+    
+    # Update running bot if exists
+    bot = get_bot()
+    if bot:
+        bot.config.symbols = active_symbols
+    
+    return {
+        "status": "applied",
+        "disabled": disabled,
+        "remaining_symbols": len(active_symbols),
+        "message": f"Disabled {len(disabled)} poor performing symbols"
+    }
+
+
+@router.post("/toggle-symbol")
+async def toggle_symbol(symbol: str, enabled: bool = True):
+    """
+    Enable or disable a specific symbol for trading.
+    """
+    config = load_config()
+    if not config:
+        return {"status": "error", "message": "No config found"}
+    
+    current_symbols = config.get("symbols", [])
+    disabled_symbols = config.get("disabled_symbols", [])
+    
+    if enabled:
+        # Enable symbol
+        if symbol not in current_symbols:
+            current_symbols.append(symbol)
+        if symbol in disabled_symbols:
+            disabled_symbols.remove(symbol)
+    else:
+        # Disable symbol
+        if symbol in current_symbols:
+            current_symbols.remove(symbol)
+        if symbol not in disabled_symbols:
+            disabled_symbols.append(symbol)
+    
+    config["symbols"] = current_symbols
+    config["disabled_symbols"] = disabled_symbols
+    save_config(config)
+    
+    # Update running bot if exists
+    bot = get_bot()
+    if bot:
+        bot.config.symbols = current_symbols
+    
+    return {
+        "status": "updated",
+        "symbol": symbol,
+        "enabled": enabled,
+        "active_symbols": len(current_symbols)
+    }
+
+
+@router.get("/disabled-symbols")
+async def get_disabled_symbols():
+    """Get list of currently disabled symbols."""
+    config = load_config()
+    if not config:
+        return {"disabled_symbols": []}
+    
+    return {
+        "disabled_symbols": config.get("disabled_symbols", []),
+        "active_symbols": config.get("symbols", [])
+    }
