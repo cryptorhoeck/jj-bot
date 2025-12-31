@@ -12,6 +12,7 @@ Provides data for advanced visualizations:
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import sqlite3
@@ -1254,6 +1255,154 @@ async def get_active_model_endpoint() -> Dict[str, Any]:
             }
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ModelActivateRequest(BaseModel):
+    version: str
+
+
+class ModelUpdateRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+@router.post("/model-versions/{version}/activate", summary="Activate a Model Version")
+async def activate_model_version(version: str) -> Dict[str, Any]:
+    """
+    Set a model version as the active model.
+
+    This will load the model weights from the saved file and use it for trading.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        with data_manager.get_db() as conn:
+            cur = conn.cursor()
+
+            # Check if model version exists
+            cur.execute("SELECT file_path FROM model_versions WHERE version = ?", (version,))
+            row = cur.fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Model version '{version}' not found")
+
+            file_path = row[0]
+
+            # Check if model file exists
+            if file_path and not os.path.exists(file_path):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model file not found: {file_path}. The model may have been deleted."
+                )
+
+            # Deactivate all models
+            cur.execute("UPDATE model_versions SET is_active = 0")
+
+            # Activate this model
+            cur.execute("UPDATE model_versions SET is_active = 1 WHERE version = ?", (version,))
+
+            # Update bot_state
+            cur.execute("UPDATE bot_state SET current_model_version = ? WHERE id = 1", (version,))
+
+        return {
+            "success": True,
+            "message": f"Model version '{version}' activated",
+            "version": version,
+            "file_path": file_path
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/model-versions/{version}", summary="Update Model Version Metadata")
+async def update_model_version(version: str, update: ModelUpdateRequest) -> Dict[str, Any]:
+    """
+    Update model version metadata (notes/name).
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        with data_manager.get_db() as conn:
+            cur = conn.cursor()
+
+            # Check if model version exists
+            cur.execute("SELECT id FROM model_versions WHERE version = ?", (version,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail=f"Model version '{version}' not found")
+
+            # Update notes
+            if update.notes is not None:
+                cur.execute(
+                    "UPDATE model_versions SET notes = ? WHERE version = ?",
+                    (update.notes, version)
+                )
+
+        return {
+            "success": True,
+            "message": f"Model version '{version}' updated",
+            "version": version,
+            "notes": update.notes
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/model-versions/{version}", summary="Delete Model Version")
+async def delete_model_version(version: str, delete_file: bool = Query(False, description="Also delete the model file")) -> Dict[str, Any]:
+    """
+    Delete a model version record. Optionally delete the model file too.
+
+    Cannot delete the currently active model.
+    """
+    if not DATA_MANAGER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Data manager not available")
+
+    try:
+        with data_manager.get_db() as conn:
+            cur = conn.cursor()
+
+            # Check if model exists and get info
+            cur.execute("SELECT is_active, file_path FROM model_versions WHERE version = ?", (version,))
+            row = cur.fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Model version '{version}' not found")
+
+            is_active, file_path = row
+
+            if is_active:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete the active model. Activate a different model first."
+                )
+
+            # Delete the database record
+            cur.execute("DELETE FROM model_versions WHERE version = ?", (version,))
+
+        # Optionally delete the file
+        file_deleted = False
+        if delete_file and file_path and os.path.exists(file_path):
+            os.remove(file_path)
+            file_deleted = True
+
+        return {
+            "success": True,
+            "message": f"Model version '{version}' deleted",
+            "version": version,
+            "file_deleted": file_deleted
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

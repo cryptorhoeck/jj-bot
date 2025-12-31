@@ -136,6 +136,11 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
   const [activeModel, setActiveModel] = useState(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelStats, setModelStats] = useState([]);
+  const [editingModel, setEditingModel] = useState(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [deleteModelConfirmOpen, setDeleteModelConfirmOpen] = useState(false);
+  const [modelToDelete, setModelToDelete] = useState(null);
+  const [activatingModel, setActivatingModel] = useState(null);
 
   // Load backups on mount
   useEffect(() => {
@@ -212,6 +217,70 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
       console.error('Error loading model versions:', error);
     }
     setLoadingModels(false);
+  };
+
+  const activateModel = async (version) => {
+    setActivatingModel(version);
+    try {
+      const response = await fetch(`${API_BASE}/api/analytics/enhanced/model-versions/${encodeURIComponent(version)}/activate`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Model ${version} activated`);
+        loadModelVersions();
+      } else {
+        toast.error(data.detail || 'Failed to activate model');
+      }
+    } catch (error) {
+      toast.error('Error activating model');
+      console.error('Error activating model:', error);
+    }
+    setActivatingModel(null);
+  };
+
+  const updateModelNotes = async () => {
+    if (!editingModel) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/analytics/enhanced/model-versions/${encodeURIComponent(editingModel)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: editNotes })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Model notes updated');
+        loadModelVersions();
+      } else {
+        toast.error(data.detail || 'Failed to update notes');
+      }
+    } catch (error) {
+      toast.error('Error updating notes');
+      console.error('Error updating notes:', error);
+    }
+    setEditingModel(null);
+    setEditNotes('');
+  };
+
+  const deleteModel = async (deleteFile = false) => {
+    if (!modelToDelete) return;
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/analytics/enhanced/model-versions/${encodeURIComponent(modelToDelete)}?delete_file=${deleteFile}`,
+        { method: 'DELETE' }
+      );
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Model ${modelToDelete} deleted${data.file_deleted ? ' (file removed)' : ''}`);
+        loadModelVersions();
+      } else {
+        toast.error(data.detail || 'Failed to delete model');
+      }
+    } catch (error) {
+      toast.error('Error deleting model');
+      console.error('Error deleting model:', error);
+    }
+    setModelToDelete(null);
   };
 
   const createBackup = async () => {
@@ -1140,10 +1209,71 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
                       <p className="text-xs text-muted">
                         Created: {model.created_at ? new Date(model.created_at).toLocaleString() : 'N/A'}
                       </p>
-                      {model.notes && (
-                        <p className="text-xs text-muted mt-1 truncate" title={model.notes}>
-                          {model.notes}
+                      {editingModel === model.version ? (
+                        <div className="mt-2">
+                          <input
+                            type="text"
+                            value={editNotes}
+                            onChange={(e) => setEditNotes(e.target.value)}
+                            placeholder="Add a label/note..."
+                            className="w-full px-2 py-1 text-xs rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]"
+                            autoFocus
+                          />
+                          <div className="flex gap-1 mt-1">
+                            <button
+                              onClick={updateModelNotes}
+                              className="btn btn-success btn-sm text-xs flex-1"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => { setEditingModel(null); setEditNotes(''); }}
+                              className="btn btn-secondary btn-sm text-xs flex-1"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p
+                          className="text-xs text-muted mt-1 truncate cursor-pointer hover:text-info"
+                          title={model.notes || 'Click to add a label'}
+                          onClick={() => { setEditingModel(model.version); setEditNotes(model.notes || ''); }}
+                        >
+                          {model.notes || '+ Add label'}
                         </p>
+                      )}
+                    </div>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border-color)]">
+                      {!model.is_active && (
+                        <button
+                          onClick={() => activateModel(model.version)}
+                          disabled={activatingModel === model.version}
+                          className="btn btn-success btn-sm text-xs flex-1"
+                        >
+                          {activatingModel === model.version ? 'Activating...' : 'Activate'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setEditingModel(model.version); setEditNotes(model.notes || ''); }}
+                        className="btn btn-secondary btn-sm text-xs"
+                        title="Edit label"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      {!model.is_active && (
+                        <button
+                          onClick={() => { setModelToDelete(model.version); setDeleteModelConfirmOpen(true); }}
+                          className="btn btn-danger btn-sm text-xs"
+                          title="Delete model"
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1170,12 +1300,22 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
               </svg>
               About Model Versioning
             </h4>
-            <p className="text-sm text-muted">
+            <p className="text-sm text-muted mb-3">
               Each time training completes, a new model version is automatically created and backed up.
               Model versions track the AI's performance at each training checkpoint, including Trading IQ,
-              win rate, profit factor, and training episode count. This allows you to compare how
-              your AI improves over time and track which model version made each trade.
+              win rate, profit factor, and training episode count.
             </p>
+            <div className="text-sm">
+              <p className="font-medium mb-1">Model Management:</p>
+              <ul className="text-muted list-disc list-inside space-y-1">
+                <li><span className="text-success">Activate</span> - Switch between different trained models</li>
+                <li><span className="text-info">Edit</span> - Add labels/notes to help identify models</li>
+                <li><span className="text-danger">Delete</span> - Remove old models you no longer need</li>
+              </ul>
+              <p className="mt-2 text-xs text-muted italic">
+                Note: Each model is trained independently. Models cannot be merged together.
+              </p>
+            </div>
           </div>
         </>
       )}
@@ -1235,6 +1375,41 @@ export function DataTab({ darkMode, API_BASE, trades, summary }) {
         confirmVariant="danger"
         darkMode={darkMode}
       />
+
+      {/* Delete Model Confirmation Modal */}
+      {deleteModelConfirmOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
+            <h3 className="text-lg font-bold mb-2">Delete Model Version</h3>
+            <p className="text-muted mb-4">
+              Are you sure you want to delete model <span className="font-mono font-bold">{modelToDelete}</span>?
+            </p>
+            <p className="text-sm text-muted mb-4">
+              You can choose to keep the model file (for manual recovery) or delete everything.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { deleteModel(false); setDeleteModelConfirmOpen(false); }}
+                className="btn btn-warning w-full"
+              >
+                Delete Record Only (Keep File)
+              </button>
+              <button
+                onClick={() => { deleteModel(true); setDeleteModelConfirmOpen(false); }}
+                className="btn btn-danger w-full"
+              >
+                Delete Everything (Record + File)
+              </button>
+              <button
+                onClick={() => { setDeleteModelConfirmOpen(false); setModelToDelete(null); }}
+                className="btn btn-secondary w-full"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
