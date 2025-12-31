@@ -13,11 +13,12 @@ const WS_URL = 'ws://127.0.0.1:8000/ws';
 
 // Available symbols for selection (verified Kraken USD pairs)
 const AVAILABLE_SYMBOLS = [
-  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'DOT', 'SHIB',
-  'LTC', 'BCH', 'UNI', 'XLM', 'ATOM', 'ETC', 'FIL', 'APT', 'ARB', 'OP',
-  'NEAR', 'INJ', 'AAVE', 'GRT', 'FTM', 'ALGO', 'XMR', 'XTZ', 'SAND', 'MANA',
-  'CRV', 'LDO', 'RNDR', 'SNX', 'IMX', '1INCH', 'ENJ', 'BAT', 'COMP', 'ZEC',
-  'DASH', 'WAVES', 'KAVA', 'ROSE', 'FLR', 'BLUR', 'MASK', 'ACH', 'AUDIO', 'BAND'
+  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+  'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'MATIC', 'FIL', 'APE', 'AAVE', 'CRV',
+  'SNX', 'GRT', 'COMP', 'MKR', 'SUSHI', 'YFI', '1INCH', 'LDO', 'INJ',
+  'SAND', 'MANA', 'AXS', 'ENJ', 'IMX', 'BLUR', 'STORJ', 'BAT', 'OMG', 'FLR',
+  'NEAR', 'FLOW', 'XTZ', 'ETC', 'TRX', 'KSM', 'APT', 'ARB', 'OP',
+  'XMR', 'SHIB', 'ZEC', 'DASH', 'KAVA'
 ];
 
 // Currency configuration - CAD is the base currency
