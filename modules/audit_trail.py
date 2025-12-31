@@ -56,9 +56,6 @@ class AuditEventType(Enum):
     ERROR = "error"
     WARNING = "warning"
 
-    # Dead man's switch
-    DEAD_MANS_SWITCH = "dead_mans_switch"
-
 
 class AuditTrail:
     """
