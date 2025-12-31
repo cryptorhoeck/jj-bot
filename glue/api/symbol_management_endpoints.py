@@ -82,15 +82,20 @@ def init_symbols_db():
             ("SUSHI", "sushi", 1, 0),
             ("YFI", "yearn-finance", 1, 0),
             ("1INCH", "1inch", 1, 0),
+            ("LDO", "lido-dao", 1, 0),
+            ("INJ", "injective-protocol", 1, 0),
             # Gaming/Metaverse
             ("SAND", "the-sandbox", 1, 0),
             ("MANA", "decentraland", 1, 0),
             ("AXS", "axie-infinity", 1, 0),
             ("ENJ", "enjincoin", 1, 0),
+            ("IMX", "immutable-x", 1, 0),
+            ("BLUR", "blur", 1, 0),
             # Infrastructure
             ("STORJ", "storj", 1, 0),
             ("BAT", "basic-attention-token", 1, 0),
             ("OMG", "omisego", 1, 0),
+            ("FLR", "flare-networks", 1, 0),
             # Layer 1s
             ("NEAR", "near", 1, 0),
             ("FLOW", "flow", 1, 0),
@@ -98,10 +103,15 @@ def init_symbols_db():
             ("ETC", "ethereum-classic", 1, 0),
             ("TRX", "tron", 1, 0),
             ("KSM", "kusama", 1, 0),
-            # Other verified
+            ("APT", "aptos", 1, 0),
+            ("ARB", "arbitrum", 1, 0),
+            ("OP", "optimism", 1, 0),
+            # Privacy/Other
+            ("XMR", "monero", 1, 0),
             ("SHIB", "shiba-inu", 1, 0),
             ("ZEC", "zcash", 1, 0),
             ("DASH", "dash", 1, 0),
+            ("KAVA", "kava", 1, 0),
         ]
 
         cursor.executemany(
@@ -405,15 +415,20 @@ async def reset_symbols() -> Dict[str, Any]:
             ("SUSHI", "sushi", 1, 0),
             ("YFI", "yearn-finance", 1, 0),
             ("1INCH", "1inch", 1, 0),
+            ("LDO", "lido-dao", 1, 0),
+            ("INJ", "injective-protocol", 1, 0),
             # Gaming/Metaverse
             ("SAND", "the-sandbox", 1, 0),
             ("MANA", "decentraland", 1, 0),
             ("AXS", "axie-infinity", 1, 0),
             ("ENJ", "enjincoin", 1, 0),
+            ("IMX", "immutable-x", 1, 0),
+            ("BLUR", "blur", 1, 0),
             # Infrastructure
             ("STORJ", "storj", 1, 0),
             ("BAT", "basic-attention-token", 1, 0),
             ("OMG", "omisego", 1, 0),
+            ("FLR", "flare-networks", 1, 0),
             # Layer 1s
             ("NEAR", "near", 1, 0),
             ("FLOW", "flow", 1, 0),
@@ -421,10 +436,15 @@ async def reset_symbols() -> Dict[str, Any]:
             ("ETC", "ethereum-classic", 1, 0),
             ("TRX", "tron", 1, 0),
             ("KSM", "kusama", 1, 0),
-            # Other verified
+            ("APT", "aptos", 1, 0),
+            ("ARB", "arbitrum", 1, 0),
+            ("OP", "optimism", 1, 0),
+            # Privacy/Other
+            ("XMR", "monero", 1, 0),
             ("SHIB", "shiba-inu", 1, 0),
             ("ZEC", "zcash", 1, 0),
             ("DASH", "dash", 1, 0),
+            ("KAVA", "kava", 1, 0),
         ]
 
         cursor.executemany(
