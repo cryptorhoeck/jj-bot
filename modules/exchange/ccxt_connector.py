@@ -7,14 +7,76 @@ import ccxt
 import ccxt.pro as ccxtpro
 import asyncio
 import logging
-from typing import Dict, List, Optional, Callable, Any
+import random
+from typing import Dict, List, Optional, Callable, Any, TypeVar, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import json
+from functools import wraps
 
 
 logger = logging.getLogger(__name__)
+
+# Type variable for generic retry function
+T = TypeVar('T')
+
+
+async def retry_with_backoff(
+    operation: Callable[[], Coroutine[Any, Any, T]],
+    max_retries: int = 4,
+    base_delay: float = 2.0,
+    max_delay: float = 30.0,
+    retryable_exceptions: tuple = (
+        ccxt.NetworkError,
+        ccxt.ExchangeNotAvailable,
+        ccxt.RequestTimeout,
+        ccxt.RateLimitExceeded,
+    ),
+    operation_name: str = "operation"
+) -> Optional[T]:
+    """
+    Retry an async operation with exponential backoff.
+
+    Args:
+        operation: Async callable to retry
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay in seconds (doubles each retry)
+        max_delay: Maximum delay cap
+        retryable_exceptions: Tuple of exceptions to retry on
+        operation_name: Name for logging
+
+    Returns:
+        Result of operation or None if all retries failed
+    """
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return await operation()
+        except retryable_exceptions as e:
+            last_exception = e
+            if attempt < max_retries:
+                # Calculate delay with jitter to prevent thundering herd
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                jitter = random.uniform(0, delay * 0.1)  # 10% jitter
+                total_delay = delay + jitter
+
+                logger.warning(
+                    f"{operation_name} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                    f"Retrying in {total_delay:.1f}s..."
+                )
+                await asyncio.sleep(total_delay)
+            else:
+                logger.error(
+                    f"{operation_name} failed after {max_retries + 1} attempts: {e}"
+                )
+        except Exception as e:
+            # Non-retryable exception
+            logger.error(f"{operation_name} failed with non-retryable error: {e}")
+            raise
+
+    return None
 
 
 class ExchangeType(Enum):
@@ -630,26 +692,27 @@ class CCXTConnector:
     # ========== Trading Methods ==========
 
     async def create_order(self, order: OrderRequest) -> Optional[OrderResult]:
-        """Create a new order with automatic reconnection on failure"""
-        try:
-            # Ensure we're connected, reconnect if needed
-            if not await self.ensure_connected():
-                logger.error("Cannot create order - exchange not connected")
-                return None
+        """Create a new order with automatic retry and exponential backoff"""
+        # Pre-flight checks (don't retry these)
+        if not await self.ensure_connected():
+            logger.error("Cannot create order - exchange not connected")
+            return None
 
-            if not self.credentials:
-                logger.error("Cannot create order without credentials")
-                return None
+        if not self.credentials:
+            logger.error("Cannot create order without credentials")
+            return None
 
-            # Build order parameters
-            params = order.params.copy()
+        # Build order parameters
+        params = order.params.copy()
 
-            # Add stop loss / take profit if supported
-            if order.stop_loss:
-                params["stopLoss"] = {"triggerPrice": order.stop_loss}
-            if order.take_profit:
-                params["takeProfit"] = {"triggerPrice": order.take_profit}
+        # Add stop loss / take profit if supported
+        if order.stop_loss:
+            params["stopLoss"] = {"triggerPrice": order.stop_loss}
+        if order.take_profit:
+            params["takeProfit"] = {"triggerPrice": order.take_profit}
 
+        async def _execute_order():
+            """Inner function for retry wrapper"""
             result = await asyncio.to_thread(
                 self.exchange.create_order,
                 order.symbol,
@@ -679,40 +742,57 @@ class CCXTConnector:
                 raw=result
             )
 
-        except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
-            # Connection lost - try to reconnect and retry once
-            logger.warning(f"Network error creating order: {e}")
-            self._connected = False
-            if await self.reconnect_with_backoff():
-                logger.info("Retrying order after reconnection...")
-                return await self.create_order(order)  # Retry once
+        try:
+            return await retry_with_backoff(
+                _execute_order,
+                max_retries=4,
+                base_delay=2.0,
+                operation_name=f"create_order({order.symbol} {order.side.value})"
+            )
+        except ccxt.InsufficientFunds as e:
+            logger.error(f"Insufficient funds for order: {e}")
             return None
-
+        except ccxt.InvalidOrder as e:
+            logger.error(f"Invalid order parameters: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error creating order: {e}")
+            logger.error(f"Unexpected error creating order: {e}")
             return None
 
     async def cancel_order(self, order_id: str, symbol: str) -> bool:
-        """Cancel an open order"""
-        try:
-            if not self.exchange:
-                await self.connect()
+        """Cancel an open order with retry logic"""
+        if not await self.ensure_connected():
+            logger.error("Cannot cancel order - exchange not connected")
+            return False
 
+        async def _cancel():
             await asyncio.to_thread(
                 self.exchange.cancel_order, order_id, symbol
             )
             return True
 
+        try:
+            result = await retry_with_backoff(
+                _cancel,
+                max_retries=3,
+                base_delay=1.0,
+                operation_name=f"cancel_order({order_id})"
+            )
+            return result is True
+        except ccxt.OrderNotFound:
+            logger.warning(f"Order {order_id} not found (may already be filled/canceled)")
+            return True  # Consider it canceled if not found
         except Exception as e:
             logger.error(f"Error canceling order {order_id}: {e}")
             return False
 
     async def get_order(self, order_id: str, symbol: str) -> Optional[OrderResult]:
-        """Get order status"""
-        try:
-            if not self.exchange:
-                await self.connect()
+        """Get order status with retry logic"""
+        if not await self.ensure_connected():
+            logger.error("Cannot get order - exchange not connected")
+            return None
 
+        async def _fetch_order():
             result = await asyncio.to_thread(
                 self.exchange.fetch_order, order_id, symbol
             )
@@ -732,6 +812,16 @@ class CCXTConnector:
                 raw=result
             )
 
+        try:
+            return await retry_with_backoff(
+                _fetch_order,
+                max_retries=3,
+                base_delay=1.0,
+                operation_name=f"get_order({order_id})"
+            )
+        except ccxt.OrderNotFound:
+            logger.warning(f"Order {order_id} not found")
+            return None
         except Exception as e:
             logger.error(f"Error fetching order {order_id}: {e}")
             return None

@@ -164,6 +164,11 @@ class BotConfig:
     circuit_breaker_losses: int = 3  # Consecutive losses to trigger circuit breaker
     circuit_breaker_cooldown_minutes: int = 30  # Minutes to pause trading after breaker
 
+    # Auto-shutdown thresholds (set to 0 to disable)
+    session_profit_target_pct: float = 0.0  # Auto-stop when session profit reaches X% (0=disabled)
+    session_loss_limit_pct: float = 0.03  # Auto-stop when session loss reaches 3% (stricter than daily)
+    auto_shutdown_on_threshold: bool = True  # If True, stops bot; if False, just pauses trading
+
     # Trailing stop settings
     use_trailing_stop: bool = True  # Enable trailing stops
     trailing_stop_activation_pct: float = 0.02  # Activate after 2% profit
@@ -554,6 +559,7 @@ class JJBotPro:
         self._last_rest_fetch: datetime = datetime.min  # Track REST API fetches separately
         self._price_feed_stale_threshold = self.config.price_feed_stale_timeout
         self._trading_paused_due_to_feed = False
+        self._session_threshold_triggered = False  # Flag for auto-shutdown on P&L thresholds
 
         logger.info(f"JJ-Bot Pro initialized in {self.config.mode} mode")
 
@@ -796,6 +802,7 @@ class JJBotPro:
         Synchronize local position state with actual exchange positions.
         Detects phantom positions (local but not on exchange) and
         orphan positions (on exchange but not tracked locally).
+        Sends alerts for any discrepancies found.
         """
         if self.config.mode != "live" or not self.exchange:
             return
@@ -818,6 +825,12 @@ class JJBotPro:
 
             for symbol in phantom_positions:
                 logger.warning(f"PHANTOM POSITION DETECTED: {symbol} exists locally but not on exchange")
+                # Send alert
+                if self.notifier:
+                    await self.notifier.notify_error(
+                        "PHANTOM_POSITION",
+                        f"Position {symbol} exists locally but not on exchange. Cleaning up."
+                    )
                 # The position may have been closed externally (e.g., by exchange stop)
                 pos = self.positions[symbol]
                 # Close the phantom position at last known price
@@ -830,6 +843,12 @@ class JJBotPro:
 
             for symbol in orphan_positions:
                 logger.warning(f"ORPHAN POSITION DETECTED: {symbol} exists on exchange but not tracked locally")
+                # Send alert
+                if self.notifier:
+                    await self.notifier.notify_error(
+                        "ORPHAN_POSITION",
+                        f"Position {symbol} found on exchange but not tracked locally. Recovering."
+                    )
                 # Find the position details and recover to local state
                 for pos in exchange_positions:
                     if pos.get("symbol") == symbol:
@@ -882,6 +901,12 @@ class JJBotPro:
                     diff_pct = abs(total_balance - local_equity) / local_equity if local_equity else 0
                     if diff_pct > 0.05:
                         logger.warning(f"Balance discrepancy: Local=${local_equity:.2f}, Exchange=${total_balance:.2f} ({diff_pct:.1%} diff)")
+                        # Send alert for significant discrepancy
+                        if self.notifier and diff_pct > 0.10:  # Alert only if >10%
+                            await self.notifier.notify_error(
+                                "BALANCE_DISCREPANCY",
+                                f"Local: ${local_equity:.2f}, Exchange: ${total_balance:.2f} ({diff_pct:.1%} difference)"
+                            )
 
             logger.debug("Position sync completed successfully")
 
@@ -1413,6 +1438,11 @@ class JJBotPro:
                 # Check risk limits
                 if not self._check_risk_limits():
                     logger.warning("Risk limits exceeded - pausing trading")
+                    # Check if auto-shutdown was triggered
+                    if self._session_threshold_triggered:
+                        logger.warning("Session threshold triggered auto-shutdown - stopping bot")
+                        await self.stop()
+                        return
                     await asyncio.sleep(60)
                     continue
 
@@ -2445,7 +2475,51 @@ class JJBotPro:
             logger.warning(f"Max drawdown hit: {drawdown:.2%}")
             return False
 
+        # Session P&L thresholds
+        if self.session_starting_equity > 0:
+            session_pnl_pct = (current_equity - self.session_starting_equity) / self.session_starting_equity
+
+            # Session profit target - auto-stop on success
+            if self.config.session_profit_target_pct > 0 and session_pnl_pct >= self.config.session_profit_target_pct:
+                logger.info(f"Session profit target reached: {session_pnl_pct:.2%} >= {self.config.session_profit_target_pct:.2%}")
+                self._trigger_session_threshold("PROFIT_TARGET", session_pnl_pct)
+                return False
+
+            # Session loss limit - stricter than daily
+            if self.config.session_loss_limit_pct > 0 and session_pnl_pct <= -self.config.session_loss_limit_pct:
+                logger.warning(f"Session loss limit hit: {session_pnl_pct:.2%} <= -{self.config.session_loss_limit_pct:.2%}")
+                self._trigger_session_threshold("LOSS_LIMIT", session_pnl_pct)
+                return False
+
         return True
+
+    def _trigger_session_threshold(self, threshold_type: str, pnl_pct: float):
+        """Handle session threshold trigger - notify and optionally auto-shutdown"""
+        # Send notification
+        if self.notifier:
+            asyncio.create_task(self.notifier.notify_error(
+                f"SESSION_{threshold_type}",
+                f"Session P&L: {pnl_pct:.2%} | Equity: ${self.total_equity:,.2f} | "
+                f"Started: ${self.session_starting_equity:,.2f}"
+            ))
+
+        # Log to audit trail
+        if self.audit:
+            self.audit.log_event(
+                event_type=f"SESSION_{threshold_type}_TRIGGERED",
+                details={
+                    "threshold_type": threshold_type,
+                    "session_pnl_pct": pnl_pct,
+                    "current_equity": self.total_equity,
+                    "session_start_equity": self.session_starting_equity,
+                    "auto_shutdown": self.config.auto_shutdown_on_threshold
+                }
+            )
+
+        # Auto-shutdown if configured
+        if self.config.auto_shutdown_on_threshold:
+            logger.warning(f"Auto-shutdown triggered due to {threshold_type}")
+            self._session_threshold_triggered = True  # Flag to stop bot in main loop
 
     async def _check_daily_reset(self):
         """Reset daily stats at midnight"""
@@ -3181,32 +3255,68 @@ class JJBotPro:
         """
         logger.warning("=" * 60)
         logger.warning("[DEAD MAN'S SWITCH] EMERGENCY POSITION CLOSE TRIGGERED")
+        logger.warning(f"[DEAD MAN'S SWITCH] Timeout: {self.config.dead_mans_switch_timeout}s")
+        logger.warning(f"[DEAD MAN'S SWITCH] Open positions: {len(self.positions)}")
+        logger.warning(f"[DEAD MAN'S SWITCH] Current equity: ${self.equity:,.2f}")
         logger.warning("=" * 60)
 
+        # Log to audit trail
+        if self.audit:
+            self.audit.log_event(
+                event_type="DEAD_MANS_SWITCH_TRIGGERED",
+                details={
+                    "positions_count": len(self.positions),
+                    "positions": list(self.positions.keys()),
+                    "equity": self.equity,
+                    "timeout_seconds": self.config.dead_mans_switch_timeout,
+                    "close_positions": self.config.dead_mans_switch_close_positions
+                }
+            )
+
         # Send notification if available
-        if self.notifier and self.notifier.is_enabled:
+        if self.notifier:
             try:
                 await self.notifier.notify_error(
-                    "Dead Man's Switch",
-                    "Bot unresponsive - emergency closing all positions"
+                    "DEAD_MANS_SWITCH",
+                    f"Bot unresponsive for {self.config.dead_mans_switch_timeout}s! "
+                    f"Emergency closing {len(self.positions)} positions. Equity: ${self.equity:,.2f}"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to send dead man's switch notification: {e}")
 
         # Close all positions
         positions_to_close = list(self.positions.keys())
+        closed_count = 0
+        failed_positions = []
+
         for symbol in positions_to_close:
             try:
                 price = self.prices.get(symbol, self.positions[symbol].entry_price)
                 await self._close_position(symbol, price, "dead_mans_switch")
-                logger.info(f"[DEAD MAN'S SWITCH] Closed {symbol}")
+                closed_count += 1
+                logger.info(f"[DEAD MAN'S SWITCH] Closed {symbol} @ ${price:,.2f}")
             except Exception as e:
                 logger.error(f"[DEAD MAN'S SWITCH] Failed to close {symbol}: {e}")
+                failed_positions.append(symbol)
 
         # Save state
         self._save_state()
 
-        logger.warning("[DEAD MAN'S SWITCH] Emergency close complete")
+        # Final summary
+        logger.warning(f"[DEAD MAN'S SWITCH] Complete: {closed_count}/{len(positions_to_close)} positions closed")
+        if failed_positions:
+            logger.error(f"[DEAD MAN'S SWITCH] FAILED to close: {failed_positions}")
+
+        # Log completion to audit
+        if self.audit:
+            self.audit.log_event(
+                event_type="DEAD_MANS_SWITCH_COMPLETE",
+                details={
+                    "positions_closed": closed_count,
+                    "positions_failed": failed_positions,
+                    "final_equity": self.equity
+                }
+            )
 
     def get_positions(self) -> List[Dict]:
         """Get open positions (for API)"""

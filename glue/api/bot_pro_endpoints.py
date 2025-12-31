@@ -516,6 +516,95 @@ async def emergency_stop(close_positions: bool = True, auth_token: Optional[str]
         return result
 
 
+@router.get("/health")
+async def get_health_status():
+    """
+    Get comprehensive health status of the trading bot.
+
+    Returns health metrics for monitoring and alerting systems.
+    """
+    global _bot_instance
+
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "uptime_seconds": 0,
+        "issues": [],
+        "metrics": {}
+    }
+
+    try:
+        if not _bot_instance:
+            health["status"] = "not_running"
+            health["issues"].append("Bot instance not initialized")
+            return health
+
+        # Basic status
+        health["metrics"]["running"] = _bot_instance.running
+        health["metrics"]["mode"] = _bot_instance.config.mode
+
+        # Uptime
+        if hasattr(_bot_instance, '_start_time') and _bot_instance._start_time:
+            uptime = (datetime.now() - _bot_instance._start_time).total_seconds()
+            health["uptime_seconds"] = uptime
+            health["metrics"]["uptime_hours"] = round(uptime / 3600, 2)
+
+        # Equity and P&L
+        health["metrics"]["equity"] = _bot_instance.equity
+        health["metrics"]["session_pnl"] = _bot_instance.equity - _bot_instance.session_starting_equity
+        health["metrics"]["daily_pnl"] = _bot_instance.daily_pnl
+
+        # Positions
+        health["metrics"]["open_positions"] = len(_bot_instance.positions)
+        health["metrics"]["position_symbols"] = list(_bot_instance.positions.keys())
+
+        # Price feed health
+        price_age = (datetime.now() - _bot_instance._last_price_update).total_seconds()
+        health["metrics"]["price_feed_age_seconds"] = round(price_age, 1)
+        health["metrics"]["price_feed_stale"] = _bot_instance._trading_paused_due_to_feed
+
+        if _bot_instance._trading_paused_due_to_feed:
+            health["status"] = "degraded"
+            health["issues"].append(f"Price feed stale ({price_age:.0f}s old)")
+
+        # Exchange connection
+        if _bot_instance.exchange:
+            health["metrics"]["exchange_connected"] = _bot_instance.exchange._connected
+            if not _bot_instance.exchange._connected:
+                health["status"] = "degraded"
+                health["issues"].append("Exchange disconnected")
+        else:
+            health["metrics"]["exchange_connected"] = False
+            health["issues"].append("Exchange not initialized")
+
+        # Risk status
+        health["metrics"]["circuit_breaker_active"] = hasattr(_bot_instance, 'risk_manager') and \
+            _bot_instance.risk_manager and _bot_instance.risk_manager.circuit_breaker_active
+
+        # Session threshold
+        if hasattr(_bot_instance, '_session_threshold_triggered'):
+            health["metrics"]["session_threshold_triggered"] = _bot_instance._session_threshold_triggered
+            if _bot_instance._session_threshold_triggered:
+                health["status"] = "stopped"
+                health["issues"].append("Session P&L threshold triggered")
+
+        # Dead man's switch status
+        health["metrics"]["dead_mans_switch_enabled"] = _bot_instance.config.dead_mans_switch_enabled
+
+        # Overall health determination
+        if not _bot_instance.running:
+            health["status"] = "stopped"
+        elif len(health["issues"]) == 0:
+            health["status"] = "healthy"
+
+    except Exception as e:
+        health["status"] = "error"
+        health["issues"].append(f"Health check error: {str(e)}")
+        logger.error(f"Health check error: {e}", exc_info=True)
+
+    return health
+
+
 @router.post("/train")
 async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90, data_source: str = "kraken"):
     """Start RL agent training with configurable data settings

@@ -389,6 +389,40 @@ export function TradingTab({
     setLoading(false);
   };
 
+  // Emergency stop - immediately halt and close all positions
+  const [showEmergencyConfirm, setShowEmergencyConfirm] = useState(false);
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+
+  const emergencyStop = async (closePositions = true) => {
+    setEmergencyLoading(true);
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/pro/emergency-stop?close_positions=${closePositions}`,
+        { method: 'POST' }
+      );
+      const data = await response.json();
+
+      setBotRunning(false);
+      setShowEmergencyConfirm(false);
+
+      if (data.positions_closed > 0) {
+        toast.success(`Emergency stop: Closed ${data.positions_closed} positions`);
+      } else {
+        toast.success('Emergency stop executed');
+      }
+
+      if (data.close_errors?.length > 0) {
+        toast.error(`Failed to close some positions: ${data.close_errors.join(', ')}`);
+      }
+
+      onBotStatusChange?.();
+    } catch (error) {
+      toast.error('Emergency stop failed - check console');
+      console.error('Emergency stop error:', error);
+    }
+    setEmergencyLoading(false);
+  };
+
   const filteredSymbols = availableSymbols.filter(s =>
     s.toLowerCase().includes(symbolSearch.toLowerCase())
   );
@@ -407,6 +441,17 @@ export function TradingTab({
             >
               {loading ? <div className="spinner w-5 h-5" /> : botRunning ? '⏹ Stop' : '▶ Start'}
             </button>
+            {/* Emergency Stop Button - only show when bot is running */}
+            {botRunning && (
+              <button
+                onClick={() => setShowEmergencyConfirm(true)}
+                disabled={emergencyLoading}
+                className="btn btn-lg bg-red-700 hover:bg-red-800 text-white border-2 border-red-500 min-w-[160px]"
+                title="Emergency stop - immediately halt trading and close all positions"
+              >
+                {emergencyLoading ? <div className="spinner w-5 h-5" /> : '🚨 EMERGENCY'}
+              </button>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <span className={`w-3 h-3 rounded-full ${botRunning ? 'bg-success animate-pulse' : 'bg-gray-500'}`}></span>
@@ -926,6 +971,51 @@ export function TradingTab({
             <div className="text-sm text-muted">
               <strong className="text-[var(--text-color)]">Ready to trade:</strong> Configure your settings above, select symbols, then click Start to begin paper trading. Go to the <strong>Training</strong> tab to train the AI model first.
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency Stop Confirmation Modal */}
+      {showEmergencyConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="card p-6 max-w-md mx-4 border-2 border-red-500">
+            <div className="text-center mb-6">
+              <span className="text-5xl">🚨</span>
+              <h2 className="text-xl font-bold mt-3 text-red-500">EMERGENCY STOP</h2>
+              <p className="text-muted mt-2">
+                This will immediately halt all trading activity and close all open positions.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => emergencyStop(true)}
+                disabled={emergencyLoading}
+                className="w-full btn bg-red-700 hover:bg-red-800 text-white py-3"
+              >
+                {emergencyLoading ? 'Stopping...' : 'STOP & CLOSE ALL POSITIONS'}
+              </button>
+
+              <button
+                onClick={() => emergencyStop(false)}
+                disabled={emergencyLoading}
+                className="w-full btn bg-orange-600 hover:bg-orange-700 text-white py-3"
+              >
+                {emergencyLoading ? 'Stopping...' : 'STOP (Keep Positions Open)'}
+              </button>
+
+              <button
+                onClick={() => setShowEmergencyConfirm(false)}
+                disabled={emergencyLoading}
+                className="w-full btn btn-secondary py-3"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <p className="text-xs text-muted text-center mt-4">
+              ⚠️ In live mode, positions will be market-sold at current prices
+            </p>
           </div>
         </div>
       )}
