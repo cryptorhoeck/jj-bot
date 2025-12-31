@@ -966,6 +966,25 @@ class JJBotPro:
             else:
                 logger.info(f"Connected to {self.config.exchange}")
 
+                # Validate symbols against exchange - remove any that don't exist
+                if self.exchange and hasattr(self.exchange, 'get_available_symbols'):
+                    available_symbols = self.exchange.get_available_symbols()
+                    if available_symbols:
+                        original_count = len(self.config.symbols)
+                        valid_symbols = []
+                        invalid_symbols = []
+
+                        for symbol in self.config.symbols:
+                            if symbol in available_symbols:
+                                valid_symbols.append(symbol)
+                            else:
+                                invalid_symbols.append(symbol)
+
+                        if invalid_symbols:
+                            logger.warning(f"Removed {len(invalid_symbols)} invalid symbols: {invalid_symbols}")
+                            self.config.symbols = valid_symbols
+                            logger.info(f"Trading with {len(valid_symbols)}/{original_count} valid symbols")
+
         # 2. Live data feed (skip in demo mode)
         if not self._demo_mode:
             self.data_feed = create_live_feed(
