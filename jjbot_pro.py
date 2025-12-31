@@ -876,8 +876,9 @@ class JJBotPro:
 
                         # Log to audit trail
                         if self.audit:
-                            self.audit.log_event(
-                                event_type="POSITION_RECOVERED",
+                            self.audit.log_system_event(
+                                event_type=AuditEventType.POSITION_RECONCILIATION,
+                                message=f"Recovered orphan position: {symbol} {side}",
                                 details={
                                     "symbol": symbol,
                                     "side": side,
@@ -2505,8 +2506,9 @@ class JJBotPro:
 
         # Log to audit trail
         if self.audit:
-            self.audit.log_event(
-                event_type=f"SESSION_{threshold_type}_TRIGGERED",
+            self.audit.log_system_event(
+                event_type=AuditEventType.SESSION_THRESHOLD,
+                message=f"Session {threshold_type.lower()} threshold triggered: {pnl_pct:.2%}",
                 details={
                     "threshold_type": threshold_type,
                     "session_pnl_pct": pnl_pct,
@@ -3262,8 +3264,9 @@ class JJBotPro:
 
         # Log to audit trail
         if self.audit:
-            self.audit.log_event(
-                event_type="DEAD_MANS_SWITCH_TRIGGERED",
+            self.audit.log_system_event(
+                event_type=AuditEventType.DEAD_MANS_SWITCH,
+                message=f"Dead man's switch triggered - {len(self.positions)} positions at risk",
                 details={
                     "positions_count": len(self.positions),
                     "positions": list(self.positions.keys()),
@@ -3309,8 +3312,9 @@ class JJBotPro:
 
         # Log completion to audit
         if self.audit:
-            self.audit.log_event(
-                event_type="DEAD_MANS_SWITCH_COMPLETE",
+            self.audit.log_system_event(
+                event_type=AuditEventType.DEAD_MANS_SWITCH,
+                message=f"Dead man's switch completed - closed {closed_count} positions",
                 details={
                     "positions_closed": closed_count,
                     "positions_failed": failed_positions,

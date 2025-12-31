@@ -36,6 +36,10 @@ class AuditEventType(Enum):
     # System events
     BOT_START = "bot_start"
     BOT_STOP = "bot_stop"
+    EMERGENCY_STOP = "emergency_stop"
+    DEAD_MANS_SWITCH = "dead_mans_switch"
+    POSITION_RECONCILIATION = "position_reconciliation"
+    SESSION_THRESHOLD = "session_threshold"
     CONFIG_CHANGE = "config_change"
     EXCHANGE_CONNECT = "exchange_connect"
     EXCHANGE_DISCONNECT = "exchange_disconnect"

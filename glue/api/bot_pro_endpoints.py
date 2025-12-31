@@ -462,8 +462,10 @@ async def emergency_stop(close_positions: bool = True, auth_token: Optional[str]
 
         # Log emergency stop to audit trail
         if hasattr(_bot_instance, 'audit') and _bot_instance.audit:
-            _bot_instance.audit.log_event(
-                event_type="EMERGENCY_STOP",
+            from modules.audit_trail import AuditEventType
+            _bot_instance.audit.log_system_event(
+                event_type=AuditEventType.EMERGENCY_STOP,
+                message="Emergency stop triggered via API",
                 details={"close_positions": close_positions, "triggered_via": "api"}
             )
 
