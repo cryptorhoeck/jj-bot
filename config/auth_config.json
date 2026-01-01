@@ -1,0 +1,9 @@
+{
+  "auth_enabled": false,
+  "jwt_secret": "WNvnYCMGpZftb0MK7K4ATcCvoGv8X1duJvyo4jR3ip6DNH9cp4q3dYhswvaw1zoM72Ak-exlkqrHcix3FPL9yg",
+  "jwt_algorithm": "HS256",
+  "access_token_expire_minutes": 60,
+  "refresh_token_expire_days": 7,
+  "api_key_enabled": true,
+  "users": {}
+}

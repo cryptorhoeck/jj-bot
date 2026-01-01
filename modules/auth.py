@@ -12,13 +12,32 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-# JWT handling
-try:
-    import jwt
-    JWT_AVAILABLE = True
-except ImportError:
-    JWT_AVAILABLE = False
-    jwt = None
+# JWT handling - check if jwt is usable via subprocess first
+import subprocess
+import sys
+JWT_AVAILABLE = False
+jwt = None
+
+def _check_jwt_available():
+    """Check if jwt module is importable using subprocess (avoids Rust panics)"""
+    try:
+        result = subprocess.run(
+            [sys.executable, '-c', 'import jwt; print(jwt.__version__)'],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+# Only try importing jwt if subprocess test passes
+if _check_jwt_available():
+    try:
+        import jwt as jwt_module
+        jwt = jwt_module
+        JWT_AVAILABLE = True
+    except Exception:
+        pass
 
 from pydantic import BaseModel
 

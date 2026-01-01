@@ -11,8 +11,11 @@ import logging
 import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+
+# Import auth dependency for protected endpoints
+from auth_endpoints import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -322,8 +325,8 @@ async def update_bot_config(updates: BotConfigUpdate):
 # ===== BOT CONTROL =====
 
 @router.post("/start")
-async def start_bot(mode: Optional[str] = None):
-    """Start JJ-Bot Pro (runs in same process as API)"""
+async def start_bot(mode: Optional[str] = None, user = Depends(get_current_user)):
+    """Start JJ-Bot Pro (runs in same process as API). Requires auth when enabled."""
     global _bot_instance, _bot_task
     print(f"[START_BOT] Called with mode={mode}")
 
@@ -396,8 +399,8 @@ async def _run_bot(bot):
 
 
 @router.post("/stop")
-async def stop_bot():
-    """Stop JJ-Bot Pro gracefully"""
+async def stop_bot(user = Depends(get_current_user)):
+    """Stop JJ-Bot Pro gracefully. Requires auth when enabled."""
     global _bot_instance, _bot_task
 
     if not _bot_instance or not _bot_instance.running:
@@ -429,9 +432,10 @@ async def stop_bot():
 
 
 @router.post("/emergency-stop")
-async def emergency_stop(close_positions: bool = True, auth_token: Optional[str] = None):
+async def emergency_stop(close_positions: bool = True, user = Depends(get_current_user)):
     """
     EMERGENCY STOP - Immediately halt trading and optionally close all positions.
+    Requires auth when enabled.
 
     This endpoint provides a remote kill switch for emergency situations.
     Use when you need to immediately stop all trading activity.
@@ -608,8 +612,14 @@ async def get_health_status():
 
 
 @router.post("/train")
-async def start_training(episodes: int = 100, timeframe: str = "1h", history_days: int = 90, data_source: str = "kraken"):
-    """Start RL agent training with configurable data settings
+async def start_training(
+    episodes: int = 100,
+    timeframe: str = "1h",
+    history_days: int = 90,
+    data_source: str = "kraken",
+    user = Depends(get_current_user)
+):
+    """Start RL agent training with configurable data settings. Requires auth when enabled.
 
     Args:
         episodes: Number of training episodes
@@ -889,8 +899,8 @@ async def test_exchange_connection():
 # ===== QUICK ACTIONS =====
 
 @router.post("/quick-start")
-async def quick_start_paper():
-    """Quick start paper trading with defaults - no setup needed"""
+async def quick_start_paper(user = Depends(get_current_user)):
+    """Quick start paper trading with defaults - no setup needed. Requires auth when enabled."""
     config = load_config()
 
     if not config:
@@ -995,7 +1005,8 @@ async def get_symbol_performance():
 @router.post("/evaluate-symbols")
 async def evaluate_symbols(
     min_win_rate: float = Query(0.35, description="Minimum win rate threshold (0.35 = 35%)"),
-    min_trades: int = Query(5, description="Minimum trades before evaluation")
+    min_trades: int = Query(5, description="Minimum trades before evaluation"),
+    user = Depends(get_current_user)
 ):
     """
     Evaluate symbols and return list of poor performers that should be disabled.
@@ -1061,9 +1072,9 @@ async def evaluate_symbols(
 
 
 @router.post("/apply-auto-disable")
-async def apply_auto_disable():
+async def apply_auto_disable(user = Depends(get_current_user)):
     """
-    Apply auto-disable based on current config settings.
+    Apply auto-disable based on current config settings. Requires auth when enabled.
     Removes poor performing symbols from the active symbols list.
     """
     config = load_config()
@@ -1115,9 +1126,9 @@ async def apply_auto_disable():
 
 
 @router.post("/toggle-symbol")
-async def toggle_symbol(symbol: str, enabled: bool = True):
+async def toggle_symbol(symbol: str, enabled: bool = True, user = Depends(get_current_user)):
     """
-    Enable or disable a specific symbol for trading.
+    Enable or disable a specific symbol for trading. Requires auth when enabled.
     """
     config = load_config()
     if not config:
