@@ -481,7 +481,12 @@ async def emergency_stop(close_positions: bool = True, user = Depends(get_curren
             for symbol in positions_to_close:
                 try:
                     if hasattr(_bot_instance, '_close_position'):
-                        await _bot_instance._close_position(symbol, reason="emergency_stop")
+                        # Get current price for the symbol
+                        exit_price = _bot_instance.prices.get(symbol, 0)
+                        if exit_price == 0 and symbol in _bot_instance.positions:
+                            # Fallback to entry price if no current price
+                            exit_price = _bot_instance.positions[symbol].entry_price
+                        await _bot_instance._close_position(symbol, exit_price, reason="emergency_stop")
                         result["positions_closed"] += 1
                         logger.info(f"Emergency closed position: {symbol}")
                 except Exception as e:
