@@ -6,9 +6,22 @@ import { TrainingTab } from "./TrainingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
 import { ConfirmModal } from './components';
 import { LegalDisclaimer, DisclaimerModal } from './LegalDisclaimer';
+import { LoginScreen } from './LoginScreen';
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
+
+// Helper to make authenticated API calls
+const authFetch = async (url, options = {}) => {
+  const token = localStorage.getItem('jjbot_access_token');
+  const headers = {
+    ...options.headers,
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+};
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 
 // Available symbols for selection (verified Kraken USD pairs)
@@ -53,6 +66,52 @@ function App() {
   const [symbols, setSymbols] = useState([]);
   const [learningData, setLearningData] = useState(null);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('jjbot_access_token');
+  });
+  const [authUser, setAuthUser] = useState(() => {
+    const saved = localStorage.getItem('jjbot_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [authRequired, setAuthRequired] = useState(null); // null = checking, true/false = known
+
+  // Check if auth is required on startup
+  useEffect(() => {
+    const checkAuthRequired = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/status`);
+        const data = await response.json();
+        setAuthRequired(data.auth_enabled);
+
+        // If auth is disabled, mark as authenticated
+        if (!data.auth_enabled) {
+          setIsAuthenticated(true);
+        }
+      } catch (e) {
+        // If can't reach API, assume auth not required
+        setAuthRequired(false);
+        setIsAuthenticated(true);
+      }
+    };
+    checkAuthRequired();
+  }, []);
+
+  const handleLogin = (data) => {
+    setIsAuthenticated(true);
+    setAuthUser(data.user);
+    toast.success(`Welcome back, ${data.user.username}!`);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('jjbot_access_token');
+    localStorage.removeItem('jjbot_refresh_token');
+    localStorage.removeItem('jjbot_user');
+    setIsAuthenticated(false);
+    setAuthUser(null);
+    toast.success('Logged out successfully');
+  };
 
   // Legal disclaimer acceptance state
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(() => {
@@ -436,6 +495,19 @@ function App() {
     );
   }
 
+  // Show login screen if auth is required and not authenticated
+  if (authRequired && !isAuthenticated) {
+    return (
+      <div className={darkMode ? 'dark' : ''}>
+        <LoginScreen
+          onLogin={handleLogin}
+          darkMode={darkMode}
+          API_BASE={API_BASE}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen transition-colors duration-300">
       {/* Premium Header */}
@@ -562,6 +634,20 @@ function App() {
                   </svg>
                 )}
               </button>
+
+              {/* User Menu / Logout */}
+              {authRequired && authUser && (
+                <button
+                  onClick={handleLogout}
+                  className="btn btn-ghost p-2 flex items-center gap-2"
+                  title={`Logged in as ${authUser.username}. Click to logout.`}
+                >
+                  <span className="hidden sm:inline text-sm">{authUser.username}</span>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -602,6 +688,7 @@ function App() {
             <TradingTab
               darkMode={darkMode}
               API_BASE={API_BASE}
+              authFetch={authFetch}
               learningData={learningData}
               sharedBotStatus={botStatus}
               onBotStatusChange={checkBotStatus}
@@ -614,6 +701,7 @@ function App() {
           {activeTab === 'training' && (
             <TrainingTab
               API_BASE={API_BASE}
+              authFetch={authFetch}
               sharedBotStatus={botStatus}
               onBotStatusChange={checkBotStatus}
               selectedSymbols={selectedSymbols}

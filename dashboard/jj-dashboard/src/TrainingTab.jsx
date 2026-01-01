@@ -69,12 +69,15 @@ const calculateCandles = (timeframe, historyDays) => {
 
 export function TrainingTab({
   API_BASE,
+  authFetch,
   sharedBotStatus,
   onBotStatusChange,
   selectedSymbols = [],
   setSelectedSymbols,
   availableSymbols = []
 }) {
+  // Use authFetch for protected endpoints, fallback to regular fetch
+  const apiFetch = authFetch || fetch;
   const [isTraining, setIsTraining] = useState(false);
   const [loading, setLoading] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
@@ -347,10 +350,15 @@ export function TrainingTab({
 
     setLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/pro/train?episodes=${trainSettings.episodes}&timeframe=${trainSettings.timeframe}&history_days=${trainSettings.history_days}&data_source=${trainSettings.data_source}`,
         { method: 'POST' }
       );
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'started') {
         setIsTraining(true);
@@ -369,7 +377,12 @@ export function TrainingTab({
   const stopTraining = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      const response = await apiFetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'stopped') {
         setIsTraining(false);

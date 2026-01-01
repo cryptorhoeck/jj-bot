@@ -85,6 +85,7 @@ function ToggleSwitch({ checked, onChange, label, description }) {
 export function TradingTab({
   darkMode,
   API_BASE,
+  authFetch,
   learningData,
   sharedBotStatus,
   onBotStatusChange,
@@ -92,6 +93,8 @@ export function TradingTab({
   setSelectedSymbols,
   availableSymbols = []
 }) {
+  // Use authFetch for protected endpoints, fallback to regular fetch
+  const apiFetch = authFetch || fetch;
   const [botRunning, setBotRunning] = useState(sharedBotStatus?.running || false);
   const [loading, setLoading] = useState(false);
 
@@ -239,10 +242,15 @@ export function TradingTab({
     try {
       const minWinRate = proConfig.min_win_rate_threshold || 0.35;
       const minTrades = proConfig.min_trades_for_evaluation || 5;
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/pro/evaluate-symbols?min_win_rate=${minWinRate}&min_trades=${minTrades}`,
         { method: 'POST' }
       );
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setEvaluating(false);
+        return null;
+      }
       const data = await response.json();
       setEvaluationResult(data);
       if (data.poor_performers?.length === 0) {
@@ -260,7 +268,11 @@ export function TradingTab({
   // Apply auto-disable
   const applyAutoDisable = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/pro/apply-auto-disable`, { method: 'POST' });
+      const response = await apiFetch(`${API_BASE}/api/pro/apply-auto-disable`, { method: 'POST' });
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        return;
+      }
       const data = await response.json();
       if (data.status === 'applied') {
         toast.success(`Disabled ${data.disabled?.length || 0} poor performing symbols`);
@@ -279,10 +291,14 @@ export function TradingTab({
   // Toggle individual symbol
   const toggleSymbolEnabled = async (symbol, enabled) => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/pro/toggle-symbol?symbol=${encodeURIComponent(symbol)}&enabled=${enabled}`,
         { method: 'POST' }
       );
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        return;
+      }
       const data = await response.json();
       if (data.status === 'updated') {
         toast.success(`${symbol} ${enabled ? 'enabled' : 'disabled'}`);
@@ -356,7 +372,12 @@ export function TradingTab({
   const startBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/pro/start?mode=paper`, { method: 'POST' });
+      const response = await apiFetch(`${API_BASE}/api/pro/start?mode=paper`, { method: 'POST' });
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'started' || data.status === 'already_running') {
         setBotRunning(true);
@@ -374,7 +395,12 @@ export function TradingTab({
   const stopBot = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      const response = await apiFetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'stopped' || data.status === 'not_running') {
         setBotRunning(false);
@@ -396,10 +422,15 @@ export function TradingTab({
   const emergencyStop = async (closePositions = true) => {
     setEmergencyLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/api/pro/emergency-stop?close_positions=${closePositions}`,
         { method: 'POST' }
       );
+      if (response.status === 401) {
+        toast.error('Authentication required. Please log in.');
+        setEmergencyLoading(false);
+        return;
+      }
       const data = await response.json();
 
       setBotRunning(false);
