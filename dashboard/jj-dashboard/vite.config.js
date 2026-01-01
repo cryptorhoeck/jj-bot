@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/dashboard/',
+  base: '/',  // Changed to root for PWA standalone app
   server: {
     // No CSP in development - removes eval warnings
   },
