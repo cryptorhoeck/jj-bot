@@ -4,7 +4,6 @@ import { DashboardTab } from "./DashboardTab.jsx";
 import { TradingTab } from "./TradingTab.jsx";
 import { TrainingTab } from "./TrainingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
-import { MarketChart } from "./MarketChart.jsx";
 import { ConfirmModal } from './components';
 import './App.css';
 
@@ -42,8 +41,6 @@ function App() {
     win_rate: 0,
     avg_pnl: 0
   });
-  const [marketData, setMarketData] = useState([]);
-  const [lastMarketUpdate, setLastMarketUpdate] = useState(null);
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true); // Default to dark mode for trading
@@ -54,10 +51,6 @@ function App() {
   const [realtimeEvents, setRealtimeEvents] = useState([]);
   const [symbols, setSymbols] = useState([]);
   const [learningData, setLearningData] = useState(null);
-  const [marketDataError, setMarketDataError] = useState(null);
-  const [marketDataLoading, setMarketDataLoading] = useState(false);
-  const [lastMarketFetch, setLastMarketFetch] = useState(null);
-  const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
   // Shared selected symbols for Trading and Training (persisted to localStorage)
@@ -164,57 +157,6 @@ function App() {
       setSummary(data);
     } catch (error) {
       console.error('Error fetching summary:', error);
-    }
-  };
-
-  const fetchMarketData = async (force = false) => {
-    if (!force && lastMarketFetch) {
-      const timeSinceLastFetch = Date.now() - lastMarketFetch;
-      if (timeSinceLastFetch < marketRefreshInterval) {
-        return;
-      }
-    }
-
-    setMarketDataLoading(true);
-    setMarketDataError(null);
-
-    try {
-      const response = await fetch(`${API_BASE}/api/market/live`);
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : marketRefreshInterval * 2;
-        setMarketDataError(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)}s...`);
-        setMarketRefreshInterval(Math.min(waitTime, 300000));
-        return;
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data && typeof data.data === 'object') {
-          const marketArray = Object.values(data.data).map(coin => ({
-            symbol: coin.symbol,
-            price: coin.usd,
-            change_24h: coin.usd_24h_change || 0,
-            market_cap: coin.usd_market_cap || 0,
-            volume_24h: coin.usd_24h_vol || 0
-          }));
-          setMarketData(marketArray);
-          setLastMarketUpdate(new Date());
-          setLastMarketFetch(Date.now());
-          setMarketDataError(null);
-
-          if (marketRefreshInterval > 120000) {
-            setMarketRefreshInterval(120000);
-          }
-        }
-      } else {
-        setMarketDataError(`Failed to fetch: ${response.status}`);
-      }
-    } catch (error) {
-      setMarketDataError(error.message);
-    } finally {
-      setMarketDataLoading(false);
     }
   };
 
@@ -428,7 +370,6 @@ function App() {
 
     fetchTrades();
     fetchSummary();
-    fetchMarketData();
     checkSimulatorStatus();
     fetchSymbols();
     fetchLearningData();
@@ -440,21 +381,15 @@ function App() {
       fetchLearningData();
     }, 10000);
 
-    const marketInterval = setInterval(() => {
-      if (activeTab === 'charts') fetchMarketData();
-    }, 120000);
-
     return () => {
       clearInterval(fastInterval);
-      clearInterval(marketInterval);
     };
-  }, [apiReady, activeTab, marketRefreshInterval]);
+  }, [apiReady]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
     { id: 'trading', label: 'Trading', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
     { id: 'training', label: 'Training', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
-    { id: 'charts', label: 'Charts', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
     { id: 'data', label: 'Data', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
   ];
 
@@ -673,13 +608,6 @@ function App() {
               selectedSymbols={selectedSymbols}
               setSelectedSymbols={setSelectedSymbols}
               availableSymbols={AVAILABLE_SYMBOLS}
-            />
-          )}
-
-          {activeTab === 'charts' && (
-            <MarketChart
-              darkMode={darkMode}
-              API_BASE={API_BASE}
             />
           )}
 
