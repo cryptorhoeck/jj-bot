@@ -49,6 +49,9 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
   const [trainingHistory, setTrainingHistory] = useState({});
   const [trainingProgress, setTrainingProgress] = useState(null);
 
+  // Paper Trading Validation Metrics
+  const [paperMetrics, setPaperMetrics] = useState(null);
+
   // Equity curve zoom/range state
   const [chartRange, setChartRange] = useState('all'); // '1h', '4h', '1d', '1w', 'all'
   const [chartHeight, setChartHeight] = useState(300);
@@ -101,6 +104,13 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
           } else {
             setTrainingProgress(null);
           }
+        }
+
+        // Fetch Paper Trading Validation Metrics
+        const paperRes = await fetch(`${API_BASE}/api/paper-trading/metrics`);
+        if (paperRes.ok) {
+          const paperData = await paperRes.json();
+          setPaperMetrics(paperData);
         }
 
         setLoading(false);
@@ -776,6 +786,242 @@ export function DashboardTab({ darkMode, summary, trades, API_BASE, botStatus, c
               </svg>
             </div>
             <p className="text-muted">No trades yet. Start the bot to begin trading.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Paper Trading Validation Widget */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <svg className="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Paper Trading Validation
+          </h3>
+          <span className={`badge ${paperMetrics?.validation_status === 'passing' ? 'badge-success' : paperMetrics?.validation_status === 'warning' ? 'badge-warning' : 'badge-info'}`}>
+            {paperMetrics?.session_duration_days > 0
+              ? `${paperMetrics.session_duration_days}d ${paperMetrics.session_duration_hours || 0}h Session`
+              : 'Not Started'}
+          </span>
+        </div>
+
+        {paperMetrics ? (
+          <div className="space-y-4">
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-1">Days Active</p>
+                <p className="text-xl font-bold">{paperMetrics.session_duration_days || 0}</p>
+                <p className="text-xs text-muted">Target: 90 days</p>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-1">Total Trades</p>
+                <p className="text-xl font-bold">{paperMetrics.total_trades || 0}</p>
+                <p className="text-xs text-muted">
+                  {paperMetrics.trades_today || 0} today
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-1">Win Rate</p>
+                <p className={`text-xl font-bold ${(paperMetrics.win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
+                  {(paperMetrics.win_rate || 0).toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted">Target: &gt;50%</p>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                <p className="text-xs text-muted uppercase tracking-wide mb-1">Sharpe Ratio</p>
+                <p className={`text-xl font-bold ${(paperMetrics.sharpe_ratio || 0) >= 0.5 ? 'text-success' : 'text-warning'}`}>
+                  {(paperMetrics.sharpe_ratio || 0).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted">Target: &gt;0.5</p>
+              </div>
+            </div>
+
+            {/* Performance vs Baseline */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Strategy vs Buy & Hold */}
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <span>📊</span> Strategy vs Buy & Hold
+                </h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Strategy Return</span>
+                    <span className={`font-semibold ${(paperMetrics.total_return || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {(paperMetrics.total_return || 0) >= 0 ? '+' : ''}{((paperMetrics.total_return || 0) * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Buy & Hold Return</span>
+                    <span className={`font-semibold ${(paperMetrics.buy_hold_return || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {(paperMetrics.buy_hold_return || 0) >= 0 ? '+' : ''}{((paperMetrics.buy_hold_return || 0) * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-[var(--border-color)]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium">Outperformance</span>
+                      <span className={`font-bold ${(paperMetrics.outperformance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {(paperMetrics.outperformance || 0) >= 0 ? '+' : ''}{((paperMetrics.outperformance || 0) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily P&L Breakdown */}
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <span>📈</span> Daily Performance
+                </h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Today's P&L</span>
+                    <span className={`font-semibold ${(paperMetrics.daily_pnl || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {formatCurrency(paperMetrics.daily_pnl || 0, currency)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Winning Days</span>
+                    <span className="font-semibold text-success">{paperMetrics.winning_days || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Losing Days</span>
+                    <span className="font-semibold text-danger">{paperMetrics.losing_days || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Best Day</span>
+                    <span className="font-semibold text-success">
+                      {formatCurrency(paperMetrics.best_day || 0, currency)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted">Worst Day</span>
+                    <span className="font-semibold text-danger">
+                      {formatCurrency(paperMetrics.worst_day || 0, currency)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Strategy Signals Breakdown */}
+            {paperMetrics.strategy_signals && Object.keys(paperMetrics.strategy_signals).length > 0 && (
+              <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <span>🎯</span> Strategy Signals Breakdown
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {Object.entries(paperMetrics.strategy_signals).map(([strategy, data]) => (
+                    <div key={strategy} className="p-2 rounded-lg bg-[var(--bg-secondary)]">
+                      <p className="text-xs font-medium truncate">{strategy}</p>
+                      <p className="text-lg font-bold">{data.count || 0}</p>
+                      <p className={`text-xs ${(data.win_rate || 0) >= 50 ? 'text-success' : 'text-danger'}`}>
+                        {(data.win_rate || 0).toFixed(0)}% win
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Validation Checklist */}
+            <div className="p-4 rounded-lg bg-[var(--bg-tertiary)]">
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span>✅</span> Live Trading Readiness
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {[
+                  {
+                    label: 'Paper Trading 30+ Days',
+                    passed: (paperMetrics.session_duration_days || 0) >= 30,
+                    value: `${paperMetrics.session_duration_days || 0}/30 days`
+                  },
+                  {
+                    label: 'Win Rate > 50%',
+                    passed: (paperMetrics.win_rate || 0) >= 50,
+                    value: `${(paperMetrics.win_rate || 0).toFixed(1)}%`
+                  },
+                  {
+                    label: 'Sharpe Ratio > 0.5',
+                    passed: (paperMetrics.sharpe_ratio || 0) >= 0.5,
+                    value: (paperMetrics.sharpe_ratio || 0).toFixed(2)
+                  },
+                  {
+                    label: 'Max Drawdown < 15%',
+                    passed: (paperMetrics.max_drawdown_pct || 0) < 15,
+                    value: `${(paperMetrics.max_drawdown_pct || 0).toFixed(1)}%`
+                  },
+                  {
+                    label: 'Total Trades > 50',
+                    passed: (paperMetrics.total_trades || 0) >= 50,
+                    value: `${paperMetrics.total_trades || 0}/50`
+                  },
+                  {
+                    label: 'Profitable Overall',
+                    passed: (paperMetrics.total_return || 0) > 0,
+                    value: `${((paperMetrics.total_return || 0) * 100).toFixed(1)}%`
+                  },
+                ].map((check, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-2 rounded-lg flex items-center gap-2 ${check.passed ? 'bg-green-500/10' : 'bg-red-500/10'}`}
+                  >
+                    <span className={`text-lg ${check.passed ? 'text-success' : 'text-danger'}`}>
+                      {check.passed ? '✓' : '✗'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{check.label}</p>
+                      <p className="text-xs text-muted">{check.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-[var(--border-color)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Validation Score</span>
+                  <span className={`text-lg font-bold ${(paperMetrics.validation_score || 0) >= 4 ? 'text-success' : (paperMetrics.validation_score || 0) >= 2 ? 'text-warning' : 'text-danger'}`}>
+                    {paperMetrics.validation_score || 0}/6 Passed
+                  </span>
+                </div>
+                {(paperMetrics.validation_score || 0) < 4 && (
+                  <p className="text-xs text-warning mt-1">
+                    ⚠️ Continue paper trading until at least 4/6 checks pass before considering live trading.
+                  </p>
+                )}
+                {(paperMetrics.validation_score || 0) >= 4 && (
+                  <p className="text-xs text-success mt-1">
+                    ✓ Strategy shows promising results. Consider starting with small live capital.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Errors / Warnings */}
+            {paperMetrics.recent_errors && paperMetrics.recent_errors.length > 0 && (
+              <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+                <h4 className="text-sm font-semibold mb-2 text-danger flex items-center gap-2">
+                  <span>⚠️</span> Recent Issues ({paperMetrics.recent_errors.length})
+                </h4>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {paperMetrics.recent_errors.slice(0, 5).map((error, idx) => (
+                    <p key={idx} className="text-xs text-danger/80">
+                      {error.timestamp}: {error.message}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-500/10 flex items-center justify-center">
+              <svg className="w-8 h-8 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <p className="text-muted mb-2">Paper trading metrics not available yet.</p>
+            <p className="text-sm text-muted">Start paper trading to track your validation progress.</p>
           </div>
         )}
       </div>

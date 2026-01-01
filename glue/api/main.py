@@ -1288,6 +1288,217 @@ async def ratelimit_stats():
     from modules.rate_limit_middleware import rate_limiter
     return rate_limiter.get_stats()
 
+
+# ===== PAPER TRADING METRICS ENDPOINT =====
+@app.get("/api/paper-trading/metrics")
+async def get_paper_trading_metrics():
+    """
+    Get comprehensive paper trading validation metrics for the dashboard.
+    Used by the Paper Trading Validation widget to track readiness for live trading.
+    """
+    from pathlib import Path
+    import sqlite3
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    bot = get_bot()
+    config = load_config()
+
+    # Initialize response structure
+    metrics = {
+        "session_duration_days": 0,
+        "session_duration_hours": 0,
+        "total_trades": 0,
+        "trades_today": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "total_return": 0.0,
+        "buy_hold_return": 0.0,
+        "outperformance": 0.0,
+        "daily_pnl": 0.0,
+        "winning_days": 0,
+        "losing_days": 0,
+        "best_day": 0.0,
+        "worst_day": 0.0,
+        "max_drawdown_pct": 0.0,
+        "validation_score": 0,
+        "validation_status": "Not Started",
+        "strategy_signals": {},
+        "recent_errors": [],
+        "validation_checks": {
+            "min_30_days": False,
+            "min_100_trades": False,
+            "positive_sharpe": False,
+            "beats_baseline": False,
+            "max_drawdown_under_15": False,
+            "no_critical_errors": False,
+        },
+        "mode": config.get("mode", "paper") if config else "paper",
+        "is_running": bot is not None and bot.running if bot else False,
+    }
+
+    try:
+        # Get trades from database
+        trades_db = PROJECT_ROOT / "data" / "trades.db"
+        trades = []
+        daily_returns = {}
+
+        if trades_db.exists():
+            conn = sqlite3.connect(str(trades_db))
+            cursor = conn.cursor()
+
+            # Get all closed trades
+            cursor.execute("""
+                SELECT timestamp, symbol, signal, pnl
+                FROM trades
+                WHERE signal LIKE 'CLOSE%' AND pnl IS NOT NULL
+                ORDER BY timestamp ASC
+            """)
+            trades = cursor.fetchall()
+
+            # Get trades today
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("""
+                SELECT COUNT(*) FROM trades
+                WHERE signal LIKE 'CLOSE%' AND timestamp LIKE ?
+            """, (f"{today}%",))
+            metrics["trades_today"] = cursor.fetchone()[0]
+
+            # Get strategy signal breakdown
+            cursor.execute("""
+                SELECT signal, COUNT(*) as count,
+                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins
+                FROM trades
+                WHERE signal LIKE 'CLOSE%'
+                GROUP BY signal
+            """)
+            for row in cursor.fetchall():
+                signal_name = row[0].replace('CLOSE_', '').replace('CLOSE-', '')
+                count = row[1]
+                wins = row[2] or 0
+                win_rate = (wins / count * 100) if count > 0 else 0
+                metrics["strategy_signals"][signal_name] = {
+                    "count": count,
+                    "win_rate": round(win_rate, 1)
+                }
+
+            conn.close()
+
+        # Calculate metrics from trades
+        if trades:
+            metrics["total_trades"] = len(trades)
+
+            # Calculate win rate
+            wins = sum(1 for t in trades if t[3] > 0)
+            metrics["win_rate"] = round((wins / len(trades)) * 100, 1)
+
+            # Calculate daily P&L
+            for trade in trades:
+                timestamp, symbol, signal, pnl = trade
+                if timestamp:
+                    day = timestamp[:10]  # YYYY-MM-DD
+                    daily_returns[day] = daily_returns.get(day, 0) + (pnl or 0)
+
+            if daily_returns:
+                days = sorted(daily_returns.keys())
+                returns_list = [daily_returns[d] for d in days]
+
+                metrics["winning_days"] = sum(1 for r in returns_list if r > 0)
+                metrics["losing_days"] = sum(1 for r in returns_list if r < 0)
+                metrics["best_day"] = round(max(returns_list), 2)
+                metrics["worst_day"] = round(min(returns_list), 2)
+
+                # Calculate session duration
+                if len(days) >= 2:
+                    first_day = datetime.strptime(days[0], '%Y-%m-%d')
+                    last_day = datetime.strptime(days[-1], '%Y-%m-%d')
+                    duration = last_day - first_day
+                    metrics["session_duration_days"] = duration.days
+                    metrics["session_duration_hours"] = duration.days * 24 + duration.seconds // 3600
+
+                # Calculate Sharpe ratio (annualized, assuming 252 trading days)
+                if len(returns_list) >= 2:
+                    import statistics
+                    avg_return = statistics.mean(returns_list)
+                    std_return = statistics.stdev(returns_list) if len(returns_list) > 1 else 1
+                    if std_return > 0:
+                        daily_sharpe = avg_return / std_return
+                        metrics["sharpe_ratio"] = round(daily_sharpe * (252 ** 0.5), 2)
+
+            # Calculate total return (as decimal, e.g., 0.0636 for 6.36%)
+            total_pnl = sum(t[3] for t in trades if t[3])
+            initial_capital = config.get("initial_capital", 10000) if config else 10000
+            if initial_capital > 0:
+                metrics["total_return"] = round(total_pnl / initial_capital, 4)
+            metrics["daily_pnl"] = round(total_pnl, 2)
+
+        # Get max drawdown from bot if running
+        if bot and bot.running:
+            if hasattr(bot, 'peak_equity') and hasattr(bot, 'equity'):
+                if bot.peak_equity > 0:
+                    drawdown = (bot.peak_equity - bot.equity) / bot.peak_equity * 100
+                    metrics["max_drawdown_pct"] = round(drawdown, 2)
+
+        # Get recent errors
+        try:
+            from modules.error_recovery import get_recent_errors
+            errors = get_recent_errors(limit=5)
+            metrics["recent_errors"] = [
+                {"timestamp": e.get("timestamp", ""), "message": e.get("message", str(e))}
+                for e in errors[:5]
+            ]
+        except Exception:
+            pass
+
+        # Load latest backtest results for buy & hold comparison
+        backtest_dir = PROJECT_ROOT / "data" / "backtest_results"
+        if backtest_dir.exists():
+            backtest_files = sorted(backtest_dir.glob("backtest_results_*.json"), reverse=True)
+            if backtest_files:
+                try:
+                    with open(backtest_files[0]) as f:
+                        backtest = json.load(f)
+                        summary = backtest.get("summary", {})
+                        # Returns as decimals (e.g., 0.5134 for 51.34%)
+                        metrics["buy_hold_return"] = round(summary.get("avg_buy_hold_return", 0), 4)
+                        metrics["outperformance"] = round(
+                            metrics["total_return"] - summary.get("avg_buy_hold_return", 0), 4
+                        )
+                except Exception:
+                    pass
+
+        # Calculate validation checks
+        checks = metrics["validation_checks"]
+        checks["min_30_days"] = metrics["session_duration_days"] >= 30
+        checks["min_100_trades"] = metrics["total_trades"] >= 100
+        checks["positive_sharpe"] = metrics["sharpe_ratio"] > 0.5
+        checks["beats_baseline"] = metrics["outperformance"] > 0
+        checks["max_drawdown_under_15"] = metrics["max_drawdown_pct"] < 15
+        checks["no_critical_errors"] = len(metrics["recent_errors"]) == 0
+
+        # Calculate validation score (0-6)
+        metrics["validation_score"] = sum(1 for v in checks.values() if v)
+
+        # Determine validation status
+        score = metrics["validation_score"]
+        if score == 6:
+            metrics["validation_status"] = "Ready for Live Trading"
+        elif score >= 4:
+            metrics["validation_status"] = "Almost Ready"
+        elif score >= 2:
+            metrics["validation_status"] = "In Progress"
+        elif metrics["total_trades"] > 0:
+            metrics["validation_status"] = "Early Stage"
+        else:
+            metrics["validation_status"] = "Not Started"
+
+        return metrics
+
+    except Exception as e:
+        logger.error(f"Error getting paper trading metrics: {e}")
+        metrics["error"] = str(e)
+        return metrics
+
+
 if __name__ == "__main__":
     import uvicorn
     print(f"{APP_NAME} API v{APP_VERSION} starting...")
