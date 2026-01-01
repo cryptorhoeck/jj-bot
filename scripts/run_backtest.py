@@ -79,9 +79,11 @@ def run_multi_asset_backtest():
     # Initialize backtester
     bt = Backtester(initial_capital=10000.0)
 
-    # Configure more realistic settings
-    bt.config["commission"] = 0.001  # 0.1% commission
-    bt.config["slippage"] = 0.0005   # 0.05% slippage
+    # Configure REALISTIC settings for actual crypto trading
+    # Commission: 0.2% (Kraken taker: 0.26%, Binance taker: 0.1%)
+    # Slippage: 0.5% base (can spike to 2% during volatility)
+    bt.config["commission"] = 0.002  # 0.2% commission (realistic taker fee)
+    bt.config["slippage"] = 0.005    # 0.5% slippage (realistic for crypto)
     bt.config["position_size"] = 0.05  # 5% per position (matches bot config)
 
     # Test assets with different price ranges

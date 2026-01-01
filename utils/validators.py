@@ -59,8 +59,8 @@ class BacktestConfigModel(BaseModel):
     start_date: str = Field(..., description="Start date (YYYY-MM-DD)")
     end_date: str = Field(..., description="End date (YYYY-MM-DD)")
     initial_capital: float = Field(default=10000.0, gt=0, description="Initial capital")
-    commission: float = Field(default=0.001, ge=0, le=0.1, description="Commission rate")
-    slippage: float = Field(default=0.0005, ge=0, le=0.1, description="Slippage rate")
+    commission: float = Field(default=0.002, ge=0, le=0.1, description="Commission rate (0.2% realistic)")
+    slippage: float = Field(default=0.005, ge=0, le=0.1, description="Slippage rate (0.5% realistic)")
     strategy: str = Field(default="momentum", description="Strategy name")
 
     @validator('start_date', 'end_date')
@@ -94,8 +94,8 @@ class BacktestConfigModel(BaseModel):
                 "start_date": "2024-01-01",
                 "end_date": "2024-12-31",
                 "initial_capital": 10000.0,
-                "commission": 0.001,
-                "slippage": 0.0005,
+                "commission": 0.002,
+                "slippage": 0.005,
                 "strategy": "momentum"
             }
         }

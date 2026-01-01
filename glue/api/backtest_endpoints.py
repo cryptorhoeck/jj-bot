@@ -43,8 +43,8 @@ class BacktestRequest(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     initial_capital: Optional[float] = 10000.0
-    commission: Optional[float] = 0.001
-    slippage: Optional[float] = 0.0005
+    commission: Optional[float] = 0.002  # 0.2% realistic taker fee
+    slippage: Optional[float] = 0.005    # 0.5% realistic slippage
     position_size: Optional[float] = 0.1
 
 

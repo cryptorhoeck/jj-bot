@@ -53,11 +53,13 @@ class PriceGenerationConfig:
 class TradingMechanicsConfig:
     """Configuration for trading mechanics"""
 
-    # Commission (as decimal)
-    commission_rate: float = 0.001  # 0.1%
+    # Commission (as decimal) - REALISTIC VALUES
+    # Kraken taker fee: 0.26%, Binance taker: 0.1%, using 0.2% as conservative middle
+    commission_rate: float = 0.002  # 0.2%
 
-    # Slippage (as decimal)
-    slippage_rate: float = 0.0005  # 0.05%
+    # Slippage (as decimal) - REALISTIC VALUES
+    # Crypto markets: 0.5% base, can spike to 2% during volatility
+    slippage_rate: float = 0.005  # 0.5%
 
     # Position sizing (as % of capital)
     position_size_pct: float = 0.10  # 10% per trade
