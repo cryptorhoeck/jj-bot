@@ -5,6 +5,7 @@ import { TradingTab } from "./TradingTab.jsx";
 import { TrainingTab } from "./TrainingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
 import { ConfirmModal } from './components';
+import { LegalDisclaimer, DisclaimerModal } from './LegalDisclaimer';
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -52,6 +53,16 @@ function App() {
   const [symbols, setSymbols] = useState([]);
   const [learningData, setLearningData] = useState(null);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Legal disclaimer acceptance state
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(() => {
+    return localStorage.getItem('jjbot_disclaimer_accepted') === 'true';
+  });
+
+  const handleDisclaimerAccept = () => {
+    localStorage.setItem('jjbot_disclaimer_accepted', 'true');
+    setDisclaimerAccepted(true);
+  };
 
   // Shared selected symbols for Trading and Training (persisted to localStorage)
   const [selectedSymbols, setSelectedSymbols] = useState(() => {
@@ -620,7 +631,16 @@ function App() {
             />
           )}
         </div>
+        {/* Legal Disclaimer Footer */}
+        <LegalDisclaimer darkMode={darkMode} />
       </main>
+
+      {/* First-time Disclaimer Modal */}
+      <DisclaimerModal
+        isOpen={!disclaimerAccepted}
+        onAccept={handleDisclaimerAccept}
+        darkMode={darkMode}
+      />
 
       {/* Confirm Modal */}
       <ConfirmModal

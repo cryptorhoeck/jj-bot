@@ -28,6 +28,9 @@ python-dotenv>=1.0.0
 # Data Validation
 pydantic>=2.0.0
 
+# Authentication
+PyJWT>=2.8.0
+
 # Monitoring & Performance
 psutil>=5.9.0
 

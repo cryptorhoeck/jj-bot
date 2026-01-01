@@ -19,62 +19,11 @@ import secrets
 
 logger = logging.getLogger(__name__)
 
-# API Key Authentication
-API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
-_API_KEY = None  # Will be loaded from config or generated
+# Import auth module for JWT authentication
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.auth import auth_manager
+from modules.rate_limit_middleware import RateLimitMiddleware, RateLimiter, RateLimitConfig
 
-def get_api_key() -> str:
-    """Get or generate the API key"""
-    global _API_KEY
-    if _API_KEY is None:
-        # Try to load from config
-        try:
-            config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
-            if os.path.exists(config_path):
-                with open(config_path) as f:
-                    config = json.load(f)
-                    _API_KEY = config.get('api_key', '')
-        except Exception:
-            pass
-
-        # Generate new key if not found
-        if not _API_KEY:
-            _API_KEY = secrets.token_urlsafe(32)
-            # Save it
-            try:
-                config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
-                os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                with open(config_path, 'w') as f:
-                    json.dump({'api_key': _API_KEY, 'auth_enabled': False}, f, indent=2)
-                logger.info(f"Generated new API key (saved to config/api_config.json)")
-            except Exception as e:
-                logger.warning(f"Could not save API key: {e}")
-    return _API_KEY
-
-def is_auth_enabled() -> bool:
-    """Check if API authentication is enabled"""
-    try:
-        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                config = json.load(f)
-                return config.get('auth_enabled', False)
-    except Exception:
-        pass
-    return False
-
-async def verify_api_key(api_key: str = Depends(API_KEY_HEADER)):
-    """Verify API key if authentication is enabled"""
-    if not is_auth_enabled():
-        return True  # Auth disabled
-
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key required. Set X-API-Key header.")
-
-    if api_key != get_api_key():
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-    return True
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -113,6 +62,7 @@ from alerts_endpoints import router as alerts_router
 from execution_endpoints import router as execution_router
 from bot_pro_endpoints import router as bot_pro_router
 from ai_endpoints import router as ai_router
+from auth_endpoints import router as auth_router
 from websocket_manager import ws_manager
 
 # Lifespan context manager for startup/shutdown
@@ -159,6 +109,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add rate limiting middleware
+rate_limit_config = RateLimitConfig(
+    requests_per_minute=120,  # 2 requests/second average
+    requests_per_hour=3000,   # ~50 requests/minute average
+    burst_limit=30,           # Allow short bursts
+    enabled=True,
+    whitelist_ips=["127.0.0.1", "::1", "localhost"],
+    exempt_paths=["/docs", "/openapi.json", "/redoc", "/api/auth/status", "/api/system/health", "/ws", "/"]
+)
+app.add_middleware(RateLimitMiddleware, rate_limiter=RateLimiter(rate_limit_config))
 
 # Import rate limiter
 try:
@@ -415,27 +376,6 @@ async def system_version():
         "api_title": app.title,
         "changelog": "See CHANGELOG.md for full version history"
     }
-
-# ===== AUTHENTICATION =====
-@app.get("/api/auth/status")
-async def auth_status():
-    """Get authentication status and info"""
-    return {
-        "auth_enabled": is_auth_enabled(),
-        "message": "Set auth_enabled=true in config/api_config.json to require API keys"
-    }
-
-@app.post("/api/auth/enable")
-async def enable_auth(enabled: bool = True, _: bool = Depends(verify_api_key)):
-    """Enable or disable API authentication"""
-    try:
-        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'api_config.json')
-        config = {'api_key': get_api_key(), 'auth_enabled': enabled}
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
-        return {"status": "ok", "auth_enabled": enabled, "api_key": get_api_key() if enabled else None}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 # ===== BOT ENDPOINTS - Uses unified JJBotPro =====
 # Import the unified bot module
@@ -1305,6 +1245,7 @@ app.include_router(alerts_router)
 app.include_router(execution_router)
 app.include_router(bot_pro_router)
 app.include_router(ai_router)
+app.include_router(auth_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")
@@ -1340,6 +1281,12 @@ async def websocket_endpoint(websocket: WebSocket):
 async def websocket_stats():
     """Get WebSocket manager statistics"""
     return ws_manager.get_stats()
+
+@app.get("/api/ratelimit/stats")
+async def ratelimit_stats():
+    """Get rate limiting statistics"""
+    from modules.rate_limit_middleware import rate_limiter
+    return rate_limiter.get_stats()
 
 if __name__ == "__main__":
     import uvicorn
