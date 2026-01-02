@@ -245,6 +245,12 @@ class BotConfig:
     paper_trading_fee_pct: float = 0.26  # 0.26% fee per trade (Kraken taker fee)
     paper_apply_realistic_costs: bool = True  # Apply slippage + fees to paper trades
 
+    # Latency simulation for paper trading
+    paper_latency_enabled: bool = True  # Simulate network/exchange latency
+    paper_latency_min_ms: int = 50  # Minimum latency in milliseconds
+    paper_latency_max_ms: int = 200  # Maximum latency in milliseconds
+    paper_latency_price_drift_pct: float = 0.1  # Max price drift during latency (0.1%)
+
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
         # IMPORTANT: Convert relative paths to absolute paths based on project root
@@ -2068,6 +2074,29 @@ class JJBotPro:
                 logger.warning(f"Failed to place stop order - local monitoring only")
         else:
             # Paper trading with realistic execution costs
+            import random
+
+            # Simulate execution latency and price drift
+            latency_ms = 0
+            price_drift = 0.0
+            if self.config.paper_latency_enabled:
+                # Random latency between min and max
+                latency_ms = random.randint(
+                    self.config.paper_latency_min_ms,
+                    self.config.paper_latency_max_ms
+                )
+                # Price can drift during latency (random walk)
+                max_drift_pct = self.config.paper_latency_price_drift_pct / 100
+                price_drift = price * random.uniform(-max_drift_pct, max_drift_pct)
+                # Adverse drift more likely (market moves against you)
+                if direction == "long":
+                    price_drift = abs(price_drift)  # Price tends to move up before buy fills
+                else:
+                    price_drift = -abs(price_drift)  # Price tends to move down before sell fills
+
+            # Apply price drift from latency
+            execution_price = price + price_drift
+
             if self.config.paper_apply_realistic_costs:
                 # Create execution simulator with configured slippage model
                 simulator = ExecutionSimulator(
@@ -2077,20 +2106,25 @@ class JJBotPro:
                 # Calculate slippage based on order side
                 sim_side = SimOrderSide.BUY if direction == "long" else SimOrderSide.SELL
                 slippage = simulator.calculate_slippage(
-                    price=price,
-                    quantity=position_value / price,
+                    price=execution_price,
+                    quantity=position_value / execution_price,
                     side=sim_side
                 )
                 # Apply slippage (negative for buys = pay more, positive for sells = receive less)
-                filled_price = price - slippage  # Note: slippage is already signed correctly
-                logger.debug(f"Paper slippage: ${slippage:.4f} ({slippage/price*100:.3f}%)")
+                filled_price = execution_price - slippage  # Note: slippage is already signed correctly
+                logger.debug(f"Paper slippage: ${slippage:.4f} ({slippage/execution_price*100:.3f}%)")
             else:
-                filled_price = price
+                filled_price = execution_price
 
             filled_amount = position_value / filled_price  # Calculate contracts at fill price
             entry_order_id = None
             stop_order_id = None
-            logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f} (qty: {filled_amount:.6f})")
+
+            # Log with latency info
+            if latency_ms > 0:
+                logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f} (qty: {filled_amount:.6f}) [latency: {latency_ms}ms, drift: {price_drift:+.2f}]")
+            else:
+                logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f} (qty: {filled_amount:.6f})")
 
         # Calculate entry slippage (difference between expected and actual fill)
         expected_price = price  # The price when we decided to trade
@@ -2296,22 +2330,50 @@ class JJBotPro:
         actual_exit_price = exit_price  # Will be updated with actual fill price
         close_order_failed = False
 
-        # Apply slippage for paper trading exits
-        if self.config.mode != "live" and self.config.paper_apply_realistic_costs:
-            simulator = ExecutionSimulator(
-                slippage_model=self.config.paper_slippage_model,
-                base_slippage_pct=self.config.paper_slippage_pct
-            )
-            # Exit side is opposite of position side
-            sim_side = SimOrderSide.SELL if pos.side == "long" else SimOrderSide.BUY
-            close_amount = pos.actual_contracts if pos.actual_contracts > 0 else pos.size / exit_price
-            slippage = simulator.calculate_slippage(
-                price=exit_price,
-                quantity=close_amount,
-                side=sim_side
-            )
-            actual_exit_price = exit_price - slippage
-            logger.debug(f"Paper exit slippage: ${slippage:.4f} ({slippage/exit_price*100:.3f}%)")
+        # Apply latency and slippage for paper trading exits
+        if self.config.mode != "live":
+            import random
+
+            # Simulate execution latency and price drift
+            exit_latency_ms = 0
+            exit_price_drift = 0.0
+            if self.config.paper_latency_enabled:
+                exit_latency_ms = random.randint(
+                    self.config.paper_latency_min_ms,
+                    self.config.paper_latency_max_ms
+                )
+                max_drift_pct = self.config.paper_latency_price_drift_pct / 100
+                exit_price_drift = exit_price * random.uniform(-max_drift_pct, max_drift_pct)
+                # Adverse drift: price moves against exit direction
+                if pos.side == "long":
+                    exit_price_drift = -abs(exit_price_drift)  # Price drops before sell fills
+                else:
+                    exit_price_drift = abs(exit_price_drift)  # Price rises before buy-to-cover fills
+
+            execution_exit_price = exit_price + exit_price_drift
+
+            if self.config.paper_apply_realistic_costs:
+                simulator = ExecutionSimulator(
+                    slippage_model=self.config.paper_slippage_model,
+                    base_slippage_pct=self.config.paper_slippage_pct
+                )
+                # Exit side is opposite of position side
+                sim_side = SimOrderSide.SELL if pos.side == "long" else SimOrderSide.BUY
+                close_amount = pos.actual_contracts if pos.actual_contracts > 0 else pos.size / execution_exit_price
+                slippage = simulator.calculate_slippage(
+                    price=execution_exit_price,
+                    quantity=close_amount,
+                    side=sim_side
+                )
+                actual_exit_price = execution_exit_price - slippage
+                logger.debug(f"Paper exit: slippage ${slippage:.4f}, latency {exit_latency_ms}ms, drift {exit_price_drift:+.2f}")
+            else:
+                actual_exit_price = execution_exit_price
+
+        # Track partial fill state for proper handling
+        filled_contracts = 0.0
+        remaining_contracts = 0.0
+        partial_fill_handled = False
 
         if self.config.mode == "live" and reason != "stop_loss_exchange":
             try:
@@ -2328,6 +2390,7 @@ class JJBotPro:
 
                 if result:
                     actual_exit_price = result.price
+                    filled_contracts = result.filled
 
                     # Handle partial fills on close
                     if result.remaining > 0:
@@ -2342,10 +2405,38 @@ class JJBotPro:
 
                         if final_result:
                             actual_exit_price = final_result.price
-                            if final_result.remaining > 0:
-                                # Still not fully filled - log warning but proceed
-                                # The position will be marked as closed but some may remain on exchange
-                                logger.warning(f"Close order not fully filled - {final_result.remaining:.6f} may remain on exchange")
+                            filled_contracts = final_result.filled
+                            remaining_contracts = final_result.remaining
+
+                            if remaining_contracts > 0:
+                                # PARTIAL FILL: Create residual position for unfilled amount
+                                partial_fill_handled = True
+                                residual_size = remaining_contracts * actual_exit_price
+
+                                logger.warning(f"⚠️  PARTIAL FILL: {filled_contracts:.6f} closed, {remaining_contracts:.6f} remaining")
+                                logger.warning(f"    Creating residual position for unfilled {remaining_contracts:.6f} contracts (${residual_size:.2f})")
+
+                                # Log to audit trail
+                                if self.audit:
+                                    self.audit.log_error(
+                                        error_type="partial_fill_residual",
+                                        message=f"Partial close: {remaining_contracts:.6f} contracts remain open",
+                                        details={
+                                            "symbol": symbol,
+                                            "filled": filled_contracts,
+                                            "remaining": remaining_contracts,
+                                            "residual_size_usd": residual_size,
+                                            "original_reason": reason
+                                        },
+                                        symbol=symbol
+                                    )
+
+                                # Adjust position size to only the filled portion for P&L calculation
+                                # The remaining will stay in positions dict
+                                pos.size = filled_contracts * pos.entry_price
+                                pos.actual_contracts = filled_contracts
+                    else:
+                        filled_contracts = close_amount  # Fully filled
                 else:
                     logger.error(f"Failed to execute close order for {symbol}")
                     close_order_failed = True
@@ -2511,8 +2602,33 @@ class JJBotPro:
             except Exception as e:
                 logger.warning(f"Failed to log trade close to database: {e}")
 
-        # Remove position
-        del self.positions[symbol]
+        # Handle position removal - check for partial fill residual
+        if partial_fill_handled and remaining_contracts > 0:
+            # Create residual position with remaining contracts
+            residual_size = remaining_contracts * pos.entry_price
+            self.positions[symbol] = Position(
+                symbol=symbol,
+                side=pos.side,
+                entry_price=pos.entry_price,
+                size=residual_size,
+                stop_loss=pos.stop_loss,
+                take_profit=pos.take_profit,
+                entry_time=pos.entry_time,
+                signal_source=pos.signal_source + "_RESIDUAL",
+                actual_contracts=remaining_contracts,
+                entry_order_id=None,
+                stop_order_id=None,
+                highest_price=pos.highest_price,
+                lowest_price=pos.lowest_price,
+                expected_entry_price=pos.expected_entry_price,
+                entry_slippage=0.0,
+                entry_slippage_pct=0.0,
+            )
+            logger.warning(f"⚠️  RESIDUAL POSITION CREATED: {symbol} {pos.side} {remaining_contracts:.6f} contracts (${residual_size:.2f})")
+            logger.warning(f"    Original position partially closed. Residual will be tracked separately.")
+        else:
+            # Fully closed - remove position
+            del self.positions[symbol]
 
         # Publish trade event to WebSocket clients
         trade_event = {
