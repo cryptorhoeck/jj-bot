@@ -216,13 +216,19 @@ class BotConfig:
     rl_use_price_inversion: bool = False  # DISABLED - synthetic inversion destroys real patterns
 
     # Ensemble learning settings (prevents catastrophic forgetting)
-    rl_use_ensemble: bool = True  # Use ensemble of regime-specific models
+    rl_use_ensemble: bool = False  # Use single unified brain (not multiple regime experts)
     rl_use_ewc: bool = True  # Elastic Weight Consolidation for memory protection
     rl_ewc_lambda: float = 1000.0  # EWC regularization strength
     rl_use_experience_replay: bool = True  # Mix old experiences with new during training
     rl_replay_buffer_size: int = 1000  # Trajectories to store per regime
     rl_replay_ratio: float = 0.3  # 30% replay, 70% new data
     rl_ensemble_path: str = "models/ensemble"  # Directory for ensemble models
+
+    # Continuous learning settings (learn from EVERYTHING - training, paper, live)
+    rl_continuous_learning: bool = True  # Learn during paper/live trading, not just training mode
+    rl_online_update_interval: int = 10  # Update model every N completed trades
+    rl_online_min_experiences: int = 50  # Minimum experiences before online update
+    rl_save_after_online_update: bool = True  # Save model after each online update
 
     # Walk-forward validation settings
     rl_use_validation: bool = True  # Enable train/validation split for OOS testing
@@ -571,6 +577,11 @@ class JJBotPro:
         self.rl_env: Optional[TradingEnvironment] = None
         self.ensemble_agent: Optional[EnsembleAgent] = None
         self.regime_detector: Optional[RegimeDetector] = None
+
+        # Online learning state (learn from paper/live trading)
+        self._online_learning_buffer: List[Dict] = []  # Stores trade experiences
+        self._online_trades_since_update: int = 0  # Track trades for update interval
+        self._online_learning_enabled: bool = False  # Set True when agent is ready
 
         # Notifications
         self.notifier: Optional[NotificationManager] = None
@@ -1220,6 +1231,11 @@ class JJBotPro:
                     logger.info(f"Loaded RL model from {self.config.rl_model_path}")
                 else:
                     logger.info("No existing RL model found - starting fresh")
+
+            # Enable continuous learning for paper/live modes
+            if self.config.rl_continuous_learning and self.config.mode in ["paper", "live"]:
+                self._online_learning_enabled = True
+                logger.info("Continuous learning ENABLED - brain will learn from every trade")
         elif self.config.use_rl_agent:
             logger.warning("RL agent requested but PyTorch not available - trading without AI")
 
@@ -2672,6 +2688,33 @@ class JJBotPro:
         self.equity += pnl
         self.peak_equity = max(self.peak_equity, self.equity)
 
+        # ===== ONLINE LEARNING: Record trade experience for continuous learning =====
+        if self._online_learning_enabled and self.rl_agent:
+            try:
+                # Get current state for this symbol
+                state_after = self._get_current_state_for_symbol(symbol)
+
+                # Calculate trade duration in minutes
+                trade_duration = (exit_time - pos.entry_time).total_seconds() / 60.0
+
+                # Determine action: 1=buy (long entry), 2=sell (short entry)
+                action = 1 if pos.side == "long" else 2
+
+                # We don't have state_before stored, so use state_after as approximation
+                # In future: store entry state in Position object
+                if state_after is not None:
+                    self._record_trade_experience(
+                        symbol=symbol,
+                        action=action,
+                        state_before=state_after,  # Approximation
+                        state_after=state_after,
+                        pnl=pnl,
+                        trade_duration_minutes=trade_duration,
+                    )
+                    logger.debug(f"Recorded trade for online learning: {symbol} PnL=${pnl:.2f}")
+            except Exception as e:
+                logger.debug(f"Could not record trade for online learning: {e}")
+
         # Log trade CLOSE to legacy database (trades.db) for Data Analytics page
         if DB_AVAILABLE and db_log_trade:
             try:
@@ -2863,6 +2906,160 @@ class JJBotPro:
         self.stats["low_confidence_rejections"] = 0
         self.stats["insufficient_candles"] = 0
         self.stats["signals_passed_to_handler"] = 0
+
+    # ==================== ONLINE LEARNING (CONTINUOUS LEARNING) ====================
+
+    def _record_trade_experience(
+        self,
+        symbol: str,
+        action: int,  # 0=hold, 1=buy, 2=sell
+        state_before: np.ndarray,
+        state_after: np.ndarray,
+        pnl: float,
+        trade_duration_minutes: float,
+    ):
+        """
+        Record a trade experience for online learning.
+
+        Called after each trade completes (position closed) to capture
+        the state -> action -> reward transition for continuous learning.
+        """
+        if not self._online_learning_enabled or not self.rl_agent:
+            return
+
+        # Calculate reward based on P&L and risk-adjusted return
+        # Normalize reward to reasonable scale for RL
+        reward = pnl / (self.config.initial_capital * 0.01)  # Normalize to 1% of capital
+
+        # Add small penalty for very short trades (likely noise) or very long (capital tied up)
+        if trade_duration_minutes < 5:
+            reward -= 0.1  # Penalize very short trades
+        elif trade_duration_minutes > 1440:  # > 24 hours
+            reward -= 0.05  # Small penalty for holding too long
+
+        experience = {
+            "symbol": symbol,
+            "action": action,
+            "state": state_before,
+            "next_state": state_after,
+            "reward": reward,
+            "pnl": pnl,
+            "timestamp": datetime.now(),
+        }
+
+        self._online_learning_buffer.append(experience)
+        self._online_trades_since_update += 1
+
+        logger.debug(f"Recorded trade experience: {symbol} action={action} reward={reward:.3f}")
+
+        # Check if we should perform an online update
+        if self._should_perform_online_update():
+            asyncio.create_task(self._perform_online_update())
+
+    def _should_perform_online_update(self) -> bool:
+        """Check if conditions are met for an online learning update"""
+        if not self._online_learning_enabled:
+            return False
+
+        # Need minimum experiences
+        if len(self._online_learning_buffer) < self.config.rl_online_min_experiences:
+            return False
+
+        # Check update interval
+        if self._online_trades_since_update < self.config.rl_online_update_interval:
+            return False
+
+        return True
+
+    async def _perform_online_update(self):
+        """
+        Perform an online learning update using accumulated trade experiences.
+
+        This teaches the brain from real trading outcomes, not just simulations.
+        """
+        if not self.rl_agent or not self._online_learning_buffer:
+            return
+
+        try:
+            logger.info(f"Performing online learning update with {len(self._online_learning_buffer)} experiences...")
+
+            # Convert experiences to training format
+            for exp in self._online_learning_buffer:
+                state = exp["state"]
+                action = exp["action"]
+                reward = exp["reward"]
+                next_state = exp["next_state"]
+                done = True  # Each trade is a complete episode
+
+                # Get log_prob and value from current policy
+                action_taken, log_prob, value = self.rl_agent.select_action(state, training=True)
+
+                # Store in agent's buffer
+                self.rl_agent.store_experience(
+                    state=state,
+                    action=action,
+                    reward=reward,
+                    next_state=next_state,
+                    done=done,
+                    log_prob=log_prob,
+                    value=value,
+                )
+
+            # Perform PPO update
+            loop = asyncio.get_event_loop()
+            update_stats = await loop.run_in_executor(None, self.rl_agent.update)
+
+            if update_stats:
+                logger.info(
+                    f"Online learning update complete: "
+                    f"policy_loss={update_stats.get('policy_loss', 0):.4f}, "
+                    f"value_loss={update_stats.get('value_loss', 0):.4f}, "
+                    f"ewc_loss={update_stats.get('ewc_loss', 0):.4f}"
+                )
+
+                # Track online learning stats
+                self.stats["online_learning_updates"] = self.stats.get("online_learning_updates", 0) + 1
+                self.stats["online_experiences_learned"] = self.stats.get("online_experiences_learned", 0) + len(self._online_learning_buffer)
+
+            # Save model if configured
+            if self.config.rl_save_after_online_update:
+                os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
+                self.rl_agent.save(self.config.rl_model_path)
+                logger.info(f"Model saved after online update: {self.config.rl_model_path}")
+
+            # Clear buffer and reset counter
+            self._online_learning_buffer = []
+            self._online_trades_since_update = 0
+
+        except Exception as e:
+            logger.error(f"Online learning update failed: {e}")
+            # Don't clear buffer on failure - retry next time
+
+    def _get_current_state_for_symbol(self, symbol: str) -> Optional[np.ndarray]:
+        """Get the current RL state observation for a symbol"""
+        if not self.rl_env or symbol not in self._symbol_candles:
+            return None
+
+        try:
+            candles = self._symbol_candles.get(symbol, [])
+            if len(candles) < 50:  # Need enough candles for features
+                return None
+
+            # Extract OHLCV from candles
+            prices = np.array([c.get("close", c.get("price", 0)) for c in candles[-100:]])
+
+            # Calculate features using the trading environment's method
+            if hasattr(self.rl_env, '_calculate_features'):
+                features = self.rl_env._calculate_features(prices)
+                return features
+            else:
+                # Fallback: use calculate_features from trading_env module
+                if calculate_features:
+                    return calculate_features(prices)
+                return None
+        except Exception as e:
+            logger.debug(f"Could not get state for {symbol}: {e}")
+            return None
 
     def _calculate_trading_iq(self):
         """Calculate Trading IQ based on cumulative performance (mimics human IQ scale)
