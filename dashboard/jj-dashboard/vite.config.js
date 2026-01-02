@@ -3,12 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/dashboard/',
+  base: '/',  // Changed to root for PWA standalone app
   server: {
-    // CSP with Google Fonts support - properly allow external stylesheets
-    headers: {
-      'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:8000 ws://127.0.0.1:8000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000;"
-    }
+    // No CSP in development - removes eval warnings
   },
   build: {
     outDir: 'dist',

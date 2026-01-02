@@ -1,4 +1,0 @@
-ren         7395  0.0  0.3 11853820 124984 ?     Sl   19:01   0:03 node /home/ren/jj-bot/dashboard/jj-dashboard/node_modules/.bin/vite
-ren         7426  0.0  0.0 1238004 12500 ?       Sl   19:01   0:02 /home/ren/jj-bot/dashboard/jj-dashboard/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.9 --ping
-ren         9593  0.0  0.2 11823540 82600 ?      Sl   20:23   0:01 node /home/ren/jj-bot/dashboard/jj-dashboard/node_modules/.bin/vite
-ren         9604  0.0  0.0 1236980 11840 ?       Sl   20:23   0:01 /home/ren/jj-bot/dashboard/jj-dashboard/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.9 --ping

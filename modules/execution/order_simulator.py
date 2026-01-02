@@ -31,7 +31,7 @@ class ExecutionSimulator:
     def __init__(
         self,
         slippage_model: str = "percentage",
-        base_slippage_pct: float = 0.05,
+        base_slippage_pct: float = 0.5,  # 0.5% realistic base slippage
         orderbook_depth: int = 10,
         min_delay_ms: int = 50,
         max_delay_ms: int = 200,

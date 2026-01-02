@@ -123,7 +123,7 @@ class MarketFeedService(BaseService):
                     self.stats["total_updates"] += 1
 
                     # Log every update
-                    print(f"📊 Market Feed: {len(data)} coins updated | Total: {self.stats['total_updates']}")
+                    print(f"[FEED] Market Feed: {len(data)} coins updated | Total: {self.stats['total_updates']}")
 
                 else:
                     self.stats["failed_fetches"] += 1
@@ -131,7 +131,7 @@ class MarketFeedService(BaseService):
             except Exception as e:
                 self.stats["failed_fetches"] += 1
                 self.stats["last_error"] = str(e)
-                print(f"❌ Market Feed error: {e}")
+                print(f"[ERROR] Market Feed error: {e}")
 
             # Wait before next update
             time.sleep(self.config["update_interval"])

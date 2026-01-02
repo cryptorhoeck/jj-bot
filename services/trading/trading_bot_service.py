@@ -21,7 +21,15 @@ try:
     RISK_MANAGER_AVAILABLE = True
 except ImportError:
     RISK_MANAGER_AVAILABLE = False
-    print("⚠️ Risk manager not available - trading without risk limits!")
+    print("[WARNING] Risk manager not available - trading without risk limits!")
+
+# Import AI inference service
+try:
+    from services.ai.inference_service import ai_inference_service
+    AI_SERVICE_AVAILABLE = True
+except ImportError:
+    AI_SERVICE_AVAILABLE = False
+    print("[WARNING] AI inference service not available")
 
 
 class TradingBotService(BaseService):
@@ -38,7 +46,12 @@ class TradingBotService(BaseService):
             "risk_per_trade": 0.02,  # 2% risk per trade
             "symbols_to_trade": ["BTC", "ETH", "BNB", "SOL", "ADA"],
             "min_signal_strength": 0.7,  # Minimum signal strength (0-1)
-            "cooldown_seconds": 300  # 5 minutes between trades on same symbol
+            "cooldown_seconds": 300,  # 5 minutes between trades on same symbol
+            # AI Integration settings
+            "use_ai_enhancement": True,  # Use AI to enhance trading signals
+            "require_ai_confirmation": False,  # Require AI to confirm signals before executing
+            "ai_min_confidence": 0.6,  # Minimum AI confidence to proceed
+            "ai_weight_in_signal": 0.3  # Weight of AI confidence in final signal strength
         }
 
         # Stats tracking
@@ -54,7 +67,12 @@ class TradingBotService(BaseService):
             "loss_count": 0,
             "last_signal": None,
             "last_trade": None,
-            "bot_state": "idle"
+            "bot_state": "idle",
+            # AI-related stats
+            "ai_enhanced_signals": 0,
+            "ai_confirmed_signals": 0,
+            "ai_rejected_signals": 0,
+            "last_ai_analysis": None
         }
 
         # Internal state
@@ -70,15 +88,15 @@ class TradingBotService(BaseService):
 
     def _run(self):
         """Run the trading bot"""
-        print("🤖 Trading Bot Service starting...")
+        print("[BOT] Trading Bot Service starting...")
 
         if not self.config["enabled"]:
-            print("⚠️  Trading Bot is DISABLED by default for safety")
+            print("[WARNING] Trading Bot is DISABLED by default for safety")
             print("   To enable: update config with {\"enabled\": true}")
             print("   Bot will listen for signals but not execute trades")
 
         if self.config["paper_trading"]:
-            print("📝 Paper Trading Mode: ON (no real money at risk)")
+            print("[INFO] Paper Trading Mode: ON (no real money at risk)")
 
         self.stats["bot_state"] = "monitoring"
 
@@ -93,12 +111,12 @@ class TradingBotService(BaseService):
                 if self.stats["signals_received"] > 0:
                     approval_rate = (self.stats["signals_approved"] /
                                    self.stats["signals_received"] * 100)
-                    print(f"🤖 Bot Status: {self.stats['signals_received']} signals | "
+                    print(f"[BOT] Bot Status: {self.stats['signals_received']} signals | "
                           f"{approval_rate:.1f}% approved | "
                           f"{self.stats['trades_executed']} executed")
 
             except Exception as e:
-                print(f"❌ Trading Bot error: {e}")
+                print(f"[ERROR] Trading Bot error: {e}")
                 time.sleep(10)
 
     def _on_price_update(self, event: Dict):
@@ -116,7 +134,7 @@ class TradingBotService(BaseService):
                     "volume_24h": price_data.get("volume_24h", 0)
                 }
         except Exception as e:
-            print(f"❌ Price update error: {e}")
+            print(f"[ERROR] Price update error: {e}")
 
     def _on_trading_signal(self, event: Dict):
         """Handle incoming trading signals"""
@@ -139,20 +157,72 @@ class TradingBotService(BaseService):
 
             # Check signal strength
             if strength < self.config["min_signal_strength"]:
-                print(f"⚠️  Signal {symbol} too weak: {strength:.1%}")
+                print(f"[WARNING] Signal {symbol} too weak: {strength:.1%}")
                 return
 
             # Check cooldown
             if symbol in self.last_trade_times:
                 time_since_last = (datetime.now() - self.last_trade_times[symbol]).total_seconds()
                 if time_since_last < self.config["cooldown_seconds"]:
-                    print(f"⏳ {symbol} in cooldown ({time_since_last:.0f}s)")
+                    print(f"[COOLDOWN] {symbol} in cooldown ({time_since_last:.0f}s)")
                     return
 
             # Check max positions
             if len(self.open_positions) >= self.config["max_open_positions"]:
-                print(f"🔒 Max positions reached ({len(self.open_positions)}/{self.config['max_open_positions']})")
+                print(f"[LIMIT] Max positions reached ({len(self.open_positions)}/{self.config['max_open_positions']})")
                 return
+
+            # AI Enhancement (if enabled and available)
+            final_signal = signal.copy()
+            ai_analysis = None
+
+            if self.config["use_ai_enhancement"] and AI_SERVICE_AVAILABLE:
+                try:
+                    enhanced = ai_inference_service.enhance_signal(signal)
+                    if enhanced:
+                        self.stats["ai_enhanced_signals"] += 1
+                        self.stats["last_ai_analysis"] = {
+                            "timestamp": datetime.now().isoformat(),
+                            "symbol": symbol,
+                            "original_action": action,
+                            "enhanced_action": enhanced.enhanced_action,
+                            "ai_confidence": enhanced.ai_confidence,
+                            "recommendation": enhanced.recommendation,
+                            "reasoning": enhanced.reasoning
+                        }
+
+                        # Check AI confirmation if required
+                        if self.config["require_ai_confirmation"]:
+                            if enhanced.recommendation != "execute":
+                                print(f"[AI] AI rejected {symbol} signal: {enhanced.reasoning}")
+                                self.stats["ai_rejected_signals"] += 1
+                                return
+
+                            if enhanced.ai_confidence < self.config["ai_min_confidence"]:
+                                print(f"[AI] AI confidence too low for {symbol}: {enhanced.ai_confidence:.1%}")
+                                self.stats["ai_rejected_signals"] += 1
+                                return
+
+                        # Apply AI weight to signal strength
+                        if enhanced.ai_confidence > 0:
+                            ai_weight = self.config["ai_weight_in_signal"]
+                            combined_strength = (
+                                strength * (1 - ai_weight) +
+                                enhanced.ai_confidence * ai_weight
+                            )
+                            final_signal["strength"] = combined_strength
+                            final_signal["ai_enhanced"] = True
+                            final_signal["ai_confidence"] = enhanced.ai_confidence
+                            final_signal["ai_reasoning"] = enhanced.reasoning
+
+                            self.stats["ai_confirmed_signals"] += 1
+                            print(f"[AI] AI enhanced {symbol}: strength {strength:.1%} -> {combined_strength:.1%}")
+
+                        ai_analysis = enhanced.to_dict()
+
+                except Exception as ai_error:
+                    print(f"[WARNING] AI enhancement failed for {symbol}: {ai_error}")
+                    # Continue without AI if it fails
 
             # Risk management checks
             if RISK_MANAGER_AVAILABLE:
@@ -172,19 +242,21 @@ class TradingBotService(BaseService):
                 )
 
                 if not risk_check["can_trade"]:
-                    print(f"🛑 Risk check failed: {risk_check['reason']}")
+                    print(f"[RISK] Risk check failed: {risk_check['reason']}")
                     self.stats["trades_rejected"] += 1
                     return
 
             # Signal looks good - publish for risk evaluation
-            print(f"✅ {symbol} {action} signal approved (strength: {strength:.1%})")
+            final_strength = final_signal.get("strength", strength)
+            ai_note = " (AI enhanced)" if final_signal.get("ai_enhanced") else ""
+            print(f"[OK] {symbol} {action} signal approved (strength: {final_strength:.1%}){ai_note}")
             self.stats["signals_approved"] += 1
 
             # Execute trade with risk-based position sizing
-            self._execute_trade(signal)
+            self._execute_trade(final_signal)
 
         except Exception as e:
-            print(f"❌ Signal processing error: {e}")
+            print(f"[ERROR] Signal processing error: {e}")
 
     def _on_trade_approved(self, event: Dict):
         """Handle trade approval from risk manager"""
@@ -195,7 +267,7 @@ class TradingBotService(BaseService):
             if approval.get("approved"):
                 self._execute_trade(signal)
         except Exception as e:
-            print(f"❌ Trade approval error: {e}")
+            print(f"[ERROR] Trade approval error: {e}")
 
     def _on_trade_rejected(self, event: Dict):
         """Handle trade rejection from risk manager"""
@@ -206,9 +278,9 @@ class TradingBotService(BaseService):
             signal = rejection.get("signal")
             reasons = rejection.get("reasons", [])
 
-            print(f"❌ Trade rejected: {signal.get('symbol')} - {', '.join(reasons)}")
+            print(f"[REJECTED] Trade rejected: {signal.get('symbol')} - {', '.join(reasons)}")
         except Exception as e:
-            print(f"❌ Trade rejection handling error: {e}")
+            print(f"[ERROR] Trade rejection handling error: {e}")
 
     def _execute_trade(self, signal: Dict):
         """
@@ -225,11 +297,11 @@ class TradingBotService(BaseService):
             # Get current market price from real-time feed
             if symbol in self.current_prices:
                 price = self.current_prices[symbol]["price"]
-                print(f"📊 Using real market price for {symbol}: ${price:.2f}")
+                print(f"[DATA] Using real market price for {symbol}: ${price:.2f}")
             else:
                 # Fallback to signal price if no market data available yet
                 price = signal.get("price")
-                print(f"⚠️  No market data for {symbol}, using signal price: ${price:.2f}")
+                print(f"[WARNING] No market data for {symbol}, using signal price: ${price:.2f}")
 
             # Calculate position size based on risk management
             if RISK_MANAGER_AVAILABLE:
@@ -242,7 +314,7 @@ class TradingBotService(BaseService):
                     stop_loss_price=stop_loss_price
                 )
                 trade_size = position_calc["position_size"]
-                print(f"💼 Position size: {trade_size} shares (${position_calc['position_value']:.2f})")
+                print(f"[SIZE] Position size: {trade_size} shares (${position_calc['position_value']:.2f})")
             else:
                 trade_size = 1.0  # Default size
 
@@ -294,13 +366,13 @@ class TradingBotService(BaseService):
                     "timestamp": trade["timestamp"]
                 })
 
-                print(f"💰 {symbol} trade executed: {action} @ ${price:.2f} | "
+                print(f"[TRADE] {symbol} trade executed: {action} @ ${price:.2f} | "
                       f"PnL: ${pnl:.2f}")
             else:
-                print(f"📝 {symbol} trade logged: {action} @ ${price:.2f}")
+                print(f"[LOG] {symbol} trade logged: {action} @ ${price:.2f}")
 
         except Exception as e:
-            print(f"❌ Trade execution error: {e}")
+            print(f"[ERROR] Trade execution error: {e}")
 
     def _check_positions(self):
         """Check and update open positions"""
@@ -310,7 +382,7 @@ class TradingBotService(BaseService):
             self.stats["open_positions"] = len(self.open_positions)
 
         except Exception as e:
-            print(f"❌ Position check error: {e}")
+            print(f"[ERROR] Position check error: {e}")
 
     def _cleanup(self):
         """Cleanup when stopping"""
@@ -320,20 +392,20 @@ class TradingBotService(BaseService):
         event_bus.unsubscribe("TRADE_REJECTED", self._on_trade_rejected)
         event_bus.unsubscribe("PRICE_UPDATE", self._on_price_update)
 
-        print("🛑 Trading Bot Service stopped")
+        print("[STOP] Trading Bot Service stopped")
 
     def enable_trading(self):
         """Enable live trading (paper trading)"""
         self.config["enabled"] = True
         self.stats["bot_state"] = "active"
-        print("✅ Trading Bot ENABLED")
+        print("[OK] Trading Bot ENABLED")
         return {"success": True, "message": "Trading enabled"}
 
     def disable_trading(self):
         """Disable live trading"""
         self.config["enabled"] = False
         self.stats["bot_state"] = "monitoring"
-        print("⏸️  Trading Bot DISABLED")
+        print("[PAUSE] Trading Bot DISABLED")
         return {"success": True, "message": "Trading disabled"}
 
     def get_open_positions(self) -> Dict[str, Dict]:

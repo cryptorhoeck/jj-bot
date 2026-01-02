@@ -199,10 +199,15 @@ h4 { font-size: 1.125rem; }
 }
 
 .stat-value {
-  font-size: 2rem;
+  /* Font size controlled by inline style for dynamic scaling */
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  /* NEVER wrap - shrink font instead */
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .stat-change {
@@ -286,6 +291,17 @@ h4 { font-size: 1.125rem; }
 .btn-secondary:hover:not(:disabled) {
   background: var(--border-color);
   transform: translateY(-2px);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+.btn-warning:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
 }
 
 .btn-ghost {
@@ -640,7 +656,7 @@ h4 { font-size: 1.125rem; }
   }
 
   .stat-value {
-    font-size: 1.5rem;
+    /* Font size controlled by inline style - no override here */
   }
 
   h1 {
@@ -652,7 +668,20 @@ h4 { font-size: 1.125rem; }
   }
 }
 
+/* Extra small screens */
 @media (max-width: 480px) {
+  .stat-value {
+    /* Font size controlled by inline style - no override here */
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+  }
+
+  .stat-change {
+    font-size: 0.75rem;
+  }
+
   .btn {
     width: 100%;
   }

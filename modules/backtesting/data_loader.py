@@ -160,9 +160,9 @@ class BacktestDataLoader:
             )
 
             if results[symbol]["success"]:
-                print(f"  ✅ Loaded {results[symbol]['metadata']['num_candles']} candles")
+                print(f"  [OK] Loaded {results[symbol]['metadata']['num_candles']} candles")
             else:
-                print(f"  ❌ Failed: {results[symbol].get('error')}")
+                print(f"  [ERROR] Failed: {results[symbol].get('error')}")
 
         return results
 
@@ -249,10 +249,10 @@ class BacktestDataLoader:
                 if result["success"]:
                     stats["total_candles"] += result["metadata"]["num_candles"]
                     stats["timeframes_processed"] += 1
-                    print(f"✅ Preloaded {symbol} {timeframe}: {result['metadata']['num_candles']} candles")
+                    print(f"[OK] Preloaded {symbol} {timeframe}: {result['metadata']['num_candles']} candles")
                 else:
                     stats["errors"].append(f"{symbol}/{timeframe}: {result.get('error')}")
-                    print(f"❌ Failed {symbol} {timeframe}: {result.get('error')}")
+                    print(f"[ERROR] Failed {symbol} {timeframe}: {result.get('error')}")
 
             stats["symbols_processed"] += 1
 

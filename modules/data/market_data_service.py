@@ -375,18 +375,12 @@ class MarketDataService:
     @staticmethod
     def standardize_kraken_pair(symbol: str) -> str:
         """Convert common symbol to Kraken pair format"""
+        # Kraken uses special symbols for some coins
         mapping = {
             "BTC": "XBTUSD",
-            "ETH": "ETHUSD",
-            "SOL": "SOLUSD",
-            "BNB": "BNBUSD",  # Note: BNB might not be on Kraken
-            "XRP": "XRPUSD",
-            "ADA": "ADAUSD",
             "DOGE": "XDGUSD",
-            "AVAX": "AVAXUSD",
-            "DOT": "DOTUSD",
-            "POL": "POLUSD"
         }
+        # Most symbols just use SYMBOLUSD format
         return mapping.get(symbol.upper(), f"{symbol.upper()}USD")
 
 

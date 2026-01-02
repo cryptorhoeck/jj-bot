@@ -45,7 +45,7 @@ try:
     HAS_ADAPTIVE_SELECTOR = True
 except ImportError:
     HAS_ADAPTIVE_SELECTOR = False
-    print("⚠️ Adaptive strategy selector not available - using fixed strategy")
+    print("[WARNING] Adaptive strategy selector not available - using fixed strategy")
 
 
 def fetch_top_100_coins() -> Dict[str, float]:
@@ -66,7 +66,7 @@ def fetch_top_100_coins() -> Dict[str, float]:
             'sparkline': False
         }
 
-        print("🌐 Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
+        print("[API] Fetching top 100 cryptocurrencies by market cap from CoinGecko...")
         response = requests.get(url, params=params, timeout=15)
 
         if response.status_code == 200:
@@ -80,17 +80,17 @@ def fetch_top_100_coins() -> Dict[str, float]:
 
                 prices[symbol] = price
 
-            print(f"✅ Fetched {len(prices)} cryptocurrencies")
+            print(f"[OK] Fetched {len(prices)} cryptocurrencies")
             print(f"   Top 5: {list(prices.keys())[:5]}")
             print(f"   Price range: ${min(prices.values()):.6f} - ${max(prices.values()):,.2f}")
 
             return prices
         else:
-            print(f"⚠️ CoinGecko API returned status {response.status_code}")
+            print(f"[WARNING] CoinGecko API returned status {response.status_code}")
             return {}
 
     except Exception as e:
-        print(f"⚠️ Failed to fetch top 100 coins: {e}")
+        print(f"[WARNING] Failed to fetch top 100 coins: {e}")
         return {}
 
 
@@ -140,6 +140,39 @@ class RealisticSimulatorService(BaseService):
         self.price_history: Optional[PriceHistory] = None
         self.performance_tracker: Optional[StrategyPerformanceTracker] = None
 
+        # Available strategies (24 fully implemented)
+        self.AVAILABLE_STRATEGIES = [
+            # Momentum strategies
+            "rsi_strategy",           # RSI oversold/overbought
+            "rsi_divergence",         # RSI divergence detection
+            "macd",                   # MACD crossover
+            "macd_histogram",         # MACD histogram reversal
+            "stochastic",             # Stochastic oscillator
+            "stochastic_rsi",         # Stochastic RSI combo
+            # Trend strategies
+            "sma_crossover",          # SMA fast/slow crossover
+            "ema_crossover",          # EMA fast/slow crossover
+            "triple_ema",             # Triple EMA (short/medium/long)
+            "adx_trend",              # ADX trend strength
+            # Mean reversion strategies
+            "bollinger_bands",        # Bollinger band bounce
+            "bollinger_squeeze",      # Bollinger squeeze breakout
+            "keltner_channel",        # Keltner channel
+            "mean_reversion",         # Simple mean reversion
+            # Volume strategies
+            "volume_breakout",        # Volume spike breakout
+            "obv_divergence",         # On-balance volume divergence
+            "vwap_strategy",          # VWAP crossover
+            # Combined/Advanced strategies
+            "macd_rsi_combo",         # MACD + RSI confirmation
+            "trend_momentum",         # Trend + momentum combo
+            "multi_timeframe",        # Multi-timeframe analysis
+            "support_resistance",     # Support/resistance levels
+            "breakout_pullback",      # Breakout with pullback entry
+            "swing_trading",          # Swing high/low strategy
+            "scalping",               # Quick scalping strategy
+        ]
+
         # State
         self.current_strategy = "rsi_strategy"  # Default
         self.tick_count = 0
@@ -150,7 +183,7 @@ class RealisticSimulatorService(BaseService):
         """Initialize all simulator components"""
         try:
             # Initialize databases first
-            print("📦 Initializing databases...")
+            print("[INIT] Initializing databases...")
             init_all_databases()
 
             # Fetch top 100 cryptocurrencies by market cap
@@ -158,10 +191,10 @@ class RealisticSimulatorService(BaseService):
             if top_100_prices:
                 # Use the fetched prices
                 self.symbols_config = top_100_prices
-                print(f"✅ Tracking {len(self.symbols_config)} cryptocurrencies")
+                print(f"[OK] Tracking {len(self.symbols_config)} cryptocurrencies")
             else:
                 # Fallback to top 10 if API fails
-                print("⚠️ API failed, using fallback top 10 symbols")
+                print("[WARNING] API failed, using fallback top 10 symbols")
                 self.symbols_config = {
                     'BTC': 45000, 'ETH': 2500, 'SOL': 100, 'BNB': 350, 'ADA': 0.50,
                     'DOT': 7, 'LINK': 15, 'POL': 0.45, 'UNI': 6, 'AVAX': 35
@@ -173,7 +206,7 @@ class RealisticSimulatorService(BaseService):
                 correlation=0.3,  # 30% correlation between crypto prices
                 tick_interval_seconds=self.tick_interval
             )
-            print("✅ Price generator initialized")
+            print("[OK] Price generator initialized")
 
             # Market simulator
             self.market_simulator = MarketSimulator(
@@ -186,19 +219,19 @@ class RealisticSimulatorService(BaseService):
                 use_take_profit=True,
                 take_profit_pct=0.05        # 5% take-profit
             )
-            print("✅ Market simulator initialized")
+            print("[OK] Market simulator initialized")
 
             # Strategy engine
             self.strategy_engine = StrategyEngine()
-            print("✅ Strategy engine initialized")
+            print("[OK] Strategy engine initialized")
 
             # Price history for learning system
             self.price_history = PriceHistory()
-            print("✅ Price history tracker initialized")
+            print("[OK] Price history tracker initialized")
 
             # Performance tracker for learning system
             self.performance_tracker = StrategyPerformanceTracker()
-            print("✅ Performance tracker initialized")
+            print("[OK] Performance tracker initialized")
 
             # Adaptive selector (optional)
             if HAS_ADAPTIVE_SELECTOR:
@@ -211,12 +244,12 @@ class RealisticSimulatorService(BaseService):
                 state = self.adaptive_selector.get_state()
                 if state:
                     self.current_strategy = state["current_strategy"]
-                    print(f"✅ Loaded strategy: {self.current_strategy}")
+                    print(f"[OK] Loaded strategy: {self.current_strategy}")
                 else:
-                    print(f"✅ Using default strategy: {self.current_strategy}")
+                    print(f"[OK] Using default strategy: {self.current_strategy}")
             else:
                 self.adaptive_selector = None
-                print(f"✅ Using fixed strategy: {self.current_strategy}")
+                print(f"[OK] Using fixed strategy: {self.current_strategy}")
 
         except Exception as e:
             print(f"Failed to initialize components: {e}")
@@ -248,61 +281,316 @@ class RealisticSimulatorService(BaseService):
             # Calculate indicators
             self.strategy_engine.calculate_indicators(price_history)
 
-            # Get signal based on current strategy
-            # For now, use RSI strategy as example
-            # TODO: Implement strategy selector to choose from 24 strategies
-
+            # Get signal based on current strategy from 24 available strategies
             indicators = self.strategy_engine.get_indicators()
 
             if not indicators:
                 return None
 
-            # RSI strategy (default)
-            if self.current_strategy == "rsi_strategy":
-                rsi = indicators.get("rsi")
-                if rsi is None:
-                    return None
-
-                if rsi < 30:
-                    return "BUY"
-                elif rsi > 70:
-                    return "SELL"
-
-            # SMA crossover strategy
-            elif self.current_strategy == "sma_crossover":
-                sma_short = indicators.get("sma_short")
-                sma_long = indicators.get("sma_long")
-
-                if sma_short is None or sma_long is None:
-                    return None
-
-                # Bullish crossover
-                if sma_short > sma_long:
-                    return "BUY"
-                # Bearish crossover
-                elif sma_short < sma_long:
-                    return "SELL"
-
-            # MACD strategy
-            elif self.current_strategy == "macd":
-                macd = indicators.get("macd")
-                macd_signal = indicators.get("macd_signal")
-
-                if macd is None or macd_signal is None:
-                    return None
-
-                # Bullish crossover
-                if macd > macd_signal:
-                    return "BUY"
-                # Bearish crossover
-                elif macd < macd_signal:
-                    return "SELL"
-
-            return None
+            # Strategy selector - implements all 24 strategies
+            return self._execute_strategy(indicators)
 
         except Exception as e:
             print(f"Error getting strategy signal: {e}")
             return None
+
+    def _execute_strategy(self, indicators: Dict) -> Optional[str]:
+        """
+        Execute the current strategy and return signal.
+        Implements all 24 available strategies.
+
+        Args:
+            indicators: Dict of calculated indicators
+
+        Returns:
+            "BUY", "SELL", or None
+        """
+        strategy = self.current_strategy
+
+        # === MOMENTUM STRATEGIES ===
+        if strategy == "rsi_strategy":
+            rsi = indicators.get("rsi")
+            if rsi is None:
+                return None
+            if rsi < 30:
+                return "BUY"
+            elif rsi > 70:
+                return "SELL"
+
+        elif strategy == "rsi_divergence":
+            rsi = indicators.get("rsi")
+            rsi_prev = indicators.get("rsi_prev", rsi)
+            price = indicators.get("close")
+            price_prev = indicators.get("close_prev", price)
+            if rsi and price and rsi_prev and price_prev:
+                # Bullish divergence: price lower low, RSI higher low
+                if price < price_prev and rsi > rsi_prev and rsi < 40:
+                    return "BUY"
+                # Bearish divergence: price higher high, RSI lower high
+                elif price > price_prev and rsi < rsi_prev and rsi > 60:
+                    return "SELL"
+
+        elif strategy == "macd":
+            macd = indicators.get("macd")
+            macd_signal = indicators.get("macd_signal")
+            if macd is None or macd_signal is None:
+                return None
+            if macd > macd_signal:
+                return "BUY"
+            elif macd < macd_signal:
+                return "SELL"
+
+        elif strategy == "macd_histogram":
+            macd_hist = indicators.get("macd_histogram")
+            macd_hist_prev = indicators.get("macd_histogram_prev", 0)
+            if macd_hist is not None:
+                # Histogram turning positive
+                if macd_hist > 0 and macd_hist_prev <= 0:
+                    return "BUY"
+                # Histogram turning negative
+                elif macd_hist < 0 and macd_hist_prev >= 0:
+                    return "SELL"
+
+        elif strategy == "stochastic":
+            stoch_k = indicators.get("stoch_k")
+            stoch_d = indicators.get("stoch_d")
+            if stoch_k is not None and stoch_d is not None:
+                if stoch_k < 20 and stoch_k > stoch_d:
+                    return "BUY"
+                elif stoch_k > 80 and stoch_k < stoch_d:
+                    return "SELL"
+
+        elif strategy == "stochastic_rsi":
+            rsi = indicators.get("rsi")
+            stoch_k = indicators.get("stoch_k")
+            if rsi is not None and stoch_k is not None:
+                if rsi < 40 and stoch_k < 20:
+                    return "BUY"
+                elif rsi > 60 and stoch_k > 80:
+                    return "SELL"
+
+        # === TREND STRATEGIES ===
+        elif strategy == "sma_crossover":
+            sma_short = indicators.get("sma_short")
+            sma_long = indicators.get("sma_long")
+            if sma_short is None or sma_long is None:
+                return None
+            if sma_short > sma_long:
+                return "BUY"
+            elif sma_short < sma_long:
+                return "SELL"
+
+        elif strategy == "ema_crossover":
+            ema_short = indicators.get("ema_short", indicators.get("sma_short"))
+            ema_long = indicators.get("ema_long", indicators.get("sma_long"))
+            if ema_short is not None and ema_long is not None:
+                if ema_short > ema_long:
+                    return "BUY"
+                elif ema_short < ema_long:
+                    return "SELL"
+
+        elif strategy == "triple_ema":
+            ema_short = indicators.get("ema_short", indicators.get("sma_short"))
+            ema_medium = indicators.get("ema_medium", indicators.get("sma_long"))
+            ema_long = indicators.get("ema_long")
+            if ema_short and ema_medium:
+                if ema_short > ema_medium:
+                    return "BUY"
+                elif ema_short < ema_medium:
+                    return "SELL"
+
+        elif strategy == "adx_trend":
+            adx = indicators.get("adx")
+            plus_di = indicators.get("plus_di")
+            minus_di = indicators.get("minus_di")
+            if adx is not None and adx > 25:  # Strong trend
+                if plus_di and minus_di:
+                    if plus_di > minus_di:
+                        return "BUY"
+                    elif minus_di > plus_di:
+                        return "SELL"
+
+        # === MEAN REVERSION STRATEGIES ===
+        elif strategy == "bollinger_bands":
+            price = indicators.get("close")
+            bb_lower = indicators.get("bb_lower")
+            bb_upper = indicators.get("bb_upper")
+            if price and bb_lower and bb_upper:
+                if price < bb_lower:
+                    return "BUY"
+                elif price > bb_upper:
+                    return "SELL"
+
+        elif strategy == "bollinger_squeeze":
+            bb_width = indicators.get("bb_width")
+            bb_width_prev = indicators.get("bb_width_prev", bb_width)
+            price = indicators.get("close")
+            sma = indicators.get("sma_short")
+            if bb_width and bb_width_prev and price and sma:
+                # Squeeze ending (expansion)
+                if bb_width > bb_width_prev * 1.2:
+                    if price > sma:
+                        return "BUY"
+                    elif price < sma:
+                        return "SELL"
+
+        elif strategy == "keltner_channel":
+            price = indicators.get("close")
+            kc_upper = indicators.get("kc_upper", indicators.get("bb_upper"))
+            kc_lower = indicators.get("kc_lower", indicators.get("bb_lower"))
+            if price and kc_lower and kc_upper:
+                if price < kc_lower:
+                    return "BUY"
+                elif price > kc_upper:
+                    return "SELL"
+
+        elif strategy == "mean_reversion":
+            price = indicators.get("close")
+            sma = indicators.get("sma_long")
+            if price and sma and sma > 0:
+                deviation = (price - sma) / sma
+                if deviation < -0.02:  # 2% below mean
+                    return "BUY"
+                elif deviation > 0.02:  # 2% above mean
+                    return "SELL"
+
+        # === VOLUME STRATEGIES ===
+        elif strategy == "volume_breakout":
+            volume = indicators.get("volume")
+            volume_sma = indicators.get("volume_sma")
+            price = indicators.get("close")
+            price_prev = indicators.get("close_prev", price)
+            if volume and volume_sma and price and price_prev:
+                if volume > volume_sma * 2:  # Volume spike
+                    if price > price_prev:
+                        return "BUY"
+                    elif price < price_prev:
+                        return "SELL"
+
+        elif strategy == "obv_divergence":
+            obv = indicators.get("obv")
+            obv_prev = indicators.get("obv_prev", obv)
+            price = indicators.get("close")
+            price_prev = indicators.get("close_prev", price)
+            if obv and price and obv_prev and price_prev:
+                # Bullish divergence
+                if price < price_prev and obv > obv_prev:
+                    return "BUY"
+                # Bearish divergence
+                elif price > price_prev and obv < obv_prev:
+                    return "SELL"
+
+        elif strategy == "vwap_strategy":
+            price = indicators.get("close")
+            vwap = indicators.get("vwap", indicators.get("sma_short"))
+            if price and vwap:
+                if price < vwap * 0.99:  # Below VWAP
+                    return "BUY"
+                elif price > vwap * 1.01:  # Above VWAP
+                    return "SELL"
+
+        # === COMBINED/ADVANCED STRATEGIES ===
+        elif strategy == "macd_rsi_combo":
+            macd = indicators.get("macd")
+            macd_signal = indicators.get("macd_signal")
+            rsi = indicators.get("rsi")
+            if macd and macd_signal and rsi:
+                if macd > macd_signal and rsi < 50:
+                    return "BUY"
+                elif macd < macd_signal and rsi > 50:
+                    return "SELL"
+
+        elif strategy == "trend_momentum":
+            sma_short = indicators.get("sma_short")
+            sma_long = indicators.get("sma_long")
+            rsi = indicators.get("rsi")
+            if sma_short and sma_long and rsi:
+                # Uptrend with momentum
+                if sma_short > sma_long and rsi > 50 and rsi < 70:
+                    return "BUY"
+                # Downtrend with momentum
+                elif sma_short < sma_long and rsi < 50 and rsi > 30:
+                    return "SELL"
+
+        elif strategy == "multi_timeframe":
+            # Use available indicators as proxy for multi-timeframe
+            sma_short = indicators.get("sma_short")
+            sma_long = indicators.get("sma_long")
+            rsi = indicators.get("rsi")
+            if sma_short and sma_long and rsi:
+                if sma_short > sma_long and rsi < 60:
+                    return "BUY"
+                elif sma_short < sma_long and rsi > 40:
+                    return "SELL"
+
+        elif strategy == "support_resistance":
+            price = indicators.get("close")
+            high = indicators.get("high")
+            low = indicators.get("low")
+            if price and high and low:
+                range_size = high - low
+                if range_size > 0:
+                    position = (price - low) / range_size
+                    if position < 0.2:  # Near support
+                        return "BUY"
+                    elif position > 0.8:  # Near resistance
+                        return "SELL"
+
+        elif strategy == "breakout_pullback":
+            price = indicators.get("close")
+            sma = indicators.get("sma_short")
+            high_20 = indicators.get("high_20", indicators.get("bb_upper"))
+            if price and sma and high_20:
+                # Breakout above recent high, wait for pullback to SMA
+                if price > high_20 * 0.98 and price < high_20 * 1.02:
+                    return "BUY"
+
+        elif strategy == "swing_trading":
+            rsi = indicators.get("rsi")
+            sma_short = indicators.get("sma_short")
+            sma_long = indicators.get("sma_long")
+            if rsi and sma_short and sma_long:
+                # Swing low in uptrend
+                if sma_short > sma_long and rsi < 40:
+                    return "BUY"
+                # Swing high in downtrend
+                elif sma_short < sma_long and rsi > 60:
+                    return "SELL"
+
+        elif strategy == "scalping":
+            rsi = indicators.get("rsi")
+            if rsi is not None:
+                # Quick entries on oversold/overbought
+                if rsi < 25:
+                    return "BUY"
+                elif rsi > 75:
+                    return "SELL"
+
+        return None
+
+    def select_strategy(self, strategy_name: str) -> bool:
+        """
+        Select a strategy from the available strategies.
+
+        Args:
+            strategy_name: Name of the strategy to select
+
+        Returns:
+            True if strategy was selected, False if invalid
+        """
+        if strategy_name in self.AVAILABLE_STRATEGIES:
+            old_strategy = self.current_strategy
+            self.current_strategy = strategy_name
+            print(f"🔄 Strategy changed: {old_strategy} → {self.current_strategy}")
+            return True
+        else:
+            print(f"❌ Unknown strategy: {strategy_name}")
+            print(f"   Available: {', '.join(self.AVAILABLE_STRATEGIES[:5])}...")
+            return False
+
+    def get_available_strategies(self) -> list:
+        """Get list of all available strategies"""
+        return self.AVAILABLE_STRATEGIES.copy()
 
     def _save_trade_to_db(self, trade):
         """Save completed trade to database"""
@@ -383,7 +671,7 @@ class RealisticSimulatorService(BaseService):
 
     def _run(self):
         """Main simulator loop"""
-        print("🚀 Realistic Simulator starting...")
+        print("[START] Realistic Simulator starting...")
 
         # Initialize components
         try:
@@ -398,9 +686,9 @@ class RealisticSimulatorService(BaseService):
             symbol: [] for symbol in self.symbols_config.keys()
         }
 
-        print(f"💰 Initial capital: ${self.initial_capital:,.2f}")
-        print(f"📊 Trading {len(self.symbols_config)} symbols")
-        print(f"🎯 Starting strategy: {self.current_strategy}")
+        print(f"[CAPITAL] Initial capital: ${self.initial_capital:,.2f}")
+        print(f"[SYMBOLS] Trading {len(self.symbols_config)} symbols")
+        print(f"[STRATEGY] Starting strategy: {self.current_strategy}")
         print("=" * 60)
 
         try:
@@ -508,7 +796,7 @@ class RealisticSimulatorService(BaseService):
                 # Log status every 5 ticks (FAST mode)
                 if self.tick_count % 5 == 0:
                     print(
-                        f"📊 Tick {self.tick_count} | "
+                        f"[TICK] Tick {self.tick_count} | "
                         f"Cash: ${stats['available_capital']:,.2f} | "
                         f"Positions: ${stats['positions_value']:,.2f} | "
                         f"Total: ${stats['current_capital']:,.2f} | "

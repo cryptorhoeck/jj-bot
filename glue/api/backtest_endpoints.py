@@ -43,8 +43,8 @@ class BacktestRequest(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     initial_capital: Optional[float] = 10000.0
-    commission: Optional[float] = 0.001
-    slippage: Optional[float] = 0.0005
+    commission: Optional[float] = 0.002  # 0.2% realistic taker fee
+    slippage: Optional[float] = 0.005    # 0.5% realistic slippage
     position_size: Optional[float] = 0.1
 
 
@@ -388,7 +388,7 @@ async def run_backtest_with_real_data(
         from modules.backtesting import backtest_data_loader
 
         # Fetch real market data
-        print(f"📊 Fetching real market data for {symbol} ({timeframe})...")
+        print(f"[FETCH] Fetching real market data for {symbol} ({timeframe})...")
         data_result = backtest_data_loader.load_data_for_backtest(
             symbol=symbol,
             timeframe=timeframe,
@@ -419,7 +419,7 @@ async def run_backtest_with_real_data(
                 detail="Failed to load data into backtester"
             )
 
-        print(f"✅ Loaded {len(data_result['data'])} candles from {data_result['metadata']['source']}")
+        print(f"[OK] Loaded {len(data_result['data'])} candles from {data_result['metadata']['source']}")
 
         # Run backtest
         results = backtester.run_backtest(

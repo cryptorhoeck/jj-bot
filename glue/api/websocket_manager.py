@@ -54,7 +54,7 @@ class WebSocketManager:
         event_bus.subscribe("TRADE_APPROVED", self._on_trade_approved)
         event_bus.subscribe("TRADE_REJECTED", self._on_trade_rejected)
 
-        print("✅ WebSocket Manager subscribed to event bus")
+        print("[OK] WebSocket Manager subscribed to event bus")
 
     async def connect(self, websocket: WebSocket):
         """Accept a new WebSocket connection"""
@@ -75,7 +75,7 @@ class WebSocketManager:
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket))
         self.heartbeat_tasks[websocket] = heartbeat_task
 
-        print(f"🔌 WebSocket client connected (total: {len(self.active_connections)})")
+        print(f"[WS] WebSocket client connected (total: {len(self.active_connections)})")
 
     def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection"""
@@ -88,7 +88,7 @@ class WebSocketManager:
             if not task.done():
                 task.cancel()
 
-        print(f"🔌 WebSocket client disconnected (total: {len(self.active_connections)})")
+        print(f"[WS] WebSocket client disconnected (total: {len(self.active_connections)})")
 
     async def _heartbeat_loop(self, websocket: WebSocket):
         """
@@ -107,7 +107,7 @@ class WebSocketManager:
                     })
                     self.stats["heartbeats_sent"] += 1
                 except Exception as e:
-                    print(f"⚠️ Heartbeat failed for client: {e}")
+                    print(f"[WARNING] Heartbeat failed for client: {e}")
                     self.stats["heartbeats_failed"] += 1
                     self.disconnect(websocket)
                     break
@@ -116,7 +116,7 @@ class WebSocketManager:
             # Task was cancelled (connection closed)
             pass
         except Exception as e:
-            print(f"⚠️ Error in heartbeat loop: {e}")
+            print(f"[WARNING] Error in heartbeat loop: {e}")
             self.disconnect(websocket)
 
     async def _send_to_client(self, websocket: WebSocket, message: Dict[str, Any]):
@@ -125,7 +125,7 @@ class WebSocketManager:
             await websocket.send_json(message)
             self.stats["messages_sent"] += 1
         except Exception as e:
-            print(f"⚠️ Error sending to client: {e}")
+            print(f"[WARNING] Error sending to client: {e}")
             self.disconnect(websocket)
 
     def _safe_broadcast(self, message: Dict[str, Any]):
@@ -144,7 +144,7 @@ class WebSocketManager:
             pass
         except Exception as e:
             # Unexpected error - log but don't crash
-            print(f"⚠️ Error scheduling broadcast: {e}")
+            print(f"[WARNING] Error scheduling broadcast: {e}")
 
     async def broadcast(self, message: Dict[str, Any]):
         """Broadcast message to all connected clients"""
@@ -157,7 +157,7 @@ class WebSocketManager:
                 await connection.send_json(message)
                 self.stats["messages_sent"] += 1
             except Exception as e:
-                print(f"⚠️ Error broadcasting: {e}")
+                print(f"[WARNING] Error broadcasting: {e}")
                 disconnected.add(connection)
 
         # Clean up disconnected clients

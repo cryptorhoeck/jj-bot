@@ -47,30 +47,71 @@ def init_symbols_db():
         )
     """)
 
-    # Insert default symbols if table is empty
+    # Insert default symbols if table is empty (verified Kraken USD pairs)
     cursor.execute("SELECT COUNT(*) FROM symbols")
     if cursor.fetchone()[0] == 0:
+        # All symbols verified to exist on Kraken USD markets
         default_symbols = [
+            # Major caps
             ("BTC", "bitcoin", 1, 0),
             ("ETH", "ethereum", 1, 0),
-            ("BNB", "binancecoin", 1, 0),
             ("SOL", "solana", 1, 0),
             ("XRP", "ripple", 1, 0),
-            ("ADA", "cardano", 1, 0),
             ("DOGE", "dogecoin", 1, 0),
+            ("ADA", "cardano", 1, 0),
             ("AVAX", "avalanche-2", 1, 0),
-            ("TRX", "tron", 1, 0),
-            ("LINK", "chainlink", 1, 0),
             ("DOT", "polkadot", 1, 0),
-            ("POL", "polygon", 1, 0),
-            ("WBTC", "wrapped-bitcoin", 1, 0),
-            ("SHIB", "shiba-inu", 1, 0),
+            ("LINK", "chainlink", 1, 0),
+            ("ATOM", "cosmos", 1, 0),
+            # Mid caps
+            ("UNI", "uniswap", 1, 0),
             ("LTC", "litecoin", 1, 0),
             ("BCH", "bitcoin-cash", 1, 0),
-            ("UNI", "uniswap", 1, 0),
             ("XLM", "stellar", 1, 0),
-            ("ATOM", "cosmos", 1, 0),
-            ("ETC", "ethereum-classic", 1, 0)
+            ("ALGO", "algorand", 1, 0),
+            ("MATIC", "matic-network", 1, 0),
+            ("FIL", "filecoin", 1, 0),
+            ("APE", "apecoin", 1, 0),
+            ("AAVE", "aave", 1, 0),
+            ("CRV", "curve-dao-token", 1, 0),
+            # DeFi
+            ("SNX", "havven", 1, 0),
+            ("GRT", "the-graph", 1, 0),
+            ("COMP", "compound-governance-token", 1, 0),
+            ("MKR", "maker", 1, 0),
+            ("SUSHI", "sushi", 1, 0),
+            ("YFI", "yearn-finance", 1, 0),
+            ("1INCH", "1inch", 1, 0),
+            ("LDO", "lido-dao", 1, 0),
+            ("INJ", "injective-protocol", 1, 0),
+            # Gaming/Metaverse
+            ("SAND", "the-sandbox", 1, 0),
+            ("MANA", "decentraland", 1, 0),
+            ("AXS", "axie-infinity", 1, 0),
+            ("ENJ", "enjincoin", 1, 0),
+            ("IMX", "immutable-x", 1, 0),
+            ("BLUR", "blur", 1, 0),
+            # Infrastructure
+            ("STORJ", "storj", 1, 0),
+            ("BAT", "basic-attention-token", 1, 0),
+            ("OMG", "omisego", 1, 0),
+            ("FLR", "flare-networks", 1, 0),
+            # Layer 1s
+            ("NEAR", "near", 1, 0),
+            ("FLOW", "flow", 1, 0),
+            ("XTZ", "tezos", 1, 0),
+            ("ETC", "ethereum-classic", 1, 0),
+            ("TRX", "tron", 1, 0),
+            ("KSM", "kusama", 1, 0),
+            ("APT", "aptos", 1, 0),
+            ("ARB", "arbitrum", 1, 0),
+            ("OP", "optimism", 1, 0),
+            # Privacy/Other
+            ("XMR", "monero", 1, 0),
+            ("SHIB", "shiba-inu", 1, 0),
+            ("ZEC", "zcash", 1, 0),
+            ("DASH", "dash", 1, 0),
+            ("KAVA", "kava", 1, 0),
         ]
 
         cursor.executemany(
@@ -309,6 +350,115 @@ async def get_enabled_symbols() -> Dict[str, Any]:
             "symbols_map": symbols_dict,  # Dict for services that need coingecko_id
             "coingecko_ids": coingecko_ids,
             "count": len(symbols_list)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reset", summary="Reset Symbols to Defaults")
+async def reset_symbols() -> Dict[str, Any]:
+    """
+    Reset symbols database to verified Kraken defaults.
+    Removes all custom symbols and restores the default list.
+
+    Returns:
+        Success status with count of symbols
+    """
+    try:
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Drop and recreate the table
+        cursor.execute("DROP TABLE IF EXISTS symbols")
+        cursor.execute("""
+            CREATE TABLE symbols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT UNIQUE NOT NULL,
+                coingecko_id TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                custom INTEGER DEFAULT 0,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # All symbols verified to exist on Kraken USD markets
+        default_symbols = [
+            # Major caps
+            ("BTC", "bitcoin", 1, 0),
+            ("ETH", "ethereum", 1, 0),
+            ("SOL", "solana", 1, 0),
+            ("XRP", "ripple", 1, 0),
+            ("DOGE", "dogecoin", 1, 0),
+            ("ADA", "cardano", 1, 0),
+            ("AVAX", "avalanche-2", 1, 0),
+            ("DOT", "polkadot", 1, 0),
+            ("LINK", "chainlink", 1, 0),
+            ("ATOM", "cosmos", 1, 0),
+            # Mid caps
+            ("UNI", "uniswap", 1, 0),
+            ("LTC", "litecoin", 1, 0),
+            ("BCH", "bitcoin-cash", 1, 0),
+            ("XLM", "stellar", 1, 0),
+            ("ALGO", "algorand", 1, 0),
+            ("MATIC", "matic-network", 1, 0),
+            ("FIL", "filecoin", 1, 0),
+            ("APE", "apecoin", 1, 0),
+            ("AAVE", "aave", 1, 0),
+            ("CRV", "curve-dao-token", 1, 0),
+            # DeFi
+            ("SNX", "havven", 1, 0),
+            ("GRT", "the-graph", 1, 0),
+            ("COMP", "compound-governance-token", 1, 0),
+            ("MKR", "maker", 1, 0),
+            ("SUSHI", "sushi", 1, 0),
+            ("YFI", "yearn-finance", 1, 0),
+            ("1INCH", "1inch", 1, 0),
+            ("LDO", "lido-dao", 1, 0),
+            ("INJ", "injective-protocol", 1, 0),
+            # Gaming/Metaverse
+            ("SAND", "the-sandbox", 1, 0),
+            ("MANA", "decentraland", 1, 0),
+            ("AXS", "axie-infinity", 1, 0),
+            ("ENJ", "enjincoin", 1, 0),
+            ("IMX", "immutable-x", 1, 0),
+            ("BLUR", "blur", 1, 0),
+            # Infrastructure
+            ("STORJ", "storj", 1, 0),
+            ("BAT", "basic-attention-token", 1, 0),
+            ("OMG", "omisego", 1, 0),
+            ("FLR", "flare-networks", 1, 0),
+            # Layer 1s
+            ("NEAR", "near", 1, 0),
+            ("FLOW", "flow", 1, 0),
+            ("XTZ", "tezos", 1, 0),
+            ("ETC", "ethereum-classic", 1, 0),
+            ("TRX", "tron", 1, 0),
+            ("KSM", "kusama", 1, 0),
+            ("APT", "aptos", 1, 0),
+            ("ARB", "arbitrum", 1, 0),
+            ("OP", "optimism", 1, 0),
+            # Privacy/Other
+            ("XMR", "monero", 1, 0),
+            ("SHIB", "shiba-inu", 1, 0),
+            ("ZEC", "zcash", 1, 0),
+            ("DASH", "dash", 1, 0),
+            ("KAVA", "kava", 1, 0),
+        ]
+
+        cursor.executemany(
+            "INSERT INTO symbols (symbol, coingecko_id, enabled, custom) VALUES (?, ?, ?, ?)",
+            default_symbols
+        )
+
+        conn.commit()
+        conn.close()
+
+        return {
+            "success": True,
+            "message": f"Symbols reset to {len(default_symbols)} verified Kraken defaults",
+            "count": len(default_symbols)
         }
 
     except Exception as e:

@@ -1,14 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { DashboardTab } from "./ImprovedDashboard.jsx";
+import { DashboardTab } from "./DashboardTab.jsx";
 import { TradingTab } from "./TradingTab.jsx";
+import { TrainingTab } from "./TrainingTab.jsx";
 import { DataTab } from "./DataTab.jsx";
-import { MarketChart } from "./MarketChart.jsx";
 import { ConfirmModal } from './components';
+import { LegalDisclaimer, DisclaimerModal } from './LegalDisclaimer';
+import { LoginScreen } from './LoginScreen';
 import './App.css';
 
 const API_BASE = 'http://127.0.0.1:8000';
+
+// Helper to make authenticated API calls
+const authFetch = async (url, options = {}) => {
+  const token = localStorage.getItem('jjbot_access_token');
+  const headers = {
+    ...options.headers,
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+};
 const WS_URL = 'ws://127.0.0.1:8000/ws';
+
+// Available symbols for selection (verified Kraken USD pairs)
+const AVAILABLE_SYMBOLS = [
+  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'ATOM',
+  'UNI', 'LTC', 'BCH', 'XLM', 'ALGO', 'MATIC', 'FIL', 'APE', 'AAVE', 'CRV',
+  'SNX', 'GRT', 'COMP', 'MKR', 'SUSHI', 'YFI', '1INCH', 'LDO', 'INJ',
+  'SAND', 'MANA', 'AXS', 'ENJ', 'IMX', 'BLUR', 'STORJ', 'BAT', 'OMG', 'FLR',
+  'NEAR', 'FLOW', 'XTZ', 'ETC', 'TRX', 'KSM', 'APT', 'ARB', 'OP',
+  'XMR', 'SHIB', 'ZEC', 'DASH', 'KAVA'
+];
+
+// Currency configuration - CAD is the base currency
+// All amounts in the system are stored in CAD
+const CURRENCIES = {
+  CAD: { symbol: 'C$', name: 'Canadian Dollar', code: 'CAD' },
+  USD: { symbol: '$', name: 'US Dollar', code: 'USD' },
+  EUR: { symbol: '€', name: 'Euro', code: 'EUR' },
+  GBP: { symbol: '£', name: 'British Pound', code: 'GBP' },
+  AUD: { symbol: 'A$', name: 'Australian Dollar', code: 'AUD' },
+  JPY: { symbol: '¥', name: 'Japanese Yen', code: 'JPY' },
+  CHF: { symbol: 'Fr', name: 'Swiss Franc', code: 'CHF' },
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -19,32 +55,101 @@ function App() {
     win_rate: 0,
     avg_pnl: 0
   });
-  const [marketData, setMarketData] = useState([]);
-  const [lastMarketUpdate, setLastMarketUpdate] = useState(null);
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true); // Default to dark mode for trading
+  const [currency, setCurrency] = useState(() => {
+    return localStorage.getItem('jjbot_currency') || 'CAD';
+  });
   const [wsConnected, setWsConnected] = useState(false);
   const [realtimeEvents, setRealtimeEvents] = useState([]);
   const [symbols, setSymbols] = useState([]);
   const [learningData, setLearningData] = useState(null);
-  const [marketDataError, setMarketDataError] = useState(null);
-  const [marketDataLoading, setMarketDataLoading] = useState(false);
-  const [lastMarketFetch, setLastMarketFetch] = useState(null);
-  const [marketRefreshInterval, setMarketRefreshInterval] = useState(120000);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('jjbot_access_token');
+  });
+  const [authUser, setAuthUser] = useState(() => {
+    const saved = localStorage.getItem('jjbot_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [authRequired, setAuthRequired] = useState(null); // null = checking, true/false = known
+
+  // Check if auth is required on startup
+  useEffect(() => {
+    const checkAuthRequired = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/status`);
+        const data = await response.json();
+        setAuthRequired(data.auth_enabled);
+
+        // If auth is disabled, mark as authenticated
+        if (!data.auth_enabled) {
+          setIsAuthenticated(true);
+        }
+      } catch (e) {
+        // If can't reach API, assume auth not required
+        setAuthRequired(false);
+        setIsAuthenticated(true);
+      }
+    };
+    checkAuthRequired();
+  }, []);
+
+  const handleLogin = (data) => {
+    setIsAuthenticated(true);
+    setAuthUser(data.user);
+    toast.success(`Welcome back, ${data.user.username}!`);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('jjbot_access_token');
+    localStorage.removeItem('jjbot_refresh_token');
+    localStorage.removeItem('jjbot_user');
+    setIsAuthenticated(false);
+    setAuthUser(null);
+    toast.success('Logged out successfully');
+  };
+
+  // Legal disclaimer acceptance state
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(() => {
+    return localStorage.getItem('jjbot_disclaimer_accepted') === 'true';
+  });
+
+  const handleDisclaimerAccept = () => {
+    localStorage.setItem('jjbot_disclaimer_accepted', 'true');
+    setDisclaimerAccepted(true);
+  };
+
+  // Shared selected symbols for Trading and Training (persisted to localStorage)
+  const [selectedSymbols, setSelectedSymbols] = useState(() => {
+    const saved = localStorage.getItem('jjbot_selected_symbols');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
 
   // Unified Bot Status
   const [botStatus, setBotStatus] = useState({
     running: false,
     mode: 'paper',
     training: null,
-    apiConnected: false
+    apiConnected: false,
+    trading_iq: 0,
+    expertise_level: 'Untrained'
   });
 
   // API connection state
   const [apiReady, setApiReady] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [appVersion, setAppVersion] = useState('3.0.4');  // Default, will be fetched from API
 
   // Check if API is ready
   const checkApiReady = async () => {
@@ -53,6 +158,16 @@ function App() {
       if (response.ok) {
         setApiReady(true);
         setConnectionAttempts(0);
+        // Fetch version from API
+        try {
+          const versionResponse = await fetch(`${API_BASE}/api/system/version`);
+          if (versionResponse.ok) {
+            const versionData = await versionResponse.json();
+            setAppVersion(versionData.version || '3.0.4');
+          }
+        } catch (e) {
+          console.log('Could not fetch version:', e);
+        }
         return true;
       }
     } catch (error) {
@@ -84,6 +199,16 @@ function App() {
     }
   }, [darkMode]);
 
+  // Save currency preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('jjbot_currency', currency);
+  }, [currency]);
+
+  // Save selected symbols to localStorage
+  useEffect(() => {
+    localStorage.setItem('jjbot_selected_symbols', JSON.stringify(selectedSymbols));
+  }, [selectedSymbols]);
+
   // ALL FETCH FUNCTIONS
   const fetchTrades = async () => {
     try {
@@ -105,57 +230,6 @@ function App() {
     }
   };
 
-  const fetchMarketData = async (force = false) => {
-    if (!force && lastMarketFetch) {
-      const timeSinceLastFetch = Date.now() - lastMarketFetch;
-      if (timeSinceLastFetch < marketRefreshInterval) {
-        return;
-      }
-    }
-
-    setMarketDataLoading(true);
-    setMarketDataError(null);
-
-    try {
-      const response = await fetch(`${API_BASE}/api/market/live`);
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : marketRefreshInterval * 2;
-        setMarketDataError(`Rate limited. Waiting ${Math.ceil(waitTime / 1000)}s...`);
-        setMarketRefreshInterval(Math.min(waitTime, 300000));
-        return;
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data && typeof data.data === 'object') {
-          const marketArray = Object.values(data.data).map(coin => ({
-            symbol: coin.symbol,
-            price: coin.usd,
-            change_24h: coin.usd_24h_change || 0,
-            market_cap: coin.usd_market_cap || 0,
-            volume_24h: coin.usd_24h_vol || 0
-          }));
-          setMarketData(marketArray);
-          setLastMarketUpdate(new Date());
-          setLastMarketFetch(Date.now());
-          setMarketDataError(null);
-
-          if (marketRefreshInterval > 120000) {
-            setMarketRefreshInterval(120000);
-          }
-        }
-      } else {
-        setMarketDataError(`Failed to fetch: ${response.status}`);
-      }
-    } catch (error) {
-      setMarketDataError(error.message);
-    } finally {
-      setMarketDataLoading(false);
-    }
-  };
-
   const checkBotStatus = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/pro/status`);
@@ -165,7 +239,9 @@ function App() {
         running: data.running || false,
         mode: data.mode || 'paper',
         training: data.training || null,
-        apiConnected: true
+        apiConnected: true,
+        trading_iq: data.trading_iq || 0,
+        expertise_level: data.expertise_level || 'Untrained'
       });
 
       setSimulatorRunning(data.running || false); // For backward compatibility
@@ -173,6 +249,36 @@ function App() {
       console.error('Error checking bot status:', error);
       setBotStatus(prev => ({ ...prev, apiConnected: false }));
     }
+  };
+
+  // Global stop function for bot/training
+  const stopBot = async () => {
+    const isTraining = botStatus.training?.is_training;
+    setLoading(true);
+
+    if (isTraining) {
+      toast.loading('Stopping training and saving progress...', { id: 'stopping' });
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pro/stop`, { method: 'POST' });
+      const data = await response.json();
+
+      if (data.status === 'stopped') {
+        setBotStatus(prev => ({ ...prev, running: false, training: null }));
+        setSimulatorRunning(false);
+        toast.dismiss('stopping');
+        toast.success(isTraining ? 'Training stopped - progress saved!' : 'Bot stopped');
+        checkBotStatus(); // Refresh status
+      } else {
+        toast.dismiss('stopping');
+        toast.error(data.message || 'Failed to stop');
+      }
+    } catch (error) {
+      toast.dismiss('stopping');
+      toast.error('Error stopping: ' + error.message);
+    }
+    setLoading(false);
   };
 
   const checkSimulatorStatus = async () => {
@@ -334,7 +440,6 @@ function App() {
 
     fetchTrades();
     fetchSummary();
-    fetchMarketData();
     checkSimulatorStatus();
     fetchSymbols();
     fetchLearningData();
@@ -346,20 +451,15 @@ function App() {
       fetchLearningData();
     }, 10000);
 
-    const marketInterval = setInterval(() => {
-      if (activeTab === 'charts') fetchMarketData();
-    }, 120000);
-
     return () => {
       clearInterval(fastInterval);
-      clearInterval(marketInterval);
     };
-  }, [apiReady, activeTab, marketRefreshInterval]);
+  }, [apiReady]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
     { id: 'trading', label: 'Trading', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
-    { id: 'charts', label: 'Charts', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    { id: 'training', label: 'Training', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
     { id: 'data', label: 'Data', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
   ];
 
@@ -374,7 +474,7 @@ function App() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold mb-2">JJ-Bot</h1>
-          <p className="text-muted mb-6">v2.4 Pro</p>
+          <p className="text-muted mb-6">v{appVersion} Pro</p>
 
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="spinner w-5 h-5 border-2 border-info border-t-transparent rounded-full animate-spin"></div>
@@ -395,6 +495,19 @@ function App() {
     );
   }
 
+  // Show login screen if auth is required and not authenticated
+  if (authRequired && !isAuthenticated) {
+    return (
+      <div className={darkMode ? 'dark' : ''}>
+        <LoginScreen
+          onLogin={handleLogin}
+          darkMode={darkMode}
+          API_BASE={API_BASE}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen transition-colors duration-300">
       {/* Premium Header */}
@@ -411,7 +524,7 @@ function App() {
                 </div>
                 <div>
                   <h1 className="logo text-xl font-bold">JJ-Bot</h1>
-                  <p className="text-xs text-muted">v2.4 Pro</p>
+                  <p className="text-xs text-muted">v{appVersion} Pro</p>
                 </div>
               </div>
 
@@ -420,13 +533,18 @@ function App() {
                 <span className={`badge ${botStatus.apiConnected ? 'badge-live' : 'badge-danger'}`}>
                   {botStatus.apiConnected ? '🟢 API' : '🔴 API'}
                 </span>
-                {botStatus.training?.is_training ? (
+                {/* Persistent IQ Score Badge */}
+                <span className="badge" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)', color: 'white' }}>
+                  🧠 {botStatus.trading_iq} IQ
+                </span>
+                {/* Bot Status Badge */}
+                {(botStatus.training?.is_training || (botStatus.mode === 'training' && botStatus.running)) ? (
                   <span className="badge badge-info">
-                    🧠 Training ({botStatus.training.trading_iq || 0} IQ)
+                    ⚡ Training {botStatus.training?.progress_pct ? `(${botStatus.training.progress_pct.toFixed(0)}%)` : ''}
                   </span>
                 ) : botStatus.running ? (
-                  <span className="badge badge-success">
-                    ▶ Trading
+                  <span className={`badge ${botStatus.mode === 'live' ? 'badge-danger' : 'badge-success'}`}>
+                    {botStatus.mode === 'live' ? '🔴 Live Trading' : '▶ Paper Trading'}
                   </span>
                 ) : (
                   <span className="badge badge-warning">
@@ -458,6 +576,48 @@ function App() {
 
             {/* Controls */}
             <div className="flex items-center gap-3">
+              {/* Stop Button - Always visible when running */}
+              {(botStatus.running || botStatus.training?.is_training) && (
+                <button
+                  onClick={stopBot}
+                  disabled={loading}
+                  className="btn btn-danger flex items-center gap-2 px-4 py-2"
+                  title={botStatus.training?.is_training ? "Stop training and save progress" : "Stop trading bot"}
+                >
+                  {loading ? (
+                    <div className="spinner w-4 h-4 border-2" />
+                  ) : (
+                    <>
+                      <span>⏹</span>
+                      <span className="hidden sm:inline">
+                        {botStatus.training?.is_training ? 'Stop Training' : 'Stop Bot'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Currency Selector */}
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="btn btn-ghost px-2 py-1.5 text-sm font-medium cursor-pointer"
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                  color: 'var(--text-primary)',
+                  minWidth: '70px'
+                }}
+                title="Display currency"
+              >
+                {Object.entries(CURRENCIES).map(([code, curr]) => (
+                  <option key={code} value={code}>
+                    {curr.symbol} {code}
+                  </option>
+                ))}
+              </select>
+
               {/* Dark Mode Toggle */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -474,6 +634,20 @@ function App() {
                   </svg>
                 )}
               </button>
+
+              {/* User Menu / Logout */}
+              {authRequired && authUser && (
+                <button
+                  onClick={handleLogout}
+                  className="btn btn-ghost p-2 flex items-center gap-2"
+                  title={`Logged in as ${authUser.username}. Click to logout.`}
+                >
+                  <span className="hidden sm:inline text-sm">{authUser.username}</span>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -505,6 +679,8 @@ function App() {
               summary={summary}
               trades={trades}
               API_BASE={API_BASE}
+              botStatus={botStatus}
+              currency={currency}
             />
           )}
 
@@ -512,14 +688,25 @@ function App() {
             <TradingTab
               darkMode={darkMode}
               API_BASE={API_BASE}
+              authFetch={authFetch}
               learningData={learningData}
+              sharedBotStatus={botStatus}
+              onBotStatusChange={checkBotStatus}
+              selectedSymbols={selectedSymbols}
+              setSelectedSymbols={setSelectedSymbols}
+              availableSymbols={AVAILABLE_SYMBOLS}
             />
           )}
 
-          {activeTab === 'charts' && (
-            <MarketChart
-              darkMode={darkMode}
+          {activeTab === 'training' && (
+            <TrainingTab
               API_BASE={API_BASE}
+              authFetch={authFetch}
+              sharedBotStatus={botStatus}
+              onBotStatusChange={checkBotStatus}
+              selectedSymbols={selectedSymbols}
+              setSelectedSymbols={setSelectedSymbols}
+              availableSymbols={AVAILABLE_SYMBOLS}
             />
           )}
 
@@ -532,7 +719,16 @@ function App() {
             />
           )}
         </div>
+        {/* Legal Disclaimer Footer */}
+        <LegalDisclaimer darkMode={darkMode} />
       </main>
+
+      {/* First-time Disclaimer Modal */}
+      <DisclaimerModal
+        isOpen={!disclaimerAccepted}
+        onAccept={handleDisclaimerAccept}
+        darkMode={darkMode}
+      />
 
       {/* Confirm Modal */}
       <ConfirmModal

@@ -55,6 +55,7 @@ class ServiceManager:
         from services.trading.analytics_service import AnalyticsService
         from services.trading.trading_bot_service import TradingBotService
         from services.trading.strategy_service import StrategyService
+        from services.ai.inference_service import AIInferenceService
 
         # Create real service instances
         self.services = {
@@ -62,7 +63,8 @@ class ServiceManager:
             "market_feed": MarketFeedService(),
             "strategy_engine": StrategyService(),
             "analytics": AnalyticsService(),
-            "trading_bot": TradingBotService()
+            "trading_bot": TradingBotService(),
+            "ai_inference": AIInferenceService()
         }
 
         # Sync with database

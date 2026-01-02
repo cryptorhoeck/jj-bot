@@ -14,7 +14,7 @@ import websockets
 
 try:
     from modules.event_bus import event_bus
-except:
+except ImportError:
     # Fallback if event_bus not available
     class DummyEventBus:
         def publish(self, event, data):
@@ -59,12 +59,12 @@ class RealtimeMarketStream:
 
         while self.active and attempts < self.max_reconnect_attempts:
             try:
-                print(f"📡 Connecting to Kraken WebSocket... (attempt {attempts + 1})")
+                print(f"[KRAKEN] Connecting to Kraken WebSocket... (attempt {attempts + 1})")
 
                 async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as websocket:
                     self.websocket = websocket
                     self.stats["connection_status"] = "connected"
-                    print("✅ Connected to Kraken WebSocket")
+                    print("[OK] Connected to Kraken WebSocket")
 
                     # Subscribe to ticker data
                     subscribe_message = {
@@ -76,7 +76,7 @@ class RealtimeMarketStream:
                     }
 
                     await websocket.send(json.dumps(subscribe_message))
-                    print(f"📊 Subscribed to tickers: {', '.join(symbols)}")
+                    print(f"[SUBSCRIBE] Subscribed to tickers: {', '.join(symbols)}")
 
                     self.subscribed_symbols.update(symbols)
 
@@ -88,23 +88,23 @@ class RealtimeMarketStream:
                         await self._handle_kraken_message(message)
 
             except websockets.exceptions.ConnectionClosed:
-                print("⚠️ Kraken WebSocket connection closed")
+                print("[WARNING] Kraken WebSocket connection closed")
                 self.stats["connection_status"] = "disconnected"
             except Exception as e:
-                print(f"❌ Kraken WebSocket error: {e}")
+                print(f"[ERROR] Kraken WebSocket error: {e}")
                 self.stats["errors"] += 1
                 self.stats["connection_status"] = "error"
 
             # Reconnect if still active
             if self.active:
                 attempts += 1
-                print(f"🔄 Reconnecting in {self.reconnect_delay} seconds...")
+                print(f"[RECONNECT] Reconnecting in {self.reconnect_delay} seconds...")
                 await asyncio.sleep(self.reconnect_delay)
             else:
                 break
 
         self.stats["connection_status"] = "disconnected"
-        print("🔌 Kraken WebSocket disconnected")
+        print("[DISCONNECT] Kraken WebSocket disconnected")
 
     async def _handle_kraken_message(self, message: str):
         """Process incoming Kraken WebSocket messages"""
@@ -117,10 +117,10 @@ class RealtimeMarketStream:
                 if data.get("event") == "heartbeat":
                     return
                 elif data.get("event") == "systemStatus":
-                    print(f"📊 Kraken status: {data.get('status')}")
+                    print(f"[STATUS] Kraken status: {data.get('status')}")
                     return
                 elif data.get("event") == "subscriptionStatus":
-                    print(f"✅ Subscription {data.get('status')}: {data.get('pair')}")
+                    print(f"[OK] Subscription {data.get('status')}: {data.get('pair')}")
                     return
 
             # Handle ticker updates
@@ -204,13 +204,13 @@ class RealtimeMarketStream:
 
         while self.active and attempts < self.max_reconnect_attempts:
             try:
-                print(f"📡 Connecting to Binance WebSocket... (attempt {attempts + 1})")
+                print(f"[BINANCE] Connecting to Binance WebSocket... (attempt {attempts + 1})")
 
                 async with websockets.connect(uri, ping_interval=20) as websocket:
                     self.websocket = websocket
                     self.stats["connection_status"] = "connected"
-                    print("✅ Connected to Binance WebSocket")
-                    print(f"📊 Subscribed to: {', '.join(symbols)}")
+                    print("[OK] Connected to Binance WebSocket")
+                    print(f"[SUBSCRIBE] Subscribed to: {', '.join(symbols)}")
 
                     self.subscribed_symbols.update(symbols)
 
@@ -222,23 +222,23 @@ class RealtimeMarketStream:
                         await self._handle_binance_message(message)
 
             except websockets.exceptions.ConnectionClosed:
-                print("⚠️ Binance WebSocket connection closed")
+                print("[WARNING] Binance WebSocket connection closed")
                 self.stats["connection_status"] = "disconnected"
             except Exception as e:
-                print(f"❌ Binance WebSocket error: {e}")
+                print(f"[ERROR] Binance WebSocket error: {e}")
                 self.stats["errors"] += 1
                 self.stats["connection_status"] = "error"
 
             # Reconnect if still active
             if self.active:
                 attempts += 1
-                print(f"🔄 Reconnecting in {self.reconnect_delay} seconds...")
+                print(f"[RECONNECT] Reconnecting in {self.reconnect_delay} seconds...")
                 await asyncio.sleep(self.reconnect_delay)
             else:
                 break
 
         self.stats["connection_status"] = "disconnected"
-        print("🔌 Binance WebSocket disconnected")
+        print("[DISCONNECT] Binance WebSocket disconnected")
 
     async def _handle_binance_message(self, message: str):
         """Process incoming Binance WebSocket messages"""

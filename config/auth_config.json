@@ -1,0 +1,19 @@
+{
+  "auth_enabled": true,
+  "jwt_secret": "WNvnYCMGpZftb0MK7K4ATcCvoGv8X1duJvyo4jR3ip6DNH9cp4q3dYhswvaw1zoM72Ak-exlkqrHcix3FPL9yg",
+  "jwt_algorithm": "HS256",
+  "access_token_expire_minutes": 60,
+  "refresh_token_expire_days": 7,
+  "api_key_enabled": true,
+  "users": {
+    "admin": {
+      "user_id": "YTsYnKwtRBh426XMRf_FIQ",
+      "username": "admin",
+      "password_hash": "e227727e08a04f1557bf7efed20006a5:a71daacf4cd27836b38424d44900fba044d598535c3eb8453aaf8caf90054802",
+      "role": "admin",
+      "created_at": "2026-01-01T02:18:45.683991",
+      "last_login": null,
+      "api_key": "PwNNsPkAO03lmGkQ10XZeGi2yOIGfT2g4Dk9DlT-OLo"
+    }
+  }
+}

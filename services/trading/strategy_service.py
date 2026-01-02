@@ -49,7 +49,7 @@ class StrategyService(BaseService):
 
     def _run(self):
         """Initialize and run the strategy engine"""
-        print("🧠 Strategy Engine Service starting...")
+        print("[STRATEGY] Strategy Engine Service starting...")
 
         try:
             # Create and start the strategy engine
@@ -68,7 +68,7 @@ class StrategyService(BaseService):
             # Start the engine
             if self.engine.start():
                 self.stats["start_time"] = datetime.now().isoformat()
-                print("✅ Strategy Engine started successfully")
+                print("[OK] Strategy Engine started successfully")
                 print(f"   RSI Oversold: {self.engine.rsi_oversold}")
                 print(f"   RSI Overbought: {self.engine.rsi_overbought}")
                 print(f"   SMA Fast: {self.engine.sma_fast}")
@@ -80,11 +80,11 @@ class StrategyService(BaseService):
                     self.stats["symbols_tracked"] = len(self.engine.price_history)
                     time.sleep(1)
             else:
-                print("❌ Failed to start Strategy Engine")
+                print("[ERROR] Failed to start Strategy Engine")
                 self.status = "stopped"
 
         except Exception as e:
-            print(f"❌ Strategy Engine error: {e}")
+            print(f"[ERROR] Strategy Engine error: {e}")
             self.status = "stopped"
 
     def _cleanup(self):
@@ -92,9 +92,9 @@ class StrategyService(BaseService):
         if self.engine:
             try:
                 self.engine.stop()
-                print("🛑 Strategy Engine stopped")
+                print("[STOP] Strategy Engine stopped")
             except Exception as e:
-                print(f"⚠️ Error stopping engine: {e}")
+                print(f"[WARNING] Error stopping engine: {e}")
 
     def _on_trading_signal(self, event: Dict):
         """Track trading signals for stats"""
@@ -114,7 +114,7 @@ class StrategyService(BaseService):
                 self.stats["sell_signals"] += 1
 
         except Exception as e:
-            print(f"⚠️ Error tracking signal: {e}")
+            print(f"[WARNING] Error tracking signal: {e}")
 
     def get_current_signals(self) -> Dict[str, Any]:
         """
@@ -179,9 +179,9 @@ class StrategyService(BaseService):
                 if "sma_slow" in new_config:
                     self.engine.sma_slow = new_config["sma_slow"]
 
-            print(f"✅ Strategy configuration updated: {new_config}")
+            print(f"[OK] Strategy configuration updated: {new_config}")
             return True
 
         except Exception as e:
-            print(f"❌ Error updating config: {e}")
+            print(f"[ERROR] Error updating config: {e}")
             return False

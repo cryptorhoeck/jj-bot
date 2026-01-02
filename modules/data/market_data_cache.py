@@ -107,7 +107,7 @@ class MarketDataCache:
             """)
 
             conn.commit()
-            print("✅ Market data cache DB initialized")
+            print("[OK] Market data cache DB initialized")
 
     def store_candles(self, symbol: str, source: str, timeframe: str, candles: List[Dict]) -> int:
         """
@@ -402,7 +402,7 @@ class MarketDataCache:
         """Optimize database by running VACUUM (reclaim space after deletions)"""
         with self._get_connection() as conn:
             conn.execute("VACUUM")
-            print("✅ Database optimized (VACUUM completed)")
+            print("[OK] Database optimized (VACUUM completed)")
 
 
 # Singleton instance

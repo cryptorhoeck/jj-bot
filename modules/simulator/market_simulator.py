@@ -173,8 +173,8 @@ class MarketSimulator:
     def __init__(
         self,
         initial_capital: float = 10000.0,
-        commission_rate: float = 0.001,     # 0.1%
-        slippage_rate: float = 0.0005,      # 0.05%
+        commission_rate: float = 0.002,     # 0.2% (realistic taker fee)
+        slippage_rate: float = 0.005,       # 0.5% (realistic for crypto)
         position_size_pct: float = 0.10,    # 10% of capital per trade
         use_stop_loss: bool = True,
         stop_loss_pct: float = 0.02,        # 2% stop-loss

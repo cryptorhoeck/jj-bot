@@ -126,7 +126,7 @@ class ActorCritic(nn.Module):
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
 
-        return log_probs, state_values.squeeze(), entropy
+        return log_probs, state_values.squeeze(-1), entropy
 
 
 class PPOAgent:
@@ -149,7 +149,7 @@ class PPOAgent:
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
         clip_epsilon: float = 0.2,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.05,  # Higher entropy for better exploration
         value_coef: float = 0.5,
         max_grad_norm: float = 0.5,
         n_epochs: int = 10,
@@ -178,7 +178,8 @@ class PPOAgent:
         # Networks
         self.policy = ActorCritic(state_dim, action_dim, hidden_dims).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1000, gamma=0.95)
+        # Gentler LR decay: reduce by 1% every 5000 episodes (maintains ~60% LR after 50k episodes)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5000, gamma=0.99)
 
         # Experience buffer
         self.buffer: List[Experience] = []
@@ -194,18 +195,41 @@ class PPOAgent:
         }
         self.episode_count = 0
 
-    def select_action(self, state: np.ndarray, training: bool = True) -> Tuple[int, float, float]:
-        """Select action given current state"""
+    def select_action(self, state: np.ndarray, training: bool = True, temperature: float = 0.5) -> Tuple[int, float, float]:
+        """
+        Select action given current state
+
+        Args:
+            state: Current observation
+            training: If True, use stochastic sampling. If False, use temperature-scaled sampling.
+            temperature: For inference only. Lower = more deterministic (0.5 default for live trading)
+                        Set to 0.0 for pure greedy (argmax), 1.0 for same as training
+        """
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
             if training:
+                # Training: Use stochastic sampling from the policy
                 action, log_prob, value = self.policy.get_action(state_tensor)
             else:
-                # Greedy action for evaluation
+                # Inference: Use temperature-scaled sampling for consistency with training
+                # but with reduced randomness for more reliable decisions
                 action_probs, value = self.policy(state_tensor)
-                action = torch.argmax(action_probs, dim=-1).item()
-                log_prob = torch.log(action_probs[0, action]).item()
+
+                if temperature <= 0.01:
+                    # Pure greedy (argmax)
+                    action = torch.argmax(action_probs, dim=-1).item()
+                else:
+                    # Temperature-scaled softmax sampling
+                    # Lower temperature = more deterministic
+                    scaled_logits = torch.log(action_probs + 1e-8) / temperature
+                    scaled_probs = torch.softmax(scaled_logits, dim=-1)
+
+                    # Sample from the temperature-scaled distribution
+                    dist = torch.distributions.Categorical(scaled_probs)
+                    action = dist.sample().item()
+
+                log_prob = torch.log(action_probs[0, action] + 1e-8).item()
                 value = value.item()
 
         return action, log_prob, value
@@ -237,17 +261,19 @@ class PPOAgent:
         returns = np.zeros(len(rewards), dtype=np.float32)
 
         gae = 0
-        next_value = 0
+        # Bootstrap from next state value (not current state)
+        # For the last step, use 0 if done, otherwise need next state value
+        # Since we don't have next_state value here, we estimate with last value
+        next_value = 0 if dones[-1] else values[-1]
 
         for t in reversed(range(len(rewards))):
-            if t == len(rewards) - 1:
-                next_value = 0 if dones[t] else values[t]
-
+            # Calculate TD error: r + γV(s') - V(s)
             delta = rewards[t] + self.gamma * next_value * (1 - dones[t]) - values[t]
             gae = delta + self.gamma * self.gae_lambda * (1 - dones[t]) * gae
             advantages[t] = gae
             returns[t] = gae + values[t]
 
+            # For next iteration, the "next_value" is current value
             next_value = values[t]
 
         return advantages, returns
@@ -268,8 +294,12 @@ class PPOAgent:
         # Compute advantages
         advantages, returns = self.compute_gae(rewards, values, dones)
 
-        # Normalize advantages
+        # Normalize advantages (standard practice)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        # Normalize returns to prevent value loss explosion
+        # This is critical when rewards accumulate to large values
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
         # Convert to tensors
         states_tensor = torch.FloatTensor(states).to(self.device)
@@ -282,6 +312,8 @@ class PPOAgent:
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
+        total_clip_fraction = 0
+        total_grad_norm = 0
 
         n_samples = len(self.buffer)
         indices = np.arange(n_samples)
@@ -311,6 +343,9 @@ class PPOAgent:
                 surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * batch_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
+                # Track how often clipping occurs (helpful for tuning clip_epsilon)
+                clip_fraction = torch.mean(((ratio - 1.0).abs() > self.clip_epsilon).float()).item()
+
                 # Value loss
                 value_loss = nn.functional.mse_loss(state_values, batch_returns)
 
@@ -327,12 +362,18 @@ class PPOAgent:
                 # Backward pass
                 self.optimizer.zero_grad()
                 loss.backward()
+
+                # Compute gradient norm before clipping (for monitoring)
+                grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.policy.parameters() if p.grad is not None) ** 0.5
+
                 nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
                 total_entropy += entropy.mean().item()
+                total_clip_fraction += clip_fraction
+                total_grad_norm += grad_norm
 
         # Update learning rate
         self.scheduler.step()
@@ -347,6 +388,8 @@ class PPOAgent:
             "value_loss": total_value_loss / n_updates,
             "entropy": total_entropy / n_updates,
             "learning_rate": self.optimizer.param_groups[0]["lr"],
+            "clip_fraction": total_clip_fraction / n_updates,
+            "gradient_norm": total_grad_norm / n_updates,
         }
 
         # Store stats
@@ -449,7 +492,7 @@ class A2CAgent(PPOAgent):
         action_dim: int,
         learning_rate: float = 3e-4,
         gamma: float = 0.99,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.05,  # Higher entropy for better exploration
         value_coef: float = 0.5,
         max_grad_norm: float = 0.5,
         hidden_dims: List[int] = [256, 128, 64],

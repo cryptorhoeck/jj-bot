@@ -41,9 +41,9 @@ class PriceGenerationSettings(BaseModel):
 
 
 class TradingMechanicsSettings(BaseModel):
-    """Trading mechanics settings"""
-    commission_rate: float = Field(0.001, ge=0.0, le=0.01, description="Commission rate (0-1%)")
-    slippage_rate: float = Field(0.0005, ge=0.0, le=0.01, description="Slippage rate (0-1%)")
+    """Trading mechanics settings - REALISTIC VALUES"""
+    commission_rate: float = Field(0.002, ge=0.0, le=0.01, description="Commission rate (default 0.2% realistic)")
+    slippage_rate: float = Field(0.005, ge=0.0, le=0.02, description="Slippage rate (default 0.5% realistic)")
     position_size_pct: float = Field(0.10, ge=0.01, le=1.0, description="Position size as % of capital (1-100%)")
     max_open_positions: int = Field(5, ge=1, le=20, description="Maximum open positions (1-20)")
 

@@ -1,0 +1,96 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-01T14:03:05.273919",
+    "initial_capital": 10000.0,
+    "commission": 0.002,
+    "slippage": 0.005,
+    "days_tested": 365
+  },
+  "summary": {
+    "avg_strategy_return": 0.06360102905876022,
+    "avg_walk_forward_return": 0.0434167329985489,
+    "avg_buy_hold_return": 0.5134044717018467,
+    "avg_outperformance": -0.4498034426430865,
+    "avg_sharpe_ratio": 0.5892964224871633,
+    "avg_win_rate": 0.6133333333333334,
+    "profitable_scenarios": 4,
+    "beats_baseline_count": 2
+  },
+  "scenarios": {
+    "Bull Market": {
+      "config": {
+        "name": "Bull Market",
+        "trend": 0.0003,
+        "volatility": 0.02
+      },
+      "strategy_return": 0.05846473868717021,
+      "walk_forward_return": 0.04777392618509057,
+      "buy_hold_return": 3.767846532801627,
+      "outperformance": -3.7093817941144565,
+      "sharpe_ratio": 1.105914086348716,
+      "max_drawdown": 0.008436324769314782,
+      "win_rate": 0.6666666666666666,
+      "total_trades": 3
+    },
+    "Bear Market": {
+      "config": {
+        "name": "Bear Market",
+        "trend": -0.0003,
+        "volatility": 0.025
+      },
+      "strategy_return": -0.026371840450532546,
+      "walk_forward_return": -0.006838245191464921,
+      "buy_hold_return": -0.914,
+      "outperformance": 0.8876281595494675,
+      "sharpe_ratio": -0.942895067237374,
+      "max_drawdown": 0.03187889943747451,
+      "win_rate": 0.4,
+      "total_trades": 5
+    },
+    "Sideways": {
+      "config": {
+        "name": "Sideways",
+        "trend": 0.0,
+        "volatility": 0.015
+      },
+      "strategy_return": 0.028331369632511996,
+      "walk_forward_return": 0.011545315278149974,
+      "buy_hold_return": 0.06250119202380097,
+      "outperformance": -0.034169822391288976,
+      "sharpe_ratio": 1.1820893197609672,
+      "max_drawdown": 0.0008761344958328584,
+      "win_rate": 0.6666666666666666,
+      "total_trades": 3
+    },
+    "High Volatility": {
+      "config": {
+        "name": "High Volatility",
+        "trend": 0.0001,
+        "volatility": 0.04
+      },
+      "strategy_return": 0.25518172288615826,
+      "walk_forward_return": 0.12063708619719764,
+      "buy_hold_return": 0.46833570161567534,
+      "outperformance": -0.21315397872951708,
+      "sharpe_ratio": 1.5298843909748343,
+      "max_drawdown": 0.00035000000000002645,
+      "win_rate": 1.0,
+      "total_trades": 3
+    },
+    "Crash & Recovery": {
+      "config": {
+        "name": "Crash & Recovery",
+        "trend": -0.0001,
+        "volatility": 0.05
+      },
+      "strategy_return": 0.002399154538493167,
+      "walk_forward_return": 0.043965582523771266,
+      "buy_hold_return": -0.8176610679318698,
+      "outperformance": 0.8200602224703629,
+      "sharpe_ratio": 0.07148938258867278,
+      "max_drawdown": 0.040151963236213485,
+      "win_rate": 0.3333333333333333,
+      "total_trades": 3
+    }
+  }
+}

@@ -44,7 +44,7 @@ def log_error(error: Exception, context: Optional[Dict[str, Any]] = None):
         f.write(json.dumps(error_entry) + "\n")
 
     # Also print to console
-    print(f"❌ ERROR [{timestamp}]: {type(error).__name__}: {error}")
+    print(f"[ERROR] [{timestamp}]: {type(error).__name__}: {error}")
     if context:
         print(f"   Context: {context}")
 
@@ -113,7 +113,7 @@ def save_service_state(service_name: str, state: Dict[str, Any]):
             json.dump(all_states, f, indent=2)
 
     except Exception as e:
-        print(f"⚠️ Failed to save service state: {e}")
+        print(f"[WARNING] Failed to save service state: {e}")
 
 
 def load_service_state(service_name: str) -> Optional[Dict[str, Any]]:
@@ -138,7 +138,7 @@ def load_service_state(service_name: str) -> Optional[Dict[str, Any]]:
             return service_data.get("state")
 
     except Exception as e:
-        print(f"⚠️ Failed to load service state: {e}")
+        print(f"[WARNING] Failed to load service state: {e}")
 
     return None
 
@@ -164,7 +164,7 @@ def clear_service_state(service_name: str):
                 json.dump(all_states, f, indent=2)
 
     except Exception as e:
-        print(f"⚠️ Failed to clear service state: {e}")
+        print(f"[WARNING] Failed to clear service state: {e}")
 
 
 def get_recent_errors(limit: int = 50) -> list:
@@ -194,7 +194,7 @@ def get_recent_errors(limit: int = 50) -> list:
         return errors[-limit:]
 
     except Exception as e:
-        print(f"⚠️ Failed to load errors: {e}")
+        print(f"[WARNING] Failed to load errors: {e}")
         return []
 
 
@@ -260,7 +260,7 @@ class CircuitBreaker:
 
             if self.failure_count >= self.failure_threshold:
                 self.state = "open"
-                print(f"⚠️ Circuit breaker opened after {self.failure_count} failures")
+                print(f"[WARNING] Circuit breaker opened after {self.failure_count} failures")
 
             raise e
 

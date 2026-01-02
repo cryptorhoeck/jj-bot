@@ -7,14 +7,76 @@ import ccxt
 import ccxt.pro as ccxtpro
 import asyncio
 import logging
-from typing import Dict, List, Optional, Callable, Any
+import random
+from typing import Dict, List, Optional, Callable, Any, TypeVar, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import json
+from functools import wraps
 
 
 logger = logging.getLogger(__name__)
+
+# Type variable for generic retry function
+T = TypeVar('T')
+
+
+async def retry_with_backoff(
+    operation: Callable[[], Coroutine[Any, Any, T]],
+    max_retries: int = 4,
+    base_delay: float = 2.0,
+    max_delay: float = 30.0,
+    retryable_exceptions: tuple = (
+        ccxt.NetworkError,
+        ccxt.ExchangeNotAvailable,
+        ccxt.RequestTimeout,
+        ccxt.RateLimitExceeded,
+    ),
+    operation_name: str = "operation"
+) -> Optional[T]:
+    """
+    Retry an async operation with exponential backoff.
+
+    Args:
+        operation: Async callable to retry
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay in seconds (doubles each retry)
+        max_delay: Maximum delay cap
+        retryable_exceptions: Tuple of exceptions to retry on
+        operation_name: Name for logging
+
+    Returns:
+        Result of operation or None if all retries failed
+    """
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return await operation()
+        except retryable_exceptions as e:
+            last_exception = e
+            if attempt < max_retries:
+                # Calculate delay with jitter to prevent thundering herd
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                jitter = random.uniform(0, delay * 0.1)  # 10% jitter
+                total_delay = delay + jitter
+
+                logger.warning(
+                    f"{operation_name} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                    f"Retrying in {total_delay:.1f}s..."
+                )
+                await asyncio.sleep(total_delay)
+            else:
+                logger.error(
+                    f"{operation_name} failed after {max_retries + 1} attempts: {e}"
+                )
+        except Exception as e:
+            # Non-retryable exception
+            logger.error(f"{operation_name} failed with non-retryable error: {e}")
+            raise
+
+    return None
 
 
 class ExchangeType(Enum):
@@ -131,6 +193,16 @@ class CCXTConnector:
     Supports REST API and WebSocket connections
     """
 
+    # Class-level error throttling to prevent log flooding
+    _last_ws_error_log: datetime = None
+    _ws_error_count: int = 0
+    _ws_error_throttle_seconds: float = 10.0  # Only log WS errors every 10 seconds
+
+    # Reconnection settings
+    RECONNECT_MAX_RETRIES: int = 10
+    RECONNECT_BASE_DELAY: float = 1.0  # seconds
+    RECONNECT_MAX_DELAY: float = 60.0  # seconds
+
     # Exchange-specific configurations
     EXCHANGE_CONFIGS = {
         ExchangeType.BINANCE: {
@@ -180,6 +252,11 @@ class CCXTConnector:
         self._ws_callbacks: Dict[str, List[Callable]] = {}
         self._running = False
         self._ws_tasks: List[asyncio.Task] = []
+        # Connection state tracking
+        self._connected = False
+        self._ws_connected = False
+        self._reconnect_attempt = 0
+        self._last_successful_operation = datetime.now()
 
     async def connect(self) -> bool:
         """Initialize exchange connection"""
@@ -215,11 +292,53 @@ class CCXTConnector:
 
             mode = "paper" if self.sandbox else "live"
             logger.info(f"Connected to {exchange_id} ({mode} mode - using live prices)")
+            self._connected = True
+            self._reconnect_attempt = 0
+            self._last_successful_operation = datetime.now()
             return True
 
         except Exception as e:
             logger.error(f"Failed to connect to exchange: {e}")
+            self._connected = False
             return False
+
+    async def reconnect_with_backoff(self) -> bool:
+        """
+        Attempt to reconnect with exponential backoff.
+        Returns True if reconnection successful.
+        """
+        for attempt in range(self.RECONNECT_MAX_RETRIES):
+            self._reconnect_attempt = attempt + 1
+
+            # Calculate delay with exponential backoff
+            delay = min(
+                self.RECONNECT_BASE_DELAY * (2 ** attempt),
+                self.RECONNECT_MAX_DELAY
+            )
+
+            logger.warning(f"Reconnection attempt {attempt + 1}/{self.RECONNECT_MAX_RETRIES} "
+                          f"in {delay:.1f}s...")
+
+            await asyncio.sleep(delay)
+
+            # Try to reconnect
+            self._connected = False
+            self.exchange = None
+
+            if await self.connect():
+                logger.info(f"Reconnected successfully after {attempt + 1} attempts")
+                return True
+
+        logger.error(f"Failed to reconnect after {self.RECONNECT_MAX_RETRIES} attempts")
+        return False
+
+    async def ensure_connected(self) -> bool:
+        """Ensure exchange is connected, reconnecting if necessary."""
+        if self._connected and self.exchange:
+            return True
+
+        logger.warning("Exchange disconnected, attempting reconnection...")
+        return await self.reconnect_with_backoff()
 
     async def connect_websocket(self) -> bool:
         """Initialize WebSocket connection for real-time data"""
@@ -242,8 +361,11 @@ class CCXTConnector:
                 if self.credentials.password:
                     config["password"] = self.credentials.password
 
-            if self.sandbox:
-                config["sandbox"] = True
+            # NOTE: Don't set sandbox mode for WebSocket connections
+            # - WebSocket is used for real-time market data (read-only)
+            # - Many exchanges (Kraken, etc.) don't have sandbox WebSocket URLs
+            # - For paper trading, we use live market data but simulate trades
+            # - This is intentional - sandbox mode only affects order execution
 
             self.ws_exchange = ws_class(config)
             self._running = True
@@ -277,6 +399,26 @@ class CCXTConnector:
                     logger.debug(f"Exchange close error: {e}")
 
         logger.info("Exchange connections closed")
+
+    def _log_ws_error(self, stream_type: str, error: Exception):
+        """Log WebSocket errors with throttling to prevent log flooding"""
+        CCXTConnector._ws_error_count += 1
+        now = datetime.now()
+
+        # Check if we should log
+        should_log = False
+        if CCXTConnector._last_ws_error_log is None:
+            should_log = True
+        elif (now - CCXTConnector._last_ws_error_log).total_seconds() >= CCXTConnector._ws_error_throttle_seconds:
+            should_log = True
+
+        if should_log:
+            if CCXTConnector._ws_error_count > 1:
+                logger.warning(f"WebSocket {stream_type} error ({CCXTConnector._ws_error_count} errors): {error}")
+            else:
+                logger.warning(f"WebSocket {stream_type} error: {error}")
+            CCXTConnector._last_ws_error_log = now
+            CCXTConnector._ws_error_count = 0
 
     # ========== Market Data Methods ==========
 
@@ -313,9 +455,24 @@ class CCXTConnector:
             if not self.exchange:
                 await self.connect()
 
-            tickers = await asyncio.to_thread(
-                self.exchange.fetch_tickers, symbols
-            )
+            # Try fetching all at once first
+            try:
+                tickers = await asyncio.to_thread(
+                    self.exchange.fetch_tickers, symbols
+                )
+            except Exception as batch_err:
+                # If batch fetch fails (invalid symbol), fetch one by one
+                logger.warning(f"Batch ticker fetch failed, trying individual: {batch_err}")
+                tickers = {}
+                for symbol in (symbols or []):
+                    try:
+                        ticker = await asyncio.to_thread(
+                            self.exchange.fetch_ticker, symbol
+                        )
+                        tickers[symbol] = ticker
+                    except Exception as sym_err:
+                        logger.debug(f"Skipping invalid symbol {symbol}: {sym_err}")
+                        continue
 
             result = {}
             for symbol, ticker in tickers.items():
@@ -454,7 +611,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"Ticker stream error: {e}")
+                    self._log_ws_error("ticker", e)
                     await asyncio.sleep(1)
 
         task = asyncio.create_task(ticker_loop())
@@ -490,7 +647,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OHLCV stream error: {e}")
+                    self._log_ws_error("OHLCV", e)
                     # Exponential backoff on errors (1s, 2s, 4s, 8s, max 30s)
                     if not hasattr(ohlcv_loop, '_backoff'):
                         ohlcv_loop._backoff = 1
@@ -526,7 +683,7 @@ class CCXTConnector:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"OrderBook stream error: {e}")
+                    self._log_ws_error("orderbook", e)
                     await asyncio.sleep(1)
 
         task = asyncio.create_task(orderbook_loop())
@@ -535,24 +692,27 @@ class CCXTConnector:
     # ========== Trading Methods ==========
 
     async def create_order(self, order: OrderRequest) -> Optional[OrderResult]:
-        """Create a new order"""
-        try:
-            if not self.exchange:
-                await self.connect()
+        """Create a new order with automatic retry and exponential backoff"""
+        # Pre-flight checks (don't retry these)
+        if not await self.ensure_connected():
+            logger.error("Cannot create order - exchange not connected")
+            return None
 
-            if not self.credentials:
-                logger.error("Cannot create order without credentials")
-                return None
+        if not self.credentials:
+            logger.error("Cannot create order without credentials")
+            return None
 
-            # Build order parameters
-            params = order.params.copy()
+        # Build order parameters
+        params = order.params.copy()
 
-            # Add stop loss / take profit if supported
-            if order.stop_loss:
-                params["stopLoss"] = {"triggerPrice": order.stop_loss}
-            if order.take_profit:
-                params["takeProfit"] = {"triggerPrice": order.take_profit}
+        # Add stop loss / take profit if supported
+        if order.stop_loss:
+            params["stopLoss"] = {"triggerPrice": order.stop_loss}
+        if order.take_profit:
+            params["takeProfit"] = {"triggerPrice": order.take_profit}
 
+        async def _execute_order():
+            """Inner function for retry wrapper"""
             result = await asyncio.to_thread(
                 self.exchange.create_order,
                 order.symbol,
@@ -562,6 +722,9 @@ class CCXTConnector:
                 order.price,
                 params
             )
+
+            # Track successful operation
+            self._last_successful_operation = datetime.now()
 
             return OrderResult(
                 order_id=result["id"],
@@ -579,31 +742,57 @@ class CCXTConnector:
                 raw=result
             )
 
+        try:
+            return await retry_with_backoff(
+                _execute_order,
+                max_retries=4,
+                base_delay=2.0,
+                operation_name=f"create_order({order.symbol} {order.side.value})"
+            )
+        except ccxt.InsufficientFunds as e:
+            logger.error(f"Insufficient funds for order: {e}")
+            return None
+        except ccxt.InvalidOrder as e:
+            logger.error(f"Invalid order parameters: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error creating order: {e}")
+            logger.error(f"Unexpected error creating order: {e}")
             return None
 
     async def cancel_order(self, order_id: str, symbol: str) -> bool:
-        """Cancel an open order"""
-        try:
-            if not self.exchange:
-                await self.connect()
+        """Cancel an open order with retry logic"""
+        if not await self.ensure_connected():
+            logger.error("Cannot cancel order - exchange not connected")
+            return False
 
+        async def _cancel():
             await asyncio.to_thread(
                 self.exchange.cancel_order, order_id, symbol
             )
             return True
 
+        try:
+            result = await retry_with_backoff(
+                _cancel,
+                max_retries=3,
+                base_delay=1.0,
+                operation_name=f"cancel_order({order_id})"
+            )
+            return result is True
+        except ccxt.OrderNotFound:
+            logger.warning(f"Order {order_id} not found (may already be filled/canceled)")
+            return True  # Consider it canceled if not found
         except Exception as e:
             logger.error(f"Error canceling order {order_id}: {e}")
             return False
 
     async def get_order(self, order_id: str, symbol: str) -> Optional[OrderResult]:
-        """Get order status"""
-        try:
-            if not self.exchange:
-                await self.connect()
+        """Get order status with retry logic"""
+        if not await self.ensure_connected():
+            logger.error("Cannot get order - exchange not connected")
+            return None
 
+        async def _fetch_order():
             result = await asyncio.to_thread(
                 self.exchange.fetch_order, order_id, symbol
             )
@@ -623,9 +812,79 @@ class CCXTConnector:
                 raw=result
             )
 
+        try:
+            return await retry_with_backoff(
+                _fetch_order,
+                max_retries=3,
+                base_delay=1.0,
+                operation_name=f"get_order({order_id})"
+            )
+        except ccxt.OrderNotFound:
+            logger.warning(f"Order {order_id} not found")
+            return None
         except Exception as e:
             logger.error(f"Error fetching order {order_id}: {e}")
             return None
+
+    async def wait_for_order_fill(
+        self,
+        order_id: str,
+        symbol: str,
+        timeout_seconds: float = 30.0,
+        poll_interval: float = 0.5
+    ) -> Optional[OrderResult]:
+        """
+        Wait for an order to be filled with polling.
+
+        Args:
+            order_id: The order ID to monitor
+            symbol: Trading pair symbol
+            timeout_seconds: Maximum time to wait (default 30s)
+            poll_interval: Time between status checks (default 0.5s)
+
+        Returns:
+            Final OrderResult if filled/closed, None if timeout or error
+        """
+        start_time = datetime.now()
+        last_status = None
+
+        while True:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed >= timeout_seconds:
+                logger.warning(f"Order {order_id} timeout after {elapsed:.1f}s - last status: {last_status}")
+                return None
+
+            try:
+                order = await self.get_order(order_id, symbol)
+                if not order:
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                last_status = order.status
+
+                # Check if order is complete
+                if order.status in [OrderStatus.CLOSED]:
+                    if order.filled > 0:
+                        logger.info(f"Order {order_id} filled: {order.filled}/{order.amount} @ ${order.price:.2f}")
+                        return order
+                    else:
+                        logger.warning(f"Order {order_id} closed but not filled")
+                        return order
+
+                # Check if order was canceled or rejected
+                if order.status in [OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED]:
+                    logger.warning(f"Order {order_id} {order.status.value}")
+                    return order
+
+                # Check for partial fill - continue waiting but log progress
+                if order.filled > 0 and order.remaining > 0:
+                    fill_pct = order.filled / order.amount * 100
+                    logger.debug(f"Order {order_id} partial fill: {fill_pct:.1f}%")
+
+            except Exception as e:
+                logger.warning(f"Error polling order {order_id}: {e}")
+
+            await asyncio.sleep(poll_interval)
 
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderResult]:
         """Get all open orders"""

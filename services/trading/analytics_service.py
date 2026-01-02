@@ -56,7 +56,7 @@ class AnalyticsService(BaseService):
 
     def _run(self):
         """Analyze trading performance in a loop"""
-        print(f"📊 Analytics Service starting (update every {self.config['update_interval']}s)...")
+        print(f"[ANALYTICS] Analytics Service starting (update every {self.config['update_interval']}s)...")
 
         while self.status == "running":
             try:
@@ -137,8 +137,8 @@ class AnalyticsService(BaseService):
                     day = timestamp.split('T')[0]
                     trades_by_day[day]["count"] += 1
                     trades_by_day[day]["pnl"] += pnl
-                except:
-                    pass
+                except (IndexError, AttributeError, TypeError):
+                    pass  # Skip if timestamp format is invalid
 
             # Calculate metrics
             total_trades = len(trades)

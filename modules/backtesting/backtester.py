@@ -41,10 +41,12 @@ class Backtester:
         # Performance metrics
         self.metrics = {}
 
-        # Configuration
+        # Configuration - REALISTIC VALUES for actual trading
+        # Commission: 0.2% (Kraken taker: 0.26%, Binance taker: 0.1%)
+        # Slippage: 0.5% base (can spike to 2% during volatility)
         self.config = {
-            "commission": 0.001,  # 0.1% per trade
-            "slippage": 0.0005,   # 0.05% slippage
+            "commission": 0.002,  # 0.2% per trade (realistic taker fee)
+            "slippage": 0.005,    # 0.5% slippage (realistic for crypto)
             "position_size": 0.1   # 10% of capital per position
         }
 
@@ -219,7 +221,7 @@ class Backtester:
         # Calculate performance metrics
         self.metrics = self._calculate_metrics()
 
-        print(f"✅ Backtest complete: {len(self.trades)} trades executed")
+        print(f"[OK] Backtest complete: {len(self.trades)} trades executed")
 
         return {
             "symbol": symbol,

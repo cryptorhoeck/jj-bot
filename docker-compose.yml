@@ -1,0 +1,86 @@
+# JJ-Bot Docker Compose Configuration
+# For development and production deployment
+
+version: '3.8'
+
+services:
+  # Main JJ-Bot API Server
+  jjbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jjbot-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist data, models, and configuration
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./config:/app/config
+      - ./backups:/app/backups
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/system/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend Dashboard (development)
+  dashboard:
+    image: node:20-alpine
+    container_name: jjbot-dashboard
+    working_dir: /app
+    volumes:
+      - ./dashboard/jj-dashboard:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      - VITE_API_URL=http://jjbot:8000
+    depends_on:
+      - jjbot
+
+  # Optional: PostgreSQL for production (uncomment when ready)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: jjbot-db
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   environment:
+  #     - POSTGRES_USER=jjbot
+  #     - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+  #     - POSTGRES_DB=jjbot
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U jjbot"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Optional: Redis for caching (uncomment when ready)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: jjbot-cache
+  #   ports:
+  #     - "6379:6379"
+  #   command: redis-server --appendonly yes
+  #   volumes:
+  #     - redis_data:/data
+
+# Volumes for persistent data
+volumes:
+  postgres_data:
+  redis_data:
+
+# Network configuration
+networks:
+  default:
+    name: jjbot-network
+    driver: bridge
