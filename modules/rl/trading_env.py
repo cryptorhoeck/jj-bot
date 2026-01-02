@@ -624,6 +624,12 @@ class TradingEnvironment:
     This means a trade must capture >0.7% price move just to break even.
     The model must learn strategies with real edge, not exploit unrealistic execution.
 
+    NO LOOK-AHEAD BIAS:
+    - At step T, observations use candles [T : T+lookback] (already closed)
+    - Trading occurs at the CLOSE price of candle T+lookback+1
+    - All HIGH/LOW/CLOSE values in observation are from completed candles
+    - This accurately simulates real trading where you see history, then act
+
     State Space:
     - Price features (returns, volatility, momentum)
     - Technical indicators (RSI, MACD, BB)
@@ -655,6 +661,7 @@ class TradingEnvironment:
         risk_penalty: float = 0.1,
         trade_penalty: float = 0.005,  # Higher penalty to prevent overtrading (real costs matter)
         inference_only: bool = False,  # If True, skip reset (no dummy data warning)
+        use_price_inversion: bool = False,  # DISABLED: synthetic bear market augmentation destroys real patterns
     ):
         self.initial_balance = initial_balance
         self.max_position_size = max_position_size
@@ -667,6 +674,7 @@ class TradingEnvironment:
         self.risk_penalty = risk_penalty
         self.trade_penalty = trade_penalty
         self.inference_only = inference_only
+        self.use_price_inversion = use_price_inversion  # Disabled by default - destroys real market patterns
 
         # State dimensions
         self.n_features = 20  # Price/indicator features
@@ -755,11 +763,14 @@ class TradingEnvironment:
             # Update max_steps for this episode
             self.max_steps = len(segment) - self.lookback_window - 1
 
-        # DATA AUGMENTATION: 50% chance to invert prices (create synthetic bear market)
-        # This prevents the model from learning a long-only bias from bull market data
-        if random.random() < 0.5:
+        # DATA AUGMENTATION: Optional price inversion (DISABLED BY DEFAULT)
+        # WARNING: Synthetic inversion destroys real market microstructure patterns.
+        # Real bear markets have different volatility, order flow, and momentum characteristics.
+        # Only enable this if you have insufficient bear market data and understand the risks.
+        if self.use_price_inversion and random.random() < 0.5:
             segment = self._invert_price_data(segment)
             self._current_symbol = f"{symbol}_INV"  # Mark as inverted for logging
+            logger.debug(f"Price inversion applied to {symbol} (synthetic bear market)")
 
         return segment
 

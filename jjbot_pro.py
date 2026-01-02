@@ -183,13 +183,14 @@ class BotConfig:
 
     # RL settings
     rl_model_path: str = "models/ppo_agent.pt"
-    train_episodes: int = 100
+    train_episodes: int = 500  # Increased from 100 - more episodes reduces overfitting
     train_timeframe: str = "1h"  # Candle size for training data
-    train_history_days: int = 90  # Days of historical data
+    train_history_days: int = 365  # Increased from 90 - captures multiple market regimes
     train_data_source: str = "kraken"  # Data source for training (kraken, binance, yahoo)
     rl_max_steps: int = 500  # Steps per training episode
     rl_n_epochs: int = 4  # PPO optimization epochs
     rl_batch_size: int = 128  # PPO batch size
+    rl_use_price_inversion: bool = False  # DISABLED - synthetic inversion destroys real patterns
 
     # Timing
     analysis_interval_seconds: int = 60  # How often to analyze (minimum 30 seconds recommended)
@@ -1098,7 +1099,8 @@ class JJBotPro:
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct,
                 max_steps=self.config.rl_max_steps,
-                inference_only=(self.config.mode != "training")  # Skip dummy data in paper/live
+                inference_only=(self.config.mode != "training"),  # Skip dummy data in paper/live
+                use_price_inversion=self.config.rl_use_price_inversion  # Disabled by default
             )
 
             self.rl_agent = create_agent(
