@@ -25,6 +25,83 @@ _CACHE_TIMEFRAME: str = ''
 _CACHE_DAYS: int = 0
 _CACHE_SOURCE: str = ''
 
+# Walk-forward validation split caches
+_TRAIN_DATA_CACHE: Dict[str, np.ndarray] = {}
+_VALIDATION_DATA_CACHE: Dict[str, np.ndarray] = {}
+_VALIDATION_SPLIT_RATIO: float = 0.2  # Default 80/20 split
+_DATA_SPLIT_DONE: bool = False
+
+
+def split_data_for_validation(validation_ratio: float = 0.2) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """
+    Split cached data into training and validation sets for walk-forward validation.
+
+    Walk-forward validation ensures we test on FUTURE data, not random samples.
+    For each symbol:
+    - First 80% of candles -> Training set
+    - Last 20% of candles -> Validation set (simulates unseen future)
+
+    Args:
+        validation_ratio: Fraction of data for validation (default 0.2 = 20%)
+
+    Returns:
+        Tuple of (train_data, validation_data) dicts
+    """
+    global _DATA_CACHE, _TRAIN_DATA_CACHE, _VALIDATION_DATA_CACHE, _VALIDATION_SPLIT_RATIO, _DATA_SPLIT_DONE
+
+    if not _DATA_CACHE:
+        logger.warning("No data cache available for validation split")
+        return {}, {}
+
+    _VALIDATION_SPLIT_RATIO = validation_ratio
+    train_ratio = 1.0 - validation_ratio
+
+    _TRAIN_DATA_CACHE = {}
+    _VALIDATION_DATA_CACHE = {}
+
+    for symbol, data in _DATA_CACHE.items():
+        n_candles = len(data)
+        split_idx = int(n_candles * train_ratio)
+
+        # Ensure minimum data for both sets
+        min_candles = 100  # Need at least 100 candles for meaningful training/validation
+        if split_idx < min_candles or (n_candles - split_idx) < min_candles:
+            logger.warning(f"{symbol}: Insufficient data for split ({n_candles} candles). Using all for training.")
+            _TRAIN_DATA_CACHE[symbol] = data.copy()
+            continue
+
+        # Split chronologically (train on past, validate on future)
+        _TRAIN_DATA_CACHE[symbol] = data[:split_idx].copy()
+        _VALIDATION_DATA_CACHE[symbol] = data[split_idx:].copy()
+
+        logger.debug(f"{symbol}: Split {n_candles} candles -> Train: {split_idx}, Validation: {n_candles - split_idx}")
+
+    _DATA_SPLIT_DONE = True
+
+    train_symbols = len(_TRAIN_DATA_CACHE)
+    val_symbols = len(_VALIDATION_DATA_CACHE)
+    logger.info(f"Data split complete: {train_symbols} symbols for training, {val_symbols} symbols for validation ({validation_ratio*100:.0f}% held out)")
+
+    return _TRAIN_DATA_CACHE, _VALIDATION_DATA_CACHE
+
+
+def get_validation_metrics_template() -> Dict[str, Any]:
+    """Return a template dict for tracking out-of-sample validation metrics"""
+    return {
+        "validation_episodes": 0,
+        "validation_trades": 0,
+        "validation_pnl": 0.0,
+        "validation_win_rate": 0.0,
+        "validation_profit_factor": 0.0,
+        "validation_sharpe": 0.0,
+        "validation_max_drawdown": 0.0,
+        "validation_avg_reward": 0.0,
+        # Compare to training
+        "train_vs_validation_pnl_gap": 0.0,  # Negative = overfitting
+        "train_vs_validation_winrate_gap": 0.0,
+        "generalization_score": 0.0,  # 100 = perfect, <50 = overfitting
+    }
+
 
 def _load_yahoo_data(symbols: List[str], timeframe: str, days: int) -> Dict[str, np.ndarray]:
     """
@@ -662,6 +739,7 @@ class TradingEnvironment:
         trade_penalty: float = 0.005,  # Higher penalty to prevent overtrading (real costs matter)
         inference_only: bool = False,  # If True, skip reset (no dummy data warning)
         use_price_inversion: bool = False,  # DISABLED: synthetic bear market augmentation destroys real patterns
+        data_mode: str = "full",  # "full" (all data), "train" (train split only), "validation" (validation split only)
     ):
         self.initial_balance = initial_balance
         self.max_position_size = max_position_size
@@ -675,6 +753,7 @@ class TradingEnvironment:
         self.trade_penalty = trade_penalty
         self.inference_only = inference_only
         self.use_price_inversion = use_price_inversion  # Disabled by default - destroys real market patterns
+        self.data_mode = data_mode  # Controls which data split to use
 
         # State dimensions
         self.n_features = 20  # Price/indicator features
@@ -733,21 +812,40 @@ class TradingEnvironment:
         return self._get_observation()
 
     def _get_real_data_segment(self) -> np.ndarray:
-        """Get a random segment of real market data for training
+        """Get a random segment of real market data for training/validation
 
-        Includes data augmentation to prevent long/short bias:
-        - 50% chance to invert price data (turns bull market into bear market)
-        - This teaches the model that shorts can be profitable too
+        Uses data_mode to select appropriate data split:
+        - "full": Use all cached data (default, for inference)
+        - "train": Use only training split (first 80% chronologically)
+        - "validation": Use only validation split (last 20% chronologically)
+
+        This enables walk-forward validation where we train on past data
+        and validate on unseen future data.
         """
-        global _DATA_CACHE, _CACHE_SYMBOLS
+        global _DATA_CACHE, _CACHE_SYMBOLS, _TRAIN_DATA_CACHE, _VALIDATION_DATA_CACHE, _DATA_SPLIT_DONE
 
-        if not _DATA_CACHE:
+        # Select appropriate data cache based on mode
+        if self.data_mode == "train" and _DATA_SPLIT_DONE and _TRAIN_DATA_CACHE:
+            data_cache = _TRAIN_DATA_CACHE
+            symbols_list = list(_TRAIN_DATA_CACHE.keys())
+            mode_label = "TRAIN"
+        elif self.data_mode == "validation" and _DATA_SPLIT_DONE and _VALIDATION_DATA_CACHE:
+            data_cache = _VALIDATION_DATA_CACHE
+            symbols_list = list(_VALIDATION_DATA_CACHE.keys())
+            mode_label = "VALIDATION"
+        else:
+            # Default to full cache
+            data_cache = _DATA_CACHE
+            symbols_list = _CACHE_SYMBOLS
+            mode_label = "FULL"
+
+        if not data_cache:
             return self._generate_dummy_data()
 
         # Pick a random symbol
-        symbol = random.choice(_CACHE_SYMBOLS)
-        self._current_symbol = symbol
-        data = _DATA_CACHE[symbol]
+        symbol = random.choice(symbols_list)
+        self._current_symbol = f"{symbol}[{mode_label}]"
+        data = data_cache[symbol]
 
         # Required length
         required_length = self.max_steps + self.lookback_window

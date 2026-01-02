@@ -57,7 +57,12 @@ except ImportError:
 # RL modules are optional (require PyTorch)
 try:
     from modules.rl import TradingEnvironment, create_agent, PPOAgent
-    from modules.rl.trading_env import load_historical_data_sync, calculate_features
+    from modules.rl.trading_env import (
+        load_historical_data_sync,
+        calculate_features,
+        split_data_for_validation,
+        get_validation_metrics_template,
+    )
     RL_AVAILABLE = True
 except ImportError:
     TradingEnvironment = None
@@ -65,6 +70,8 @@ except ImportError:
     PPOAgent = None
     load_historical_data_sync = None
     calculate_features = None
+    split_data_for_validation = None
+    get_validation_metrics_template = None
     RL_AVAILABLE = False
 
 # Alternative data modules (optional)
@@ -191,6 +198,11 @@ class BotConfig:
     rl_n_epochs: int = 4  # PPO optimization epochs
     rl_batch_size: int = 128  # PPO batch size
     rl_use_price_inversion: bool = False  # DISABLED - synthetic inversion destroys real patterns
+
+    # Walk-forward validation settings
+    rl_use_validation: bool = True  # Enable train/validation split for OOS testing
+    rl_validation_ratio: float = 0.2  # 20% of data held out for validation
+    rl_validation_episodes: int = 50  # Number of validation episodes to run after training
 
     # Timing
     analysis_interval_seconds: int = 60  # How often to analyze (minimum 30 seconds recommended)
@@ -2802,6 +2814,15 @@ class JJBotPro:
         else:
             logger.warning("Training with SIMULATED data - consider loading real data for better results")
 
+        # Walk-forward validation: Split data into train/validation sets
+        validation_enabled = self.config.rl_use_validation and using_real_data and split_data_for_validation
+        if validation_enabled:
+            logger.info(f"Walk-forward validation enabled: {int((1-self.config.rl_validation_ratio)*100)}% train / {int(self.config.rl_validation_ratio*100)}% validation")
+            train_data, val_data = split_data_for_validation(self.config.rl_validation_ratio)
+            # Set environment to use training data only
+            self.rl_env.data_mode = "train"
+            logger.info(f"Training on {len(train_data)} symbols, {len(val_data)} symbols held out for validation")
+
         self.training_progress["is_training"] = True
         self.training_progress["total_episodes"] = self.config.train_episodes
         self.training_progress["using_real_data"] = using_real_data
@@ -3033,6 +3054,11 @@ class JJBotPro:
 
         self._save_state()  # Persist IQ and training history to file
 
+        # ====== WALK-FORWARD VALIDATION PHASE ======
+        # Run validation episodes on held-out data to measure out-of-sample performance
+        if validation_enabled and self.running:
+            await self._run_validation_phase(completed_episodes)
+
         # Register model version with auto-backup
         if DATA_MANAGER_AVAILABLE:
             try:
@@ -3138,6 +3164,180 @@ class JJBotPro:
             logger.info(f"Training complete! {completed_episodes} episodes. Model saved to {self.config.rl_model_path}")
         else:
             logger.info(f"Training stopped after {completed_episodes} episodes. Progress saved to {self.config.rl_model_path}")
+
+    async def _run_validation_phase(self, training_episodes: int):
+        """
+        Run validation episodes on held-out data to measure out-of-sample (OOS) performance.
+
+        This is critical for detecting overfitting:
+        - Training metrics show how well the model learned the training data
+        - Validation metrics show how well the model generalizes to unseen data
+        - Large gaps between train/validation indicate overfitting
+        """
+        logger.info("=" * 60)
+        logger.info("WALK-FORWARD VALIDATION PHASE")
+        logger.info("=" * 60)
+        logger.info(f"Running {self.config.rl_validation_episodes} episodes on held-out validation data...")
+
+        # Initialize validation metrics
+        validation_metrics = get_validation_metrics_template() if get_validation_metrics_template else {
+            "validation_episodes": 0,
+            "validation_trades": 0,
+            "validation_pnl": 0.0,
+            "validation_win_rate": 0.0,
+            "validation_profit_factor": 0.0,
+            "validation_sharpe": 0.0,
+            "validation_max_drawdown": 0.0,
+            "validation_avg_reward": 0.0,
+            "generalization_score": 0.0,
+        }
+
+        # Switch environment to validation mode
+        self.rl_env.data_mode = "validation"
+
+        total_reward = 0.0
+        total_pnl = 0.0
+        total_trades = 0
+        total_wins = 0
+        total_losses = 0
+        total_win_amount = 0.0
+        total_loss_amount = 0.0
+
+        for ep in range(self.config.rl_validation_episodes):
+            if not self.running:
+                logger.info(f"Validation stopped at episode {ep}")
+                break
+
+            # Run validation episode (no training, just evaluation)
+            loop = asyncio.get_event_loop()
+            metrics = await loop.run_in_executor(
+                None, self._run_validation_episode
+            )
+
+            # Accumulate metrics
+            total_reward += float(metrics.get('episode_reward', 0))
+            total_pnl += float(metrics.get('total_pnl', 0))
+            total_trades += int(metrics.get('total_trades', 0))
+            total_wins += int(metrics.get('winning_trades', 0))
+            total_losses += int(metrics.get('losing_trades', 0))
+            total_win_amount += float(metrics.get('gross_profit', 0))
+            total_loss_amount += float(metrics.get('gross_loss', 0))
+
+            validation_metrics["validation_episodes"] = ep + 1
+
+            # Log progress every 10 episodes
+            if (ep + 1) % 10 == 0:
+                avg_pnl = total_pnl / (ep + 1)
+                win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
+                logger.info(f"Validation {ep + 1}/{self.config.rl_validation_episodes} | Avg P&L: ${avg_pnl:.2f} | Win Rate: {win_rate:.1f}%")
+
+            await asyncio.sleep(0)  # Yield control
+
+        # Calculate final validation metrics
+        n_episodes = validation_metrics["validation_episodes"]
+        if n_episodes > 0:
+            validation_metrics["validation_trades"] = total_trades
+            validation_metrics["validation_pnl"] = total_pnl
+            validation_metrics["validation_avg_reward"] = total_reward / n_episodes
+
+            if total_trades > 0:
+                validation_metrics["validation_win_rate"] = (total_wins / total_trades) * 100
+            if total_loss_amount > 0:
+                validation_metrics["validation_profit_factor"] = total_win_amount / total_loss_amount
+
+            # Compare to training metrics to detect overfitting
+            train_win_rate = self.training_progress.get("avg_win_rate", 50)
+            train_pnl = self.training_metrics.get("cumulative_pnl", 0) / training_episodes if training_episodes > 0 else 0
+
+            val_win_rate = validation_metrics["validation_win_rate"]
+            val_pnl = total_pnl / n_episodes if n_episodes > 0 else 0
+
+            # Calculate gaps (negative = validation worse = overfitting)
+            validation_metrics["train_vs_validation_pnl_gap"] = val_pnl - train_pnl
+            validation_metrics["train_vs_validation_winrate_gap"] = val_win_rate - train_win_rate
+
+            # Generalization score: 100 = perfect, 0 = complete overfit
+            # Based on how close validation performance is to training performance
+            if train_win_rate > 0:
+                winrate_ratio = min(val_win_rate / train_win_rate, 1.0)
+            else:
+                winrate_ratio = 1.0 if val_win_rate >= 50 else 0.5
+
+            validation_metrics["generalization_score"] = winrate_ratio * 100
+
+            # Log validation results
+            logger.info("=" * 60)
+            logger.info("VALIDATION RESULTS (Out-of-Sample Performance)")
+            logger.info("=" * 60)
+            logger.info(f"Episodes: {n_episodes}")
+            logger.info(f"Total Trades: {total_trades}")
+            logger.info(f"Validation P&L: ${total_pnl:.2f} (avg ${val_pnl:.2f}/episode)")
+            logger.info(f"Validation Win Rate: {val_win_rate:.1f}%")
+            logger.info(f"Validation Profit Factor: {validation_metrics['validation_profit_factor']:.2f}")
+            logger.info("-" * 40)
+            logger.info("OVERFITTING ANALYSIS:")
+            logger.info(f"  Training Win Rate:    {train_win_rate:.1f}%")
+            logger.info(f"  Validation Win Rate:  {val_win_rate:.1f}%")
+            logger.info(f"  Gap: {validation_metrics['train_vs_validation_winrate_gap']:+.1f}% {'(GOOD)' if validation_metrics['train_vs_validation_winrate_gap'] >= -5 else '(OVERFITTING WARNING)'}")
+            logger.info(f"  Generalization Score: {validation_metrics['generalization_score']:.0f}/100")
+
+            if validation_metrics["generalization_score"] < 50:
+                logger.warning("⚠️  LOW GENERALIZATION: Model may be overfitting to training data!")
+                logger.warning("    Consider: more training data, fewer episodes, or regularization")
+            elif validation_metrics["generalization_score"] >= 80:
+                logger.info("✓ GOOD GENERALIZATION: Model performs well on unseen data")
+
+            logger.info("=" * 60)
+
+        # Store validation metrics in training progress
+        self.training_progress["validation_metrics"] = validation_metrics
+        self.stats["last_validation_score"] = validation_metrics.get("generalization_score", 0)
+        self.stats["last_validation_win_rate"] = validation_metrics.get("validation_win_rate", 0)
+
+        # Reset environment back to full mode
+        self.rl_env.data_mode = "full"
+
+    def _run_validation_episode(self) -> Dict[str, Any]:
+        """Run a single validation episode (no training, just evaluation)"""
+        # Reset environment with validation data
+        state = self.rl_env.reset()
+
+        episode_reward = 0.0
+        trades = []
+
+        for step in range(self.config.rl_max_steps):
+            # Get action from trained policy (no exploration)
+            action, _, _ = self.rl_agent.select_action(state, training=False)
+
+            # Take step
+            next_state, reward, done, info = self.rl_env.step(action)
+
+            episode_reward += reward
+            state = next_state
+
+            if done:
+                break
+
+        # Get trade history from environment
+        trade_history = getattr(self.rl_env, 'trade_history', [])
+
+        # Calculate metrics
+        total_pnl = sum(t.pnl for t in trade_history) if trade_history else 0
+        winning_trades = sum(1 for t in trade_history if t.pnl > 0)
+        losing_trades = sum(1 for t in trade_history if t.pnl < 0)
+        gross_profit = sum(t.pnl for t in trade_history if t.pnl > 0)
+        gross_loss = abs(sum(t.pnl for t in trade_history if t.pnl < 0))
+
+        return {
+            'episode_reward': episode_reward,
+            'total_pnl': total_pnl,
+            'total_trades': len(trade_history),
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'gross_profit': gross_profit,
+            'gross_loss': gross_loss,
+            'win_rate': winning_trades / len(trade_history) if trade_history else 0,
+        }
 
     async def stop(self):
         """Stop the bot gracefully"""
