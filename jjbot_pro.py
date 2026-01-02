@@ -555,8 +555,10 @@ class JJBotPro:
 
             # Load existing model if available
             if os.path.exists(self.config.rl_model_path):
-                self.rl_agent.load(self.config.rl_model_path)
-                logger.info(f"Loaded RL model from {self.config.rl_model_path}")
+                if self.rl_agent.load(self.config.rl_model_path):
+                    logger.info(f"Loaded RL model from {self.config.rl_model_path}")
+                else:
+                    logger.info("Starting with fresh model (previous model was corrupted)")
             else:
                 logger.info("No existing RL model found - starting fresh")
         elif self.config.use_rl_agent:

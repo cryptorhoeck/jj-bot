@@ -410,18 +410,30 @@ class PPOAgent:
 
         logger.info(f"Model saved to {path}")
 
-    def load(self, path: str):
-        """Load model and training state"""
-        # PyTorch 2.6+ requires weights_only=False for backward compatibility
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+    def load(self, path: str) -> bool:
+        """Load model and training state. Returns True on success, False if file is corrupted."""
+        try:
+            # PyTorch 2.6+ requires weights_only=False for backward compatibility
+            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
 
-        self.policy.load_state_dict(checkpoint["policy_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        self.episode_count = checkpoint.get("episode_count", 0)
-        self.training_stats = checkpoint.get("training_stats", self.training_stats)
+            self.policy.load_state_dict(checkpoint["policy_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            self.episode_count = checkpoint.get("episode_count", 0)
+            self.training_stats = checkpoint.get("training_stats", self.training_stats)
 
-        logger.info(f"Model loaded from {path}")
+            logger.info(f"Model loaded from {path}")
+            return True
+        except (EOFError, RuntimeError, KeyError) as e:
+            logger.warning(f"Failed to load model from {path}: {e}")
+            logger.warning("Model file appears corrupted - starting with fresh model")
+            # Delete the corrupted file
+            try:
+                os.remove(path)
+                logger.info(f"Deleted corrupted model file: {path}")
+            except OSError:
+                pass
+            return False
 
 
 class A2CAgent(PPOAgent):
