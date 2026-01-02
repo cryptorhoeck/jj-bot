@@ -74,6 +74,22 @@ except ImportError:
     get_validation_metrics_template = None
     RL_AVAILABLE = False
 
+# Ensemble RL modules (optional, advanced anti-forgetting system)
+try:
+    from modules.rl.ensemble_agent import EnsembleAgent, EnsembleConfig, create_ensemble_agent
+    from modules.rl.regime_detector import RegimeDetector, MarketRegime, detect_regime
+    from modules.rl.experience_replay import ExperienceReplayBuffer
+    ENSEMBLE_AVAILABLE = True
+except ImportError:
+    EnsembleAgent = None
+    EnsembleConfig = None
+    create_ensemble_agent = None
+    RegimeDetector = None
+    MarketRegime = None
+    detect_regime = None
+    ExperienceReplayBuffer = None
+    ENSEMBLE_AVAILABLE = False
+
 # Alternative data modules (optional)
 try:
     from modules.data_feeds import create_alternative_feed, AlternativeDataFeed, EdgeDetector
@@ -199,6 +215,15 @@ class BotConfig:
     rl_batch_size: int = 128  # PPO batch size
     rl_use_price_inversion: bool = False  # DISABLED - synthetic inversion destroys real patterns
 
+    # Ensemble learning settings (prevents catastrophic forgetting)
+    rl_use_ensemble: bool = True  # Use ensemble of regime-specific models
+    rl_use_ewc: bool = True  # Elastic Weight Consolidation for memory protection
+    rl_ewc_lambda: float = 1000.0  # EWC regularization strength
+    rl_use_experience_replay: bool = True  # Mix old experiences with new during training
+    rl_replay_buffer_size: int = 1000  # Trajectories to store per regime
+    rl_replay_ratio: float = 0.3  # 30% replay, 70% new data
+    rl_ensemble_path: str = "models/ensemble"  # Directory for ensemble models
+
     # Walk-forward validation settings
     rl_use_validation: bool = True  # Enable train/validation split for OOS testing
     rl_validation_ratio: float = 0.2  # 20% of data held out for validation
@@ -260,6 +285,10 @@ class BotConfig:
         # Fix rl_model_path if it's relative
         if self.rl_model_path and not os.path.isabs(self.rl_model_path):
             self.rl_model_path = os.path.join(project_root, self.rl_model_path)
+
+        # Fix rl_ensemble_path if it's relative
+        if self.rl_ensemble_path and not os.path.isabs(self.rl_ensemble_path):
+            self.rl_ensemble_path = os.path.join(project_root, self.rl_ensemble_path)
 
         # Fix audit_trail_dir if it's relative
         if self.audit_trail_dir and not os.path.isabs(self.audit_trail_dir):
@@ -540,6 +569,8 @@ class JJBotPro:
         self.edge_manager: Optional[EdgeStrategyManager] = None
         self.rl_agent: Optional[PPOAgent] = None
         self.rl_env: Optional[TradingEnvironment] = None
+        self.ensemble_agent: Optional[EnsembleAgent] = None
+        self.regime_detector: Optional[RegimeDetector] = None
 
         # Notifications
         self.notifier: Optional[NotificationManager] = None
@@ -1121,20 +1152,74 @@ class JJBotPro:
                 use_price_inversion=self.config.rl_use_price_inversion  # Disabled by default
             )
 
-            self.rl_agent = create_agent(
-                "ppo",
-                state_dim=self.rl_env.observation_space_dim,
-                action_dim=self.rl_env.action_space_dim,
-                n_epochs=self.config.rl_n_epochs,
-                batch_size=self.config.rl_batch_size
+            # Initialize regime detector for ensemble mode
+            if ENSEMBLE_AVAILABLE and RegimeDetector:
+                self.regime_detector = RegimeDetector()
+                logger.info("Regime detector initialized")
+
+            # Check if using ensemble mode (multiple expert models)
+            use_ensemble = (
+                self.config.rl_use_ensemble and
+                ENSEMBLE_AVAILABLE and
+                EnsembleAgent is not None
             )
 
-            # Load existing model if available
-            if os.path.exists(self.config.rl_model_path):
-                self.rl_agent.load(self.config.rl_model_path)
-                logger.info(f"Loaded RL model from {self.config.rl_model_path}")
+            if use_ensemble:
+                # Create ensemble agent with regime-specific experts
+                ensemble_config = EnsembleConfig(
+                    state_dim=self.rl_env.observation_space_dim,
+                    action_dim=self.rl_env.action_space_dim,
+                    hidden_dims=[256, 128, 64],
+                    learning_rate=3e-4,
+                    n_epochs=self.config.rl_n_epochs,
+                    batch_size=self.config.rl_batch_size,
+                    use_ewc=self.config.rl_use_ewc,
+                    ewc_lambda=self.config.rl_ewc_lambda,
+                    use_replay=self.config.rl_use_experience_replay,
+                    replay_buffer_size=self.config.rl_replay_buffer_size,
+                    replay_ratio=self.config.rl_replay_ratio,
+                )
+                self.ensemble_agent = EnsembleAgent(ensemble_config)
+
+                # Load existing ensemble if available
+                if os.path.exists(self.config.rl_ensemble_path):
+                    self.ensemble_agent.load(self.config.rl_ensemble_path)
+                    logger.info(f"Loaded ensemble from {self.config.rl_ensemble_path}")
+                else:
+                    logger.info("No existing ensemble found - starting fresh")
+
+                # Also create a fallback single agent for compatibility
+                self.rl_agent = create_agent(
+                    "ppo",
+                    state_dim=self.rl_env.observation_space_dim,
+                    action_dim=self.rl_env.action_space_dim,
+                    n_epochs=self.config.rl_n_epochs,
+                    batch_size=self.config.rl_batch_size,
+                    use_ewc=self.config.rl_use_ewc,
+                    ewc_lambda=self.config.rl_ewc_lambda,
+                )
+                if os.path.exists(self.config.rl_model_path):
+                    self.rl_agent.load(self.config.rl_model_path)
+
+                logger.info(f"Ensemble mode enabled: 4 regime experts + EWC + Experience Replay")
             else:
-                logger.info("No existing RL model found - starting fresh")
+                # Standard single PPO agent
+                self.rl_agent = create_agent(
+                    "ppo",
+                    state_dim=self.rl_env.observation_space_dim,
+                    action_dim=self.rl_env.action_space_dim,
+                    n_epochs=self.config.rl_n_epochs,
+                    batch_size=self.config.rl_batch_size,
+                    use_ewc=self.config.rl_use_ewc,
+                    ewc_lambda=self.config.rl_ewc_lambda,
+                )
+
+                # Load existing model if available
+                if os.path.exists(self.config.rl_model_path):
+                    self.rl_agent.load(self.config.rl_model_path)
+                    logger.info(f"Loaded RL model from {self.config.rl_model_path}")
+                else:
+                    logger.info("No existing RL model found - starting fresh")
         elif self.config.use_rl_agent:
             logger.warning("RL agent requested but PyTorch not available - trading without AI")
 
@@ -3138,6 +3223,9 @@ class JJBotPro:
             if episode % 50 == 0 and episode > 0:
                 os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
                 self.rl_agent.save(self.config.rl_model_path)
+                # Also save ensemble if available
+                if self.ensemble_agent:
+                    self.ensemble_agent.save(self.config.rl_ensemble_path)
                 # Also save IQ progress so it persists if training is interrupted
                 self.stats["trading_iq"] = self.training_progress["trading_iq"]
                 self.stats["expertise_level"] = self.training_progress["expertise_level"]
@@ -3147,6 +3235,10 @@ class JJBotPro:
         # Always save model at end (whether completed or stopped)
         os.makedirs(os.path.dirname(self.config.rl_model_path), exist_ok=True)
         self.rl_agent.save(self.config.rl_model_path)
+        # Also save ensemble if available
+        if self.ensemble_agent:
+            self.ensemble_agent.save(self.config.rl_ensemble_path)
+            logger.info(f"Ensemble saved to {self.config.rl_ensemble_path}")
         self.training_progress["is_training"] = False
 
         # Save IQ and training history to persistent stats
