@@ -27,6 +27,7 @@ from modules.exchange import create_connector, create_live_feed, CCXTConnector, 
 from modules.exchange import OrderRequest, OrderType, OrderSide, Ticker
 from modules.event_bus import event_bus
 from modules.risk import RiskManager, RiskLimits
+from modules.execution.order_simulator import ExecutionSimulator, OrderSide as SimOrderSide
 
 # Database for trade logging (legacy - kept for backward compatibility)
 try:
@@ -225,6 +226,12 @@ class BotConfig:
     position_sync_interval: float = 300.0  # Sync positions with exchange every 5 min
     order_dedup_window: float = 5.0  # Seconds between same-symbol orders
 
+    # Paper trading realism settings (critical for accurate backtesting)
+    paper_slippage_pct: float = 0.5  # 0.5% base slippage per trade
+    paper_slippage_model: str = "volume_based"  # 'percentage', 'fixed', or 'volume_based'
+    paper_trading_fee_pct: float = 0.26  # 0.26% fee per trade (Kraken taker fee)
+    paper_apply_realistic_costs: bool = True  # Apply slippage + fees to paper trades
+
     def __post_init__(self):
         """Load API keys from environment variables if not set in config"""
         # IMPORTANT: Convert relative paths to absolute paths based on project root
@@ -350,6 +357,9 @@ class TradeRecord:
     entry_slippage_pct: float = 0.0  # Entry slippage as percentage
     exit_slippage: float = 0.0  # Exit slippage in dollars
     exit_slippage_pct: float = 0.0  # Exit slippage as percentage
+    # Fee tracking
+    total_fees: float = 0.0  # Total fees paid (entry + exit)
+    pnl_before_fees: float = 0.0  # P&L before fee deduction
 
 
 class JJBotPro:
@@ -2043,9 +2053,27 @@ class JJBotPro:
             else:
                 logger.warning(f"Failed to place stop order - local monitoring only")
         else:
-            # Paper trading
-            filled_price = price
-            filled_amount = position_value / price  # Calculate contracts for paper trading
+            # Paper trading with realistic execution costs
+            if self.config.paper_apply_realistic_costs:
+                # Create execution simulator with configured slippage model
+                simulator = ExecutionSimulator(
+                    slippage_model=self.config.paper_slippage_model,
+                    base_slippage_pct=self.config.paper_slippage_pct
+                )
+                # Calculate slippage based on order side
+                sim_side = SimOrderSide.BUY if direction == "long" else SimOrderSide.SELL
+                slippage = simulator.calculate_slippage(
+                    price=price,
+                    quantity=position_value / price,
+                    side=sim_side
+                )
+                # Apply slippage (negative for buys = pay more, positive for sells = receive less)
+                filled_price = price - slippage  # Note: slippage is already signed correctly
+                logger.debug(f"Paper slippage: ${slippage:.4f} ({slippage/price*100:.3f}%)")
+            else:
+                filled_price = price
+
+            filled_amount = position_value / filled_price  # Calculate contracts at fill price
             entry_order_id = None
             stop_order_id = None
             logger.info(f"PAPER TRADE: {direction.upper()} {symbol} @ ${filled_price:.2f} (qty: {filled_amount:.6f})")
@@ -2253,6 +2281,24 @@ class JJBotPro:
         # Execute close order in live mode (skip if exchange stop already executed)
         actual_exit_price = exit_price  # Will be updated with actual fill price
         close_order_failed = False
+
+        # Apply slippage for paper trading exits
+        if self.config.mode != "live" and self.config.paper_apply_realistic_costs:
+            simulator = ExecutionSimulator(
+                slippage_model=self.config.paper_slippage_model,
+                base_slippage_pct=self.config.paper_slippage_pct
+            )
+            # Exit side is opposite of position side
+            sim_side = SimOrderSide.SELL if pos.side == "long" else SimOrderSide.BUY
+            close_amount = pos.actual_contracts if pos.actual_contracts > 0 else pos.size / exit_price
+            slippage = simulator.calculate_slippage(
+                price=exit_price,
+                quantity=close_amount,
+                side=sim_side
+            )
+            actual_exit_price = exit_price - slippage
+            logger.debug(f"Paper exit slippage: ${slippage:.4f} ({slippage/exit_price*100:.3f}%)")
+
         if self.config.mode == "live" and reason != "stop_loss_exchange":
             try:
                 side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
@@ -2312,6 +2358,23 @@ class JJBotPro:
 
         pnl = pnl_pct * pos.size
 
+        # Deduct trading fees (entry + exit)
+        # For paper trading: use configured fee rate
+        # For live trading: fees are charged by exchange but we track them for accurate P&L
+        fee_pct = self.config.paper_trading_fee_pct / 100  # Convert to decimal
+        entry_fee = pos.size * fee_pct  # Fee on entry position value
+        exit_fee = (pos.size + pnl) * fee_pct  # Fee on exit position value (includes P&L)
+        total_fees = entry_fee + exit_fee
+
+        # Apply fees (always - both paper and live need accurate P&L tracking)
+        pnl_before_fees = pnl
+        pnl -= total_fees
+        pnl_pct_after_fees = pnl / pos.size if pos.size > 0 else 0
+
+        # Track fee stats
+        self.stats["total_fees_paid"] = self.stats.get("total_fees_paid", 0) + total_fees
+        logger.debug(f"  Fees: ${total_fees:.2f} (entry: ${entry_fee:.2f}, exit: ${exit_fee:.2f})")
+
         # Calculate exit slippage (difference between expected and actual)
         expected_exit = exit_price  # Price when we decided to close
         if pos.side == "long":
@@ -2324,7 +2387,7 @@ class JJBotPro:
         exit_slippage_pct = (exit_slippage / expected_exit) * 100 if expected_exit > 0 else 0
 
         logger.info(f"  Entry: ${pos.entry_price:.2f} -> Exit: ${actual_exit_price:.2f}")
-        logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct:.2%}) - {reason}")
+        logger.info(f"  P&L: ${pnl:.2f} ({pnl_pct_after_fees:.2%}) [before fees: ${pnl_before_fees:.2f}, fees: ${total_fees:.2f}] - {reason}")
 
         # Log slippage summary
         total_slippage = pos.entry_slippage + exit_slippage
@@ -2345,7 +2408,7 @@ class JJBotPro:
                 (self.stats.get("avg_exit_slippage_pct", 0) * (slippage_count - 1) + exit_slippage_pct) / slippage_count
             )
 
-        # Record trade (use actual_exit_price and include slippage)
+        # Record trade (use actual_exit_price and include slippage + fees)
         exit_time = datetime.now()
         trade = TradeRecord(
             symbol=symbol,
@@ -2353,8 +2416,8 @@ class JJBotPro:
             entry_price=pos.entry_price,
             exit_price=actual_exit_price,
             size=pos.size,
-            pnl=pnl,
-            pnl_pct=pnl_pct,
+            pnl=pnl,  # P&L after fees
+            pnl_pct=pnl_pct_after_fees,  # Use after-fees percentage
             entry_time=pos.entry_time,
             exit_time=exit_time,
             signal_source=pos.signal_source,
@@ -2363,6 +2426,8 @@ class JJBotPro:
             entry_slippage_pct=pos.entry_slippage_pct,
             exit_slippage=exit_slippage,
             exit_slippage_pct=exit_slippage_pct,
+            total_fees=total_fees,
+            pnl_before_fees=pnl_before_fees,
         )
         self.trade_history.append(trade)
 
@@ -2377,8 +2442,8 @@ class JJBotPro:
                     exit_price=actual_exit_price,
                     entry_time=pos.entry_time.isoformat() if isinstance(pos.entry_time, datetime) else str(pos.entry_time),
                     exit_time=exit_time.isoformat(),
-                    pnl=pnl,
-                    pnl_pct=pnl_pct,
+                    pnl=pnl,  # After fees
+                    pnl_pct=pnl_pct_after_fees,  # After fees
                     slippage=total_slippage_pct,
                     signal_source=pos.signal_source,
                     exit_reason=reason,
@@ -2397,10 +2462,11 @@ class JJBotPro:
                 entry_price=pos.entry_price,
                 exit_price=actual_exit_price,
                 size=pos.size,
-                pnl=pnl,
-                pnl_pct=pnl_pct * 100,
+                pnl=pnl,  # After fees
+                pnl_pct=pnl_pct_after_fees * 100,  # After fees
                 reason=reason,
-                slippage_pct=total_slippage_pct
+                slippage_pct=total_slippage_pct,
+                fees=total_fees
             )
 
         # Update stats
