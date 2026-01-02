@@ -1064,7 +1064,8 @@ class JJBotPro:
                 logger.info(f"Connected to {self.config.exchange}")
 
                 # Validate symbols against exchange - remove any that don't exist
-                if self.exchange and hasattr(self.exchange, 'get_available_symbols'):
+                # SKIP validation in training mode - we use historical data, not live exchange
+                if self.config.mode != "training" and self.exchange and hasattr(self.exchange, 'get_available_symbols'):
                     available_symbols = self.exchange.get_available_symbols()
                     if available_symbols:
                         original_count = len(self.config.symbols)
