@@ -109,6 +109,7 @@ class BotConfig:
     # RL settings
     rl_model_path: str = "models/ppo_agent.pt"
     train_episodes: int = 100
+    train_data_source: str = "yahoo"  # 'yahoo' for real data, 'simulated' for random walk
 
     # Timing
     analysis_interval_seconds: int = 60  # How often to analyze
@@ -523,10 +524,28 @@ class JJBotPro:
 
         # 5. RL Agent (optional - requires PyTorch)
         if self.config.use_rl_agent and RL_AVAILABLE:
+            # Load training data if in training mode
+            training_data = None
+            if self.config.mode == "training" and self.config.train_data_source == "yahoo":
+                logger.info(f"Loading historical data from Yahoo Finance for training...")
+                # Load data for primary trading symbol (BTC)
+                training_data = TradingEnvironment.load_yahoo_data("BTC-USD", period="1y")
+                if training_data is not None:
+                    logger.info(f"Loaded {len(training_data)} data points for training")
+                else:
+                    logger.warning("Failed to load Yahoo data - training will use simulated data")
+
             self.rl_env = TradingEnvironment(
                 initial_balance=self.config.initial_capital,
                 max_position_size=self.config.max_position_pct
             )
+
+            # Set real data if available
+            if training_data is not None:
+                self.rl_env.price_data = training_data
+                self.rl_env.prices = training_data[:, 0]
+                self.rl_env.max_steps = min(self.rl_env.max_steps, len(training_data) - self.rl_env.lookback_window - 1)
+                logger.info(f"Training environment configured with real Yahoo data ({self.rl_env.max_steps} steps)")
 
             self.rl_agent = create_agent(
                 "ppo",

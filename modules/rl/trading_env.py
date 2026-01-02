@@ -10,6 +10,12 @@ from enum import Enum
 from collections import deque
 import logging
 
+# Try to import yfinance for real data
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +124,10 @@ class TradingEnvironment:
         # Price data: shape (n_steps, n_features)
         if price_data is not None:
             self.price_data = price_data
-        else:
-            # Generate dummy data for testing
+        elif not hasattr(self, 'price_data') or self.price_data is None:
+            # Only generate dummy data if no data was previously loaded
             self.price_data = self._generate_dummy_data()
+        # else: keep existing price_data for next episode
 
         self.prices = self.price_data[:, 0]  # First column is close price
         self.current_price = self.prices[self.lookback_window]
@@ -133,6 +140,7 @@ class TradingEnvironment:
 
     def _generate_dummy_data(self) -> np.ndarray:
         """Generate dummy price data for testing"""
+        logger.warning("Using dummy data - real data not loaded!")
         n_steps = self.max_steps + self.lookback_window
         n_features = self.n_features
 
@@ -150,6 +158,121 @@ class TradingEnvironment:
             data[lag:, i] = np.diff(prices[:n_steps - lag + 1], n=1) / prices[:-lag]
 
         return data
+
+    @staticmethod
+    def load_yahoo_data(symbol: str = "BTC-USD", period: str = "1y") -> Optional[np.ndarray]:
+        """
+        Load real price data from Yahoo Finance
+
+        Args:
+            symbol: Yahoo Finance symbol (e.g., 'BTC-USD', 'ETH-USD')
+            period: Data period ('1mo', '3mo', '6mo', '1y', '2y', '5y')
+
+        Returns:
+            numpy array of shape (n_steps, n_features) or None if loading fails
+        """
+        if not YFINANCE_AVAILABLE:
+            logger.warning("yfinance not installed. Install with: pip install yfinance")
+            return None
+
+        try:
+            logger.info(f"Loading Yahoo Finance data for {symbol} (period={period})...")
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=period, interval="1h")
+
+            if df.empty:
+                logger.warning(f"No data returned for {symbol}")
+                return None
+
+            logger.info(f"Loaded {len(df)} data points for {symbol}")
+
+            # Extract OHLCV data
+            close = df['Close'].values
+            high = df['High'].values
+            low = df['Low'].values
+            open_price = df['Open'].values
+            volume = df['Volume'].values
+
+            n_steps = len(close)
+            n_features = 20  # Match the environment's feature count
+
+            # Create feature matrix
+            data = np.zeros((n_steps, n_features))
+
+            # Feature 0: Close price
+            data[:, 0] = close
+
+            # Feature 1: Returns (1-period)
+            data[1:, 1] = np.diff(close) / close[:-1]
+
+            # Feature 2: High-Low range (volatility proxy)
+            data[:, 2] = (high - low) / close
+
+            # Feature 3: Close-Open (intrabar momentum)
+            data[:, 3] = (close - open_price) / open_price
+
+            # Feature 4: Volume change
+            data[1:, 4] = np.diff(volume) / (volume[:-1] + 1e-8)
+
+            # Feature 5-9: Moving average ratios (5, 10, 20, 50, 100 periods)
+            for i, window in enumerate([5, 10, 20, 50, 100]):
+                if n_steps > window:
+                    ma = np.convolve(close, np.ones(window)/window, mode='valid')
+                    data[window-1:window-1+len(ma), 5+i] = close[window-1:window-1+len(ma)] / ma - 1
+
+            # Feature 10: RSI (14-period)
+            delta = np.diff(close)
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
+            if len(gain) >= 14:
+                avg_gain = np.convolve(gain, np.ones(14)/14, mode='valid')
+                avg_loss = np.convolve(loss, np.ones(14)/14, mode='valid')
+                rs = avg_gain / (avg_loss + 1e-8)
+                rsi = 100 - (100 / (1 + rs))
+                data[14:14+len(rsi), 10] = (rsi - 50) / 50  # Normalize to [-1, 1]
+
+            # Feature 11-12: Bollinger Band position
+            if n_steps > 20:
+                ma20 = np.convolve(close, np.ones(20)/20, mode='valid')
+                std20 = np.array([np.std(close[i:i+20]) for i in range(n_steps - 19)])
+                upper = ma20 + 2 * std20
+                lower = ma20 - 2 * std20
+                bb_pos = (close[19:] - lower) / (upper - lower + 1e-8)
+                data[19:19+len(bb_pos), 11] = bb_pos - 0.5  # Center around 0
+                data[19:19+len(std20), 12] = std20 / close[19:19+len(std20)]  # Volatility
+
+            # Feature 13-15: MACD components
+            if n_steps > 26:
+                ema12 = np.zeros(n_steps)
+                ema26 = np.zeros(n_steps)
+                ema12[0] = close[0]
+                ema26[0] = close[0]
+                for j in range(1, n_steps):
+                    ema12[j] = close[j] * (2/13) + ema12[j-1] * (1 - 2/13)
+                    ema26[j] = close[j] * (2/27) + ema26[j-1] * (1 - 2/27)
+                macd = ema12 - ema26
+                data[26:, 13] = macd[26:] / close[26:]  # Normalized MACD
+                # Signal line (9-period EMA of MACD)
+                signal = np.zeros(n_steps)
+                signal[26] = macd[26]
+                for j in range(27, n_steps):
+                    signal[j] = macd[j] * (2/10) + signal[j-1] * (1 - 2/10)
+                data[35:, 14] = (macd[35:] - signal[35:]) / close[35:]  # Histogram
+                data[26:, 15] = signal[26:] / close[26:]
+
+            # Feature 16-19: Price momentum at different lags
+            for i, lag in enumerate([5, 10, 20, 50]):
+                if n_steps > lag:
+                    data[lag:, 16+i] = (close[lag:] - close[:-lag]) / close[:-lag]
+
+            # Clip extreme values
+            data = np.clip(data, -10, 10)
+
+            return data
+
+        except Exception as e:
+            logger.error(f"Error loading Yahoo Finance data: {e}")
+            return None
 
     def _get_observation(self) -> np.ndarray:
         """Build observation vector from current state"""

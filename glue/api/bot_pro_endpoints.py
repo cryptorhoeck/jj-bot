@@ -244,8 +244,15 @@ async def stop_bot():
 
 
 @router.post("/train")
-async def start_training(episodes: int = 100):
-    """Start RL agent training"""
+async def start_training(episodes: int = 100, data_source: str = "yahoo"):
+    """
+    Start RL agent training
+
+    Args:
+        episodes: Number of training episodes (default: 100)
+        data_source: Data source for training - 'yahoo' for real Yahoo Finance data,
+                    'simulated' for random walk data (default: 'yahoo')
+    """
     global _bot_instance
 
     if _bot_instance and _bot_instance.running:
@@ -257,6 +264,7 @@ async def start_training(episodes: int = 100):
     config = load_config() or {}
     config["mode"] = "training"
     config["train_episodes"] = episodes
+    config["train_data_source"] = data_source
     save_config(config)
 
     # Start in training mode
