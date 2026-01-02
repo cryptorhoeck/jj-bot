@@ -356,9 +356,12 @@ async def start_bot(mode: Optional[str] = None, user = Depends(get_current_user)
         valid_fields = {f.name for f in fields(BotConfig)}
         filtered_config = {k: v for k, v in config.items() if k in valid_fields}
         print(f"[START_BOT] Filtered config mode={filtered_config.get('mode')}", flush=True)
+        print(f"[START_BOT] Config has {len(config.get('symbols', []))} symbols", flush=True)
+        print(f"[START_BOT] Filtered config has {len(filtered_config.get('symbols', []))} symbols", flush=True)
 
         bot_config = BotConfig(**filtered_config)
         print(f"[START_BOT] BotConfig created with mode={bot_config.mode}", flush=True)
+        print(f"[START_BOT] BotConfig has {len(bot_config.symbols)} symbols: {bot_config.symbols[:5]}...", flush=True)
 
         # FORCE the mode - something in BotConfig.__post_init__ is overriding it
         if mode:
