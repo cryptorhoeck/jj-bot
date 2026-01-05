@@ -143,6 +143,33 @@ function App() {
         // If auth is disabled, mark as authenticated
         if (!data.auth_enabled) {
           setIsAuthenticated(true);
+        } else {
+          // Auth is enabled - verify existing token if present
+          const token = localStorage.getItem('jjbot_access_token');
+          if (token) {
+            try {
+              const verifyResponse = await fetch(`${API_BASE}/api/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!verifyResponse.ok) {
+                // Token is invalid - clear it and require login
+                console.log('Stored token is invalid, clearing...');
+                localStorage.removeItem('jjbot_access_token');
+                localStorage.removeItem('jjbot_refresh_token');
+                localStorage.removeItem('jjbot_user');
+                setIsAuthenticated(false);
+                setAuthUser(null);
+              }
+            } catch (e) {
+              // Token verification failed - clear and require login
+              console.log('Token verification failed:', e);
+              localStorage.removeItem('jjbot_access_token');
+              localStorage.removeItem('jjbot_refresh_token');
+              localStorage.removeItem('jjbot_user');
+              setIsAuthenticated(false);
+              setAuthUser(null);
+            }
+          }
         }
       } catch (e) {
         // API is ready but auth check failed - still require auth for safety
