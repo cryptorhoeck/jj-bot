@@ -13,11 +13,11 @@ powershell -Command "[System.IO.File]::WriteAllText('%~dp0data\session_invalidat
 echo Sessions invalidated - login required on next start.
 echo.
 
-echo [2/6] Closing browser tabs (localhost:5173)...
-REM Close Chrome/Edge tabs showing localhost:5173
+echo [2/6] Closing JJ-Bot app window...
+REM Close only the JJ-Bot app window (not all browser windows)
 powershell -ExecutionPolicy Bypass -Command ^
-  "Get-Process chrome -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }; " ^
-  "Get-Process msedge -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }"
+  "$jjWindows = Get-Process | Where-Object { $_.MainWindowTitle -like '*JJ-Bot*' -or $_.MainWindowTitle -like '*localhost:5173*' }; " ^
+  "$jjWindows | ForEach-Object { $_.CloseMainWindow() | Out-Null }"
 echo.
 
 echo [3/6] Killing Python processes...

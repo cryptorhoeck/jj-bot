@@ -48,9 +48,21 @@ start "JJ-Bot Dashboard" cmd /k "cd /d %~dp0dashboard\jj-dashboard && npm run de
 REM Wait for dashboard to start before opening browser
 timeout /t 3 /nobreak >nul
 
-REM Open browser automatically
-echo [4/4] Opening dashboard in your browser...
-start http://localhost:5173
+REM Open in standalone app window (not browser tab)
+echo [4/4] Opening JJ-Bot dashboard...
+REM Try Edge first (comes with Windows), then Chrome
+where msedge >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    start "" msedge --app=http://localhost:5173 --window-size=1400,900
+) else (
+    where chrome >nul 2>&1
+    if %ERRORLEVEL% EQU 0 (
+        start "" chrome --app=http://localhost:5173 --window-size=1400,900
+    ) else (
+        REM Fallback to default browser
+        start http://localhost:5173
+    )
+)
 
 echo.
 echo ========================================
