@@ -2515,7 +2515,7 @@ class JJBotPro:
                                 partial_fill_handled = True
                                 residual_size = remaining_contracts * actual_exit_price
 
-                                logger.warning(f"⚠️  PARTIAL FILL: {filled_contracts:.6f} closed, {remaining_contracts:.6f} remaining")
+                                logger.warning(f"[WARNING] PARTIAL FILL: {filled_contracts:.6f} closed, {remaining_contracts:.6f} remaining")
                                 logger.warning(f"    Creating residual position for unfilled {remaining_contracts:.6f} contracts (${residual_size:.2f})")
 
                                 # Log to audit trail
@@ -2753,7 +2753,7 @@ class JJBotPro:
                 entry_slippage=0.0,
                 entry_slippage_pct=0.0,
             )
-            logger.warning(f"⚠️  RESIDUAL POSITION CREATED: {symbol} {pos.side} {remaining_contracts:.6f} contracts (${residual_size:.2f})")
+            logger.warning(f"[WARNING] RESIDUAL POSITION CREATED: {symbol} {pos.side} {remaining_contracts:.6f} contracts (${residual_size:.2f})")
             logger.warning(f"    Original position partially closed. Residual will be tracked separately.")
         else:
             # Fully closed - remove position
@@ -3688,10 +3688,10 @@ class JJBotPro:
             logger.info(f"  Generalization Score: {validation_metrics['generalization_score']:.0f}/100")
 
             if validation_metrics["generalization_score"] < 50:
-                logger.warning("⚠️  LOW GENERALIZATION: Model may be overfitting to training data!")
+                logger.warning("[WARNING] LOW GENERALIZATION: Model may be overfitting to training data!")
                 logger.warning("    Consider: more training data, fewer episodes, or regularization")
             elif validation_metrics["generalization_score"] >= 80:
-                logger.info("✓ GOOD GENERALIZATION: Model performs well on unseen data")
+                logger.info("[OK] GOOD GENERALIZATION: Model performs well on unseen data")
 
             logger.info("=" * 60)
 

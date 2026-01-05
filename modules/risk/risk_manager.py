@@ -276,7 +276,7 @@ class RiskManager:
         self.circuit_breaker_until = datetime.now() + timedelta(
             minutes=self.config.circuit_breaker_cooldown_minutes
         )
-        print(f"⚠️ CIRCUIT BREAKER ACTIVATED until {self.circuit_breaker_until.strftime('%H:%M:%S')}")
+        print(f"[WARNING] CIRCUIT BREAKER ACTIVATED until {self.circuit_breaker_until.strftime('%H:%M:%S')}")
 
     def get_risk_status(self, current_equity: float, current_drawdown: float) -> Dict[str, Any]:
         """
