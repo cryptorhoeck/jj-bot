@@ -37,6 +37,7 @@ psutil>=5.9.0
 
 # GUI (optional)
 PyQt6>=6.6.0
+pywebview>=4.0.0
 
 # Visualization
 matplotlib>=3.7.0
