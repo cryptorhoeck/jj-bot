@@ -1,5 +1,5 @@
 {
-  "mode": "training",
+  "mode": "paper",
   "exchange": "kraken",
   "api_key": "",
   "api_secret": "",
