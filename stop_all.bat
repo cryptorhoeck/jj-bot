@@ -35,7 +35,7 @@ timeout /t 1 /nobreak >nul
 
 echo [6/6] Closing terminal windows...
 REM Use PowerShell script for reliable window closing
-powershell -ExecutionPolicy Bypass -File "%~dp0close_windows.ps1"
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\close_windows.ps1"
 
 echo Final cleanup...
 REM Kill any remaining cmd.exe that might be hanging

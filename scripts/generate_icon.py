@@ -5,7 +5,7 @@ Converts the gorilla side profile image to a multi-size ICO file
 from PIL import Image
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).parent.parent
 
 
 def main():

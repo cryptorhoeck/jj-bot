@@ -14,7 +14,7 @@ set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 REM Activate venv and generate the icon
 echo [1/2] Generating gorilla icon...
 call venv\Scripts\activate.bat
-python generate_icon.py
+python scripts\generate_icon.py
 if %ERRORLEVEL% NEQ 0 (
     echo Warning: Could not generate icon, will use existing if available
 )
