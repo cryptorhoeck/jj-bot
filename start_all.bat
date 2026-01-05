@@ -30,10 +30,22 @@ REM Check if pywebview is installed
 python -c "import webview" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo Installing pywebview for native window support...
-    pip install pywebview requests >nul 2>&1
+    pip install pywebview requests
     if %ERRORLEVEL% NEQ 0 (
-        echo Failed to install pywebview.
+        echo.
+        echo [WARNING] Failed to install pywebview.
+        echo This might be due to missing Microsoft Visual C++ Build Tools.
         echo Falling back to browser mode...
+        echo.
+        goto browser_mode
+    )
+    REM Verify installation worked
+    python -c "import webview" >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo.
+        echo [WARNING] pywebview installed but cannot be imported.
+        echo Falling back to browser mode...
+        echo.
         goto browser_mode
     )
 )
