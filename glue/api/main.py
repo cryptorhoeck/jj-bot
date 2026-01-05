@@ -423,6 +423,46 @@ async def stop_bot_endpoint():
     """Stop the unified trading bot"""
     return await pro_stop_bot()
 
+@app.post("/api/system/shutdown")
+async def shutdown_application():
+    """
+    Gracefully shutdown the entire application.
+    Stops all services, invalidates sessions, and exits.
+    """
+    import asyncio
+    from pathlib import Path
+    from datetime import datetime
+
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+    # 1. Stop the bot if running
+    try:
+        await pro_stop_bot()
+    except:
+        pass
+
+    # 2. Invalidate all sessions
+    try:
+        invalidation_file = PROJECT_ROOT / "data" / "session_invalidated.txt"
+        invalidation_file.parent.mkdir(parents=True, exist_ok=True)
+        invalidation_file.write_text(datetime.now().isoformat())
+        logger.info("Sessions invalidated")
+    except Exception as e:
+        logger.warning(f"Could not invalidate sessions: {e}")
+
+    # 3. Schedule shutdown after response is sent
+    async def delayed_shutdown():
+        await asyncio.sleep(0.5)  # Give time for response to be sent
+        logger.info("Application shutting down...")
+        os._exit(0)
+
+    asyncio.create_task(delayed_shutdown())
+
+    return {
+        "status": "shutting_down",
+        "message": "Application is shutting down. Goodbye!"
+    }
+
 # ===== DATA MANAGEMENT ENDPOINTS =====
 @app.get("/api/data/export")
 async def export_data():

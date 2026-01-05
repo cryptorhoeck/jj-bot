@@ -92,6 +92,24 @@ function App() {
     toast.success('Logged out successfully');
   };
 
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const handleExit = async () => {
+    setShowExitConfirm(false);
+    toast.loading('Shutting down...', { id: 'shutdown' });
+
+    try {
+      await fetch(`${API_BASE}/api/system/shutdown`, { method: 'POST' });
+      toast.dismiss('shutdown');
+      toast.success('Application closed');
+      // Close window if possible (works in app mode)
+      setTimeout(() => window.close(), 500);
+    } catch (e) {
+      toast.dismiss('shutdown');
+      toast.error('Shutdown failed: ' + e.message);
+    }
+  };
+
   // Legal disclaimer acceptance state
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(() => {
     return localStorage.getItem('jjbot_disclaimer_accepted') === 'true';
@@ -679,6 +697,17 @@ function App() {
                   </svg>
                 </button>
               )}
+
+              {/* Exit Application */}
+              <button
+                onClick={() => setShowExitConfirm(true)}
+                className="btn btn-ghost p-2 text-danger hover:bg-danger/10"
+                title="Exit Application"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -769,6 +798,19 @@ function App() {
         title="Clear Database"
         message="Are you sure you want to clear all trade data? A backup will be created first."
         confirmText="Clear Database"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        darkMode={darkMode}
+      />
+
+      {/* Exit Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        onConfirm={handleExit}
+        title="Exit Application"
+        message="Are you sure you want to exit JJ-Bot? All services will be stopped and you'll need to log in again next time."
+        confirmText="Exit"
         cancelText="Cancel"
         confirmVariant="danger"
         darkMode={darkMode}
