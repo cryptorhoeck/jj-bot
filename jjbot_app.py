@@ -1,6 +1,8 @@
 """
 JJ-Bot Desktop Application
 Launches JJ-Bot in a native desktop window (no browser)
+
+This is the main launcher - starts all services and opens the app.
 """
 
 import webview
@@ -34,6 +36,27 @@ def wait_for_server(url, timeout=30):
             pass
         time.sleep(0.5)
     return False
+
+
+def build_dashboard():
+    """Build the React dashboard"""
+    dashboard_dir = PROJECT_ROOT / "dashboard" / "jj-dashboard"
+    npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+
+    print("Building dashboard...")
+    result = subprocess.run(
+        [npm_cmd, "run", "build"],
+        cwd=str(dashboard_dir),
+        capture_output=True,
+        shell=True
+    )
+
+    if result.returncode == 0:
+        print("Dashboard built successfully!")
+        return True
+    else:
+        print("Dashboard build failed, continuing with existing build...")
+        return True  # Continue anyway, might have existing build
 
 
 def start_api_server():
@@ -126,6 +149,9 @@ def main():
     print("=" * 50)
     print("JJ-Bot Desktop Application")
     print("=" * 50)
+
+    # Build dashboard first (like start_all.bat does)
+    build_dashboard()
 
     # Start services in background
     if not start_api_server():

@@ -1,6 +1,6 @@
 @echo off
 REM JJ-Bot Startup Script for Windows
-REM Starts both the API server and React dashboard
+REM Launches JJ-Bot as a native desktop application
 
 echo ========================================
 echo Starting JJ-Bot Trading System
@@ -23,45 +23,50 @@ if not exist dashboard\jj-dashboard\node_modules (
     exit /b 1
 )
 
-echo Starting services...
+REM Activate virtual environment
+call venv\Scripts\activate.bat
+
+REM Check if pywebview is installed
+python -c "import webview" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Installing pywebview for native window support...
+    pip install pywebview requests >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo Failed to install pywebview.
+        echo Falling back to browser mode...
+        goto browser_mode
+    )
+)
+
+echo Starting JJ-Bot as native desktop app...
 echo.
 
-REM Build dashboard with latest changes
-echo [1/4] Building dashboard with latest changes...
+REM Run the desktop app (pythonw = no console window)
+pythonw jjbot_app.py
+goto end
+
+:browser_mode
+REM Fallback: Start with visible terminals and browser
+echo [1/4] Building dashboard...
 cd dashboard\jj-dashboard
 call npm run build
 cd ..\..
-echo Dashboard built successfully!
 echo.
 
-REM Start API Server in new window
 echo [2/4] Starting API Server on port 8000...
 start "JJ-Bot API Server" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && cd glue\api && python main.py"
-
-REM Wait for API to start
 timeout /t 2 /nobreak >nul
 
-REM Start Dashboard in new window
 echo [3/4] Starting Dashboard on port 5173...
 start "JJ-Bot Dashboard" cmd /k "cd /d %~dp0dashboard\jj-dashboard && npm run dev"
-
-REM Wait for dashboard to start before opening browser
 timeout /t 3 /nobreak >nul
 
-REM Open in standalone app window (not browser tab)
-echo [4/4] Opening JJ-Bot dashboard...
-REM Try Chrome first, then Edge as fallback
+echo [4/4] Opening dashboard...
 where chrome >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     start "" chrome --app=http://localhost:5173 --window-size=1400,900
 ) else (
-    where msedge >nul 2>&1
-    if %ERRORLEVEL% EQU 0 (
-        start "" msedge --app=http://localhost:5173 --window-size=1400,900
-    ) else (
-        REM Fallback to default browser
-        start http://localhost:5173
-    )
+    start http://localhost:5173
 )
 
 echo.
@@ -69,12 +74,8 @@ echo ========================================
 echo JJ-Bot Started Successfully!
 echo ========================================
 echo.
-echo Services running:
-echo   - API Server:  http://127.0.0.1:8000
-echo   - Dashboard:   http://localhost:5173
+echo To stop: run stop_all.bat or close the windows
 echo.
-echo To stop the system, run: stop_all.bat
-echo.
-echo This window will close in 2 seconds...
-timeout /t 2 /nobreak >nul
+
+:end
 exit
