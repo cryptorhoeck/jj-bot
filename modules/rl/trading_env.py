@@ -145,8 +145,15 @@ def _load_yahoo_data(symbols: List[str], timeframe: str, days: int) -> Dict[str,
     data_cache = {}
 
     for symbol_idx, symbol in enumerate(symbols):
-        # Convert symbol format: BTC/USD -> BTC-USD for Yahoo
-        yahoo_symbol = symbol.replace('/', '-')
+        # Convert symbol format for Yahoo Finance
+        # Handle different formats: BTC, BTC/USD, BTC-USD -> BTC-USD
+        if '/' in symbol:
+            yahoo_symbol = symbol.replace('/', '-')
+        elif '-' in symbol:
+            yahoo_symbol = symbol  # Already in Yahoo format
+        else:
+            # Just the base symbol (e.g., BTC) - add -USD for crypto
+            yahoo_symbol = f"{symbol}-USD"
 
         try:
             logger.info(f"[{symbol_idx+1}/{len(symbols)}] Fetching {yahoo_symbol}...")

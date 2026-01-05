@@ -107,17 +107,38 @@ class ActorCritic(nn.Module):
 
     def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass returning action probabilities and state value"""
+        # Check for NaN/Inf in input and replace with zeros
+        if torch.isnan(state).any() or torch.isinf(state).any():
+            state = torch.nan_to_num(state, nan=0.0, posinf=1.0, neginf=-1.0)
+
         features = self.shared(state)
         action_probs = self.actor(features)
         state_value = self.critic(features)
+
+        # Ensure numerical stability in action probabilities
+        if torch.isnan(action_probs).any() or torch.isinf(action_probs).any():
+            # Replace with uniform distribution if NaN detected
+            action_probs = torch.ones_like(action_probs) / action_probs.shape[-1]
+
         return action_probs, state_value
 
     def get_action(self, state: torch.Tensor) -> Tuple[int, float, float]:
         """Sample action from policy"""
         action_probs, state_value = self.forward(state)
+
+        # Additional safety check for valid probability distribution
+        if torch.isnan(action_probs).any() or (action_probs.sum() < 0.99):
+            # Fallback to uniform distribution
+            action_probs = torch.ones_like(action_probs) / action_probs.shape[-1]
+
         dist = Categorical(action_probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
+
+        # Handle NaN in log_prob
+        if torch.isnan(log_prob):
+            log_prob = torch.tensor(-1.0)
+
         return action.item(), log_prob.item(), state_value.item()
 
     def evaluate(
@@ -127,10 +148,22 @@ class ActorCritic(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Evaluate actions for PPO update"""
         action_probs, state_values = self.forward(states)
+
+        # Ensure valid probability distribution
+        if torch.isnan(action_probs).any() or torch.isinf(action_probs).any():
+            action_probs = torch.ones_like(action_probs) / action_probs.shape[-1]
+
+        # Clamp probabilities to avoid log(0)
+        action_probs = torch.clamp(action_probs, min=1e-8, max=1.0)
+
         dist = Categorical(action_probs)
 
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
+
+        # Replace NaN with safe values
+        log_probs = torch.nan_to_num(log_probs, nan=-1.0)
+        entropy = torch.nan_to_num(entropy, nan=0.0)
 
         return log_probs, state_values.squeeze(-1), entropy
 
