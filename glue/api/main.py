@@ -505,6 +505,20 @@ async def clear_data():
                 except Exception as e:
                     logger.warning(f"Could not update bot_state.json: {e}")
 
+            # Clear backtest results
+            backtest_dir = PROJECT_ROOT / "data" / "backtest_results"
+            backtest_count = 0
+            if backtest_dir.exists():
+                try:
+                    import shutil
+                    backtest_files = list(backtest_dir.glob("*.json"))
+                    backtest_count = len(backtest_files)
+                    shutil.rmtree(backtest_dir)
+                    counts["backtest_results"] = backtest_count
+                    logger.info(f"Cleared {backtest_count} backtest result files")
+                except Exception as e:
+                    logger.warning(f"Could not clear backtest results: {e}")
+
             # CRITICAL: Also reset the running bot's in-memory state
             bot = get_bot()
             bot_reset = False
