@@ -348,11 +348,22 @@ export function TrainingTab({
       return;
     }
 
+    // Validate symbols are selected
+    if (!selectedSymbols || selectedSymbols.length === 0) {
+      toast.error('Please select at least one symbol for training');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Send symbols as JSON body since URL params with arrays are tricky
       const response = await apiFetch(
         `${API_BASE}/api/pro/train?episodes=${trainSettings.episodes}&timeframe=${trainSettings.timeframe}&history_days=${trainSettings.history_days}&data_source=${trainSettings.data_source}`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols: selectedSymbols })
+        }
       );
       if (response.status === 401) {
         toast.error('Authentication required. Please log in.');

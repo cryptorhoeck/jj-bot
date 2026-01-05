@@ -11,7 +11,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Body
 from pydantic import BaseModel
 
 # Import auth dependency for protected endpoints
@@ -619,12 +619,18 @@ async def get_health_status():
     return health
 
 
+class TrainRequest(BaseModel):
+    """Request body for training endpoint"""
+    symbols: Optional[List[str]] = None
+
+
 @router.post("/train")
 async def start_training(
     episodes: int = 100,
     timeframe: str = "1h",
     history_days: int = 90,
     data_source: str = "kraken",
+    body: TrainRequest = Body(default=TrainRequest()),  # Accept symbols from JSON body
     user = Depends(get_current_user)
 ):
     """Start RL agent training with configurable data settings. Requires auth when enabled.
@@ -634,7 +640,10 @@ async def start_training(
         timeframe: Candle timeframe (1m, 5m, 15m, 1h, 4h, 1d)
         history_days: Days of historical data to fetch
         data_source: Data source for training (kraken, binance, yahoo)
+        body: JSON body containing symbols list
     """
+    # Extract symbols from request body
+    symbols = body.symbols if body else None
     global _bot_instance
     import sys
 
@@ -648,7 +657,7 @@ async def start_training(
 
     # Force output to show
     print(f"\n{'='*60}", flush=True)
-    print(f"[TRAIN] TRAIN ENDPOINT CALLED - episodes={episodes}, data_source={data_source}", flush=True)
+    print(f"[TRAIN] TRAIN ENDPOINT CALLED - episodes={episodes}, data_source={data_source}, symbols={len(symbols) if symbols else 'None'}", flush=True)
     print(f"{'='*60}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
@@ -665,8 +674,16 @@ async def start_training(
     config["train_timeframe"] = timeframe
     config["train_history_days"] = history_days
     config["train_data_source"] = data_source
+
+    # Update symbols if provided from UI
+    if symbols and len(symbols) > 0:
+        config["symbols"] = symbols
+        print(f"[TRAIN] Using {len(symbols)} symbols from UI: {symbols[:5]}{'...' if len(symbols) > 5 else ''}", flush=True)
+    else:
+        print(f"[TRAIN] No symbols provided, using existing config: {len(config.get('symbols', []))} symbols", flush=True)
+
     save_config(config)
-    print(f"[TRAIN] Config saved with mode={config['mode']}, data_source={data_source}", flush=True)
+    print(f"[TRAIN] Config saved with mode={config['mode']}, data_source={data_source}, symbols={len(config.get('symbols', []))}", flush=True)
 
     # Verify config was saved correctly
     verify_config = load_config()
