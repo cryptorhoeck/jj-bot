@@ -427,11 +427,12 @@ async def stop_bot_endpoint():
 async def shutdown_application():
     """
     Gracefully shutdown the entire application.
-    Stops all services, invalidates sessions, and exits.
+    Calls stop_all.bat which handles everything: stops bot, invalidates sessions, kills processes.
     """
     import asyncio
+    import subprocess
+    import sys
     from pathlib import Path
-    from datetime import datetime
 
     PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -441,20 +442,29 @@ async def shutdown_application():
     except:
         pass
 
-    # 2. Invalidate all sessions
-    try:
-        invalidation_file = PROJECT_ROOT / "data" / "session_invalidated.txt"
-        invalidation_file.parent.mkdir(parents=True, exist_ok=True)
-        invalidation_file.write_text(datetime.now().isoformat())
-        logger.info("Sessions invalidated")
-    except Exception as e:
-        logger.warning(f"Could not invalidate sessions: {e}")
-
-    # 3. Schedule shutdown after response is sent
+    # 2. Schedule stop_all.bat to run after response is sent
     async def delayed_shutdown():
         await asyncio.sleep(0.5)  # Give time for response to be sent
-        logger.info("Application shutting down...")
-        os._exit(0)
+        logger.info("Application shutting down via stop_all.bat...")
+
+        if sys.platform == "win32":
+            stop_script = PROJECT_ROOT / "stop_all.bat"
+            if stop_script.exists():
+                # Run stop_all.bat which handles everything
+                subprocess.Popen(
+                    ["cmd", "/c", str(stop_script)],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    cwd=str(PROJECT_ROOT)
+                )
+            else:
+                # Fallback if stop_all.bat doesn't exist
+                subprocess.run(["taskkill", "/F", "/IM", "node.exe"],
+                             capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                subprocess.run(["taskkill", "/F", "/IM", "python.exe"],
+                             capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        else:
+            subprocess.run(["pkill", "-f", "node"], capture_output=True)
+            subprocess.run(["pkill", "-f", "python"], capture_output=True)
 
     asyncio.create_task(delayed_shutdown())
 
