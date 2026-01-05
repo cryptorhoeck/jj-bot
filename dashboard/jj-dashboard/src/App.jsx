@@ -77,8 +77,10 @@ function App() {
   });
   const [authRequired, setAuthRequired] = useState(null); // null = checking, true/false = known
 
-  // Check if auth is required on startup
+  // Check if auth is required on startup - AFTER API is ready
   useEffect(() => {
+    if (!apiReady) return; // Wait for API to be ready first
+
     const checkAuthRequired = async () => {
       try {
         const response = await fetch(`${API_BASE}/api/auth/status`);
@@ -90,13 +92,13 @@ function App() {
           setIsAuthenticated(true);
         }
       } catch (e) {
-        // If can't reach API, assume auth not required
-        setAuthRequired(false);
-        setIsAuthenticated(true);
+        // API is ready but auth check failed - still require auth for safety
+        console.error('Auth status check failed:', e);
+        setAuthRequired(true); // Require auth if we can't verify
       }
     };
     checkAuthRequired();
-  }, []);
+  }, [apiReady]); // Only run when API becomes ready
 
   const handleLogin = (data) => {
     setIsAuthenticated(true);
@@ -463,8 +465,8 @@ function App() {
     { id: 'data', label: 'Data', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
   ];
 
-  // Show loading screen while waiting for API
-  if (!apiReady) {
+  // Show loading screen while waiting for API or auth check
+  if (!apiReady || authRequired === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
         <div className="text-center">
@@ -478,7 +480,9 @@ function App() {
 
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="spinner w-5 h-5 border-2 border-info border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-lg">Connecting to server...</p>
+            <p className="text-lg">
+              {!apiReady ? 'Connecting to server...' : 'Checking authentication...'}
+            </p>
           </div>
 
           <p className="text-sm text-muted">
