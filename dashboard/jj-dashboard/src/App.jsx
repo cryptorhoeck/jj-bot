@@ -77,29 +77,6 @@ function App() {
   });
   const [authRequired, setAuthRequired] = useState(null); // null = checking, true/false = known
 
-  // Check if auth is required on startup - AFTER API is ready
-  useEffect(() => {
-    if (!apiReady) return; // Wait for API to be ready first
-
-    const checkAuthRequired = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/auth/status`);
-        const data = await response.json();
-        setAuthRequired(data.auth_enabled);
-
-        // If auth is disabled, mark as authenticated
-        if (!data.auth_enabled) {
-          setIsAuthenticated(true);
-        }
-      } catch (e) {
-        // API is ready but auth check failed - still require auth for safety
-        console.error('Auth status check failed:', e);
-        setAuthRequired(true); // Require auth if we can't verify
-      }
-    };
-    checkAuthRequired();
-  }, [apiReady]); // Only run when API becomes ready
-
   const handleLogin = (data) => {
     setIsAuthenticated(true);
     setAuthUser(data.user);
@@ -152,6 +129,29 @@ function App() {
   const [apiReady, setApiReady] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [appVersion, setAppVersion] = useState('3.0.4');  // Default, will be fetched from API
+
+  // Check if auth is required on startup - AFTER API is ready
+  useEffect(() => {
+    if (!apiReady) return; // Wait for API to be ready first
+
+    const checkAuthRequired = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/status`);
+        const data = await response.json();
+        setAuthRequired(data.auth_enabled);
+
+        // If auth is disabled, mark as authenticated
+        if (!data.auth_enabled) {
+          setIsAuthenticated(true);
+        }
+      } catch (e) {
+        // API is ready but auth check failed - still require auth for safety
+        console.error('Auth status check failed:', e);
+        setAuthRequired(true); // Require auth if we can't verify
+      }
+    };
+    checkAuthRequired();
+  }, [apiReady]); // Only run when API becomes ready
 
   // Check if API is ready
   const checkApiReady = async () => {
