@@ -195,11 +195,13 @@ class AuthManager:
             # Fallback to simple token
             return f"simple:{user.user_id}:{secrets.token_urlsafe(16)}"
 
-        expire = datetime.utcnow() + timedelta(minutes=self.config.access_token_expire_minutes)
+        now = datetime.utcnow()
+        expire = now + timedelta(minutes=self.config.access_token_expire_minutes)
         payload = {
             "sub": user.user_id,
             "username": user.username,
             "role": user.role,
+            "iat": now,  # Issued at - for session invalidation
             "exp": expire,
             "type": "access"
         }
@@ -210,10 +212,12 @@ class AuthManager:
         if not JWT_AVAILABLE:
             return f"refresh:{user.user_id}:{secrets.token_urlsafe(32)}"
 
-        expire = datetime.utcnow() + timedelta(days=self.config.refresh_token_expire_days)
+        now = datetime.utcnow()
+        expire = now + timedelta(days=self.config.refresh_token_expire_days)
         payload = {
             "sub": user.user_id,
             "type": "refresh",
+            "iat": now,  # Issued at - for session invalidation
             "exp": expire
         }
         return jwt.encode(payload, self.config.jwt_secret, algorithm=self.config.jwt_algorithm)
@@ -234,6 +238,12 @@ class AuthManager:
                 self.config.jwt_secret,
                 algorithms=[self.config.jwt_algorithm]
             )
+
+            # Check if session was invalidated after token was issued
+            if self._is_session_invalidated(payload):
+                logger.warning("Token invalidated by session reset")
+                return None
+
             return payload
         except jwt.ExpiredSignatureError:
             logger.warning("Token expired")
@@ -241,6 +251,30 @@ class AuthManager:
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid token: {e}")
             return None
+
+    def _is_session_invalidated(self, payload: Dict[str, Any]) -> bool:
+        """Check if token was issued before session invalidation"""
+        invalidation_file = PROJECT_ROOT / "data" / "session_invalidated.txt"
+        if not invalidation_file.exists():
+            return False
+
+        try:
+            # Read invalidation timestamp
+            invalidation_str = invalidation_file.read_text().strip()
+            invalidation_time = datetime.fromisoformat(invalidation_str.replace('Z', '+00:00'))
+
+            # Get token issued time (iat claim)
+            iat = payload.get("iat")
+            if iat:
+                token_issued = datetime.utcfromtimestamp(iat)
+                # Make invalidation_time naive for comparison
+                if invalidation_time.tzinfo:
+                    invalidation_time = invalidation_time.replace(tzinfo=None)
+                return token_issued < invalidation_time
+        except Exception as e:
+            logger.warning(f"Error checking session invalidation: {e}")
+
+        return False
 
     def refresh_access_token(self, refresh_token: str) -> Optional[str]:
         """Generate new access token from refresh token"""
