@@ -17,6 +17,16 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Import reality gap components for realistic execution
+try:
+    from .reality_gap import SlippageModel
+    REALITY_GAP_AVAILABLE = True
+    _SLIPPAGE_MODEL = SlippageModel()
+except ImportError:
+    REALITY_GAP_AVAILABLE = False
+    _SLIPPAGE_MODEL = None
+    logger.debug("Reality gap module not loaded, using basic slippage")
+
 # Global cache for historical data (avoid re-fetching)
 _DATA_CACHE: Dict[str, np.ndarray] = {}
 _CACHE_LOADED = False
@@ -1121,21 +1131,60 @@ class TradingEnvironment:
 
         return self._get_observation(), reward, self.done, info
 
+    def _get_current_volatility(self) -> float:
+        """Get current market volatility for realistic slippage calculation"""
+        try:
+            # Use feature column 3 which is volatility (20-period std of returns)
+            price_idx = min(self.current_step + self.lookback_window, len(self.price_data) - 1)
+            if self.price_data.shape[1] > 3:
+                vol = self.price_data[price_idx, 3]
+                return max(0.01, min(0.1, vol))  # Clamp between 1% and 10%
+        except:
+            pass
+        return 0.02  # Default 2% volatility
+
+    def _get_price_momentum(self) -> float:
+        """Get recent price momentum for slippage calculation"""
+        try:
+            # Use feature column 11 which is 10-period momentum
+            price_idx = min(self.current_step + self.lookback_window, len(self.price_data) - 1)
+            if self.price_data.shape[1] > 11:
+                return self.price_data[price_idx, 11]
+        except:
+            pass
+        return 0.0
+
     def _open_position(self, side: str):
         """Open a new position with realistic execution costs"""
         # Calculate position size
         position_value = self.equity * self.max_position_size
 
+        # Get market conditions for dynamic slippage
+        volatility = self._get_current_volatility()
+        momentum = self._get_price_momentum()
+
         # Apply spread + slippage (realistic execution)
-        # Buying: pay ask price (mid + half spread) + slippage
-        # Selling: get bid price (mid - half spread) - slippage
         half_spread = self.spread / 2
+
+        # Use dynamic slippage model if available
+        if REALITY_GAP_AVAILABLE and _SLIPPAGE_MODEL is not None:
+            trade_side = 'buy' if side == "long" else 'sell'
+            dynamic_slippage = _SLIPPAGE_MODEL.calculate_slippage(
+                price=self.current_price,
+                side=trade_side,
+                volatility=volatility,
+                order_size_pct=self.max_position_size,
+                price_momentum=momentum
+            )
+        else:
+            dynamic_slippage = self.slippage
+
         if side == "long":
             # Buying at ask + slippage
-            entry_price = self.current_price * (1 + half_spread + self.slippage)
+            entry_price = self.current_price * (1 + half_spread + dynamic_slippage)
         else:
             # Selling at bid - slippage
-            entry_price = self.current_price * (1 - half_spread - self.slippage)
+            entry_price = self.current_price * (1 - half_spread - dynamic_slippage)
 
         # Deduct commission
         commission_cost = position_value * self.commission
@@ -1154,17 +1203,34 @@ class TradingEnvironment:
         if self.position.side == "flat":
             return 0.0
 
+        # Get market conditions for dynamic slippage
+        volatility = self._get_current_volatility()
+        momentum = self._get_price_momentum()
+
         # Calculate exit price with spread + slippage
-        # Closing long (selling): get bid price - slippage
-        # Closing short (buying back): pay ask price + slippage
         half_spread = self.spread / 2
+
+        # Use dynamic slippage model if available
+        if REALITY_GAP_AVAILABLE and _SLIPPAGE_MODEL is not None:
+            # Closing long = selling, closing short = buying
+            trade_side = 'sell' if self.position.side == "long" else 'buy'
+            dynamic_slippage = _SLIPPAGE_MODEL.calculate_slippage(
+                price=self.current_price,
+                side=trade_side,
+                volatility=volatility,
+                order_size_pct=self.max_position_size,
+                price_momentum=momentum
+            )
+        else:
+            dynamic_slippage = self.slippage
+
         if self.position.side == "long":
             # Selling at bid - slippage
-            exit_price = self.current_price * (1 - half_spread - self.slippage)
+            exit_price = self.current_price * (1 - half_spread - dynamic_slippage)
             pnl = (exit_price - self.position.entry_price) / self.position.entry_price
         else:
             # Buying back at ask + slippage
-            exit_price = self.current_price * (1 + half_spread + self.slippage)
+            exit_price = self.current_price * (1 + half_spread + dynamic_slippage)
             pnl = (self.position.entry_price - exit_price) / self.position.entry_price
 
         realized_pnl = pnl * self.position.size
