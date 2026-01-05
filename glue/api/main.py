@@ -65,6 +65,16 @@ from ai_endpoints import router as ai_router
 from auth_endpoints import router as auth_router
 from websocket_manager import ws_manager
 
+# Capital Management (Babylon + Buffett)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from capital_management.endpoints import router as capital_router
+    CAPITAL_MANAGEMENT_AVAILABLE = True
+except ImportError as e:
+    CAPITAL_MANAGEMENT_AVAILABLE = False
+    capital_router = None
+    print(f"[WARN] Capital management module not available: {e}")
+
 # Lifespan context manager for startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1246,6 +1256,10 @@ app.include_router(execution_router)
 app.include_router(bot_pro_router)
 app.include_router(ai_router)
 app.include_router(auth_router)
+
+# Capital Management (Babylon + Buffett)
+if CAPITAL_MANAGEMENT_AVAILABLE and capital_router:
+    app.include_router(capital_router)
 
 # ===== WEBSOCKET ENDPOINT =====
 @app.websocket("/ws")
